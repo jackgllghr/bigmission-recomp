@@ -1771,6 +1771,13 @@ int main() {
         { std::ofstream out(temp, std::ios::binary); out << "abc"; }
         require(psprecomp::sha256_file(temp) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
                 "SHA-256 failed");
+        const std::vector<std::uint8_t> abc{'a', 'b', 'c'};
+        require(psprecomp::sha256(abc) == psprecomp::sha256_file(temp), "SHA-256 byte/file mismatch");
+        require(psprecomp::sha256({}) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "SHA-256 empty byte input failed");
+        const std::vector<std::uint8_t> long_message(1000u, 'a');
+        require(psprecomp::sha256(long_message) == "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3",
+                "SHA-256 multi-block byte input failed");
         std::filesystem::remove(temp);
 
         std::cout << "All PSPRecomp automatic-pipeline tests passed.\n";

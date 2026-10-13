@@ -32,6 +32,11 @@ void transform(std::array<std::uint32_t,8> &h, const std::uint8_t *block) {
 std::string sha256_file(const std::filesystem::path &path) {
     std::ifstream in(path, std::ios::binary); if(!in) throw Error("Cannot open file for SHA-256: "+path.string());
     std::vector<std::uint8_t> data((std::istreambuf_iterator<char>(in)), {});
+    if (in.bad()) throw Error("Cannot read file for SHA-256: "+path.string());
+    return sha256(data);
+}
+std::string sha256(std::span<const std::uint8_t> bytes) {
+    std::vector<std::uint8_t> data(bytes.begin(), bytes.end());
     const std::uint64_t bits=static_cast<std::uint64_t>(data.size())*8u; data.push_back(0x80u); while((data.size()%64u)!=56u) data.push_back(0u);
     for(int i=7;i>=0;--i) data.push_back(static_cast<std::uint8_t>((bits>>(i*8))&0xFFu));
     std::array<std::uint32_t,8> h{0x6a09e667u,0xbb67ae85u,0x3c6ef372u,0xa54ff53au,0x510e527fu,0x9b05688cu,0x1f83d9abu,0x5be0cd19u};

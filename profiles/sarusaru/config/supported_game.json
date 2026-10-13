@@ -1,0 +1,10 @@
+{
+  "disc_id": "UCJS10060",
+  "disc_version": "1.00",
+  "executable_path": "PSP_GAME/SYSDIR/BOOT.BIN",
+  "executable_size": 3226216,
+  "executable_sha256": "ee738a85dcd74a512430d1933226cc744c60b5dfb6e61bcc81eca1d5a208ec4b",
+  "load_base": "0x08804000",
+  "unit_span": "0x4000",
+  "psprecomp_revision": "f6e7d415c7f447b934cc3865a31eb725f353d659"
+}

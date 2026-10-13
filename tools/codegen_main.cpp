@@ -846,8 +846,11 @@ std::string direct_unit_chain_expression(
                 psprecomp::hex32(target) + "u>(ctx, &aot_mem)";
         }
     }
-    return "rt.invoke_chained_direct<&" + generated_unit_cpp_name(unit) + ", " +
-        std::to_string(unit) + "u>(ctx, &aot_mem)";
+    // A decoded target need not belong to the generated corpus (data interpreted
+    // as code, a runtime overlay, or a host replacement). Do not name a native
+    // unit that may not exist. Materialize the PC and let normal dispatch decide.
+    return "(ctx.pc = " + psprecomp::hex32(target) +
+        "u, rt.invoke_chained_call(ctx, &aot_mem))";
 }
 
 void emit_target(std::ostringstream &body, std::uint32_t target,
@@ -856,17 +859,17 @@ void emit_target(std::ostringstream &body, std::uint32_t target,
                  std::uint32_t unit_span_bytes = 0u,
                  const std::map<std::uint32_t, std::uint16_t> *direct_entry_ids = nullptr,
                  const std::set<std::uint32_t> *import_stubs = nullptr) {
-    if (labels.contains(target)) {
-        body << indent << "goto L_" << psprecomp::hex32(target).substr(2) << ";\n";
-        return;
-    }
-
     // A fixed J/JAL to a PSP import must return to the outer dispatcher.
     // Trying the generated-unit chain first is guaranteed to fail because import
     // registration deliberately poisons/replaces that exact PC, and these stubs
     // are frequently hot in real titles. Emit the minimal correct handoff directly.
     if (import_stubs != nullptr && import_stubs->contains(target)) {
         body << indent << "ctx.pc = " << psprecomp::hex32(target) << "u; return;\n";
+        return;
+    }
+
+    if (labels.contains(target)) {
+        body << indent << "goto L_" << psprecomp::hex32(target).substr(2) << ";\n";
         return;
     }
 
@@ -1040,6 +1043,13 @@ std::string emit_function_source(const GeneratedFunctionInput &function,
                     body << emit_regular(slot, pc + 4u);
                     if (decoded.kind == psprecomp::OpcodeKind::J) {
                         emit_target(body, target, function.entry_labels, "    ", function.executable_base, function.unit_span_bytes, function.direct_entry_ids, function.import_stubs);
+                    } else if (function.import_stubs != nullptr && function.import_stubs->contains(target)) {
+                        // Imports must leave through dispatch even when their
+                        // stub is a discovered label in this same AOT unit.
+                        // End this basic block; continuing the emission loop
+                        // without advancing pc repeats this JAL indefinitely.
+                        body << "    ctx.pc = " << psprecomp::hex32(target) << "u;\n"
+                             << "    return;\n";
                     } else if (function.entry_labels.contains(target)) {
                         // Fixed same-unit JAL: the destination is already a C++
                         // label. Going through ctx.pc + LOCAL_DISPATCH needlessly
@@ -1047,17 +1057,7 @@ std::string emit_function_source(const GeneratedFunctionInput &function,
                         // counter. The delay slot and $ra write have already run.
                         body << "    goto L_" << psprecomp::hex32(target).substr(2) << ";\n";
                     } else {
-                        // Cross-unit call. PSP import stubs are deliberate outer-
-                        // dispatcher boundaries; do not pay a guaranteed-failing
-                        // generated-unit chain attempt before reaching them.
                         const std::uint32_t return_pc = pc + 8u;
-                        const bool target_is_import = function.import_stubs != nullptr &&
-                            function.import_stubs->contains(target);
-                        if (target_is_import) {
-                            body << "    ctx.pc = " << psprecomp::hex32(target) << "u;\n"
-                                 << "    return;\n";
-                            continue;
-                        }
                         // Otherwise run the callee inline and resume locally only
                         // if it came back to our return address.
                         const bool direct_unit = function.unit_span_bytes != 0u &&
@@ -1406,14 +1406,35 @@ std::string lower_constant_vfpu_accesses(std::string text) {
         "ctx.execute_vfpu_vscl_ct<$1u, $2u, $3u, $4u>();");
 
     const std::regex scalar_read(R"(ctx\.vfpu_scalar_bits\(([0-9]+)u\))");
-    text = std::regex_replace(text, scalar_read,
-        "ctx.vfpu_scalar_bits_ct<$1u>()");
-
     // set_vfpu_scalar_bits second arguments in generated code stay on one line.
     const std::regex scalar_write(
         R"(ctx\.set_vfpu_scalar_bits\(([0-9]+)u, ([^;\n]+)\);)" );
-    text = std::regex_replace(text, scalar_write,
-        "ctx.set_vfpu_scalar_bits_ct<$1u>($2);");
+    const auto lower_scalar = [](const std::string &source, const std::regex &pattern, bool write) {
+        std::string lowered;
+        lowered.reserve(source.size());
+        std::smatch match;
+        auto begin = source.cbegin();
+        while (std::regex_search(begin, source.cend(), match, pattern)) {
+            lowered.append(begin, match[0].first);
+            const auto index = static_cast<std::uint32_t>(std::stoul(match[1].str()));
+            // Conservative analysis can discover invalid encodings in data.
+            // Keep the generic helper's checked behavior for those operands;
+            // compile-time helpers deliberately accept only registers 0..143.
+            if (index < 144u) {
+                lowered += write ? "ctx.set_vfpu_scalar_bits_ct<" : "ctx.vfpu_scalar_bits_ct<";
+                lowered += match[1].str() + "u>(";
+                if (write) lowered += match[2].str();
+                lowered += write ? ");" : ")";
+            } else {
+                lowered.append(match[0].first, match[0].second);
+            }
+            begin = match[0].second;
+        }
+        lowered.append(begin, source.cend());
+        return lowered;
+    };
+    text = lower_scalar(text, scalar_read, false);
+    text = lower_scalar(text, scalar_write, true);
     return text;
 }
 

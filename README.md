@@ -1,5 +1,10 @@
 # PSPRecomp
 
+**SaruSaru project:** this checkout adds a macOS arm64 diagnostic bootstrap for
+*Saru! Get You! SaruSaru Daisakusen*. It is **not playable yet**. See the
+[project plan](PLAN.md) and [profile instructions](profiles/sarusaru/README.md).
+The upstream framework documentation follows below.
+
 PSPRecomp is a static recompilation framework for PSP software. It reads an Allegrex/MIPS executable, analyzes guest code, emits C++ translation units, and runs them through a native host runtime instead of shipping a PSP interpreter or JIT.
 
 The repository is split between a reusable framework and game-specific profiles. The first working profile is GTA: Vice City Stories (`profiles/vcs`).

@@ -120,6 +120,18 @@ if(PSPRECOMP_BUILD_TESTS)
     target_compile_definitions(psprecomp_tests PRIVATE
         PSPRECOMP_CODEGEN_PATH="$<TARGET_FILE:psp_recomp>")
     add_test(NAME psprecomp_tests COMMAND psprecomp_tests)
+    if(NOT MSVC AND NOT CMAKE_CROSSCOMPILING)
+        find_package(Python3 QUIET COMPONENTS Interpreter)
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME psprecomp_import_codegen_tests
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_codegen_imports.py"
+                    --codegen "$<TARGET_FILE:psp_recomp>"
+                    --compiler "${CMAKE_CXX_COMPILER}"
+                    --include "${CMAKE_CURRENT_SOURCE_DIR}/include"
+                    --core "$<TARGET_FILE:psprecomp_core>")
+            set_tests_properties(psprecomp_import_codegen_tests PROPERTIES TIMEOUT 90)
+        endif()
+    endif()
 endif()
 
 if(NOT PSPRECOMP_PROFILE STREQUAL "")
