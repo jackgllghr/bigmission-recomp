@@ -92,13 +92,13 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
-  `ThreadManForUser::sceKernelCheckCallback` after loading the AV codec
-  utility module. `SARUSARU_TRACE_SCHED=1` logs
+  the unlowered VFPU instruction `vi2uc.q` after loading the AV codec
+  utility module and running its callbacks. `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All sixteen CTest suites pass, including 17 ISO/preparation cases and seven
+- All seventeen CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -186,6 +186,13 @@ The pinned upstream is recorded in `config/supported_game.json`.
 - Added `sceRtcGetCurrentClockLocalTime`: host local time sampled once at
   boot plus virtual guest time, so the clock advances exactly with guest
   time. `SARUSARU_RTC_EPOCH` (Unix seconds) pins the boot time.
+- Added thread callback delivery: a notified callback runs on its owning
+  thread as callback(count, argument, common), below the interrupted frame,
+  from `sceKernelCheckCallback` (returns 1 if any ran) or while the thread
+  is in a `*CB` wait (`DelayThreadCB`, `WaitVblankStartCB`, sleep with
+  callbacks), after which the wait resumes with its original deadline. A
+  nonzero return deletes the callback. `sceUmdActivate`/`Deactivate` notify
+  the UMD callback with the new drive status.
 - Added `sceUtilityLoadModule`/`UnloadModule` for the PSPSDK utility module
   IDs. The libraries they load are provided by HLE at their import interface,
   so this records state only, with bad-ID, already-loaded and not-loaded

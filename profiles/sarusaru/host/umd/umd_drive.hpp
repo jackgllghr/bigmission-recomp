@@ -1,5 +1,6 @@
 #pragma once
 
+#include "kernel/early_kernel.hpp"
 #include "umd/disc_image.hpp"
 #include "psprecomp/runtime.hpp"
 
@@ -37,6 +38,8 @@ private:
     bool activated_{};
 };
 
-void register_umd(UmdDrive &drive, psprecomp::Runtime &runtime);
+// With a kernel, activation and deactivation notify the registered UMD
+// callback with the new drive status.
+void register_umd(UmdDrive &drive, psprecomp::Runtime &runtime, kernel::EarlyKernel *kernel = nullptr);
 
 } // namespace sarusaru::umd

@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
         sarusaru::kernel::InterruptManager interrupts(early_kernel);
         sarusaru::kernel::register_interrupts(interrupts, runtime);
         sarusaru::umd::UmdDrive umd_drive(disc);
-        sarusaru::umd::register_umd(umd_drive, runtime);
+        sarusaru::umd::register_umd(umd_drive, runtime, &early_kernel);
         sarusaru::io::IoManager io(disc, runtime);
         sarusaru::io::register_io(io, runtime);
         sarusaru::ctrl::Controller controller;

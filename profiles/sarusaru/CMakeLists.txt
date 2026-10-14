@@ -16,7 +16,8 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_link_libraries(sarusaru_early_kernel_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_early_kernel_tests COMMAND sarusaru_early_kernel_tests)
     add_executable(sarusaru_umd_tests
-        tests/umd_tests.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp)
+        tests/umd_tests.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp
+        host/kernel/early_kernel.cpp)
     target_include_directories(sarusaru_umd_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_umd_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_umd_tests COMMAND sarusaru_umd_tests)
@@ -53,6 +54,11 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_include_directories(sarusaru_module_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_module_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_module_tests COMMAND sarusaru_module_tests)
+    add_executable(sarusaru_callback_tests tests/callback_tests.cpp host/kernel/early_kernel.cpp
+        host/umd/disc_image.cpp host/umd/umd_drive.cpp)
+    target_include_directories(sarusaru_callback_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_callback_tests PRIVATE psprecomp_core)
+    add_test(NAME sarusaru_callback_tests COMMAND sarusaru_callback_tests)
 endif()
 
 option(SARUSARU_BUILD_BOOTSTRAP "Build the diagnostic host with locally generated AOT code" OFF)

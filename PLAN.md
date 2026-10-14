@@ -122,8 +122,9 @@ networking (`sceNet*`, 21 in total).
        list queue, control-flow walker (jump/call/return, stall, finish,
        signal), sync waits and finish/signal callbacks as GE interrupts.
        Drawing commands are recorded, not rendered.
-6. [ ] Thread callbacks: notify UMD/power/exit callbacks and run them on
-       their thread from `*CB` waits and `sceKernelCheckCallback`.
+6. [x] Thread callbacks: notified callbacks run on their thread from `*CB`
+       waits (which then resume) and `sceKernelCheckCallback`; UMD activation
+       notifies the UMD callback. Power and exit events are not generated.
 7. [~] File I/O: done for `disc0:` paths and `sce_lbn` extents (read-only,
        backed by `DiscImage`), async I/O, stat, directory listing and stdio.
        Still to come when reached: `ms0:` on a per-user host directory with

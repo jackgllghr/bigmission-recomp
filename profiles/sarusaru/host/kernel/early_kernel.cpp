@@ -211,7 +211,29 @@ void EarlyKernel::start_interrupt_call(ThreadInfo &thread) {
 }
 
 void EarlyKernel::guest_call_returned(psprecomp::AllegrexContext &context) {
-    if (!in_interrupt() || interrupt_calls_.empty()) {
+    if (!in_interrupt()) {
+        const auto current = threads_.find(current_uid_);
+        if (current == threads_.end() || !current->second.callback_saved || current->second.callback_queue.empty()) {
+            runtime_->stop("Guest call return outside a kernel-initiated call");
+            return;
+        }
+        ThreadInfo &thread = current->second;
+        // A nonzero return deletes the callback.
+        if (context.gpr[2] != 0u) (void)delete_callback(thread.callback_queue.front());
+        thread.callback_queue.pop_front();
+        if (!thread.callback_queue.empty()) {
+            start_next_callback(thread);
+            context = thread.context;
+            return;
+        }
+        context = *thread.callback_saved;
+        thread.callback_saved.reset();
+        const auto after = std::move(thread.after_callbacks);
+        thread.after_callbacks = nullptr;
+        after(context);
+        return;
+    }
+    if (interrupt_calls_.empty()) {
         runtime_->stop("Guest call return outside a kernel-initiated call");
         return;
     }
@@ -227,6 +249,86 @@ void EarlyKernel::guest_call_returned(psprecomp::AllegrexContext &context) {
     thread.state = ThreadState::Dormant;
     thread.wait_label.clear();
     run_next_ready(context, "Every early-kernel guest thread has ended or is blocked with no deadline");
+}
+
+bool EarlyKernel::has_pending_callbacks(ThreadUid owner) const noexcept {
+    return std::ranges::any_of(callbacks_, [owner](const auto &entry) {
+        return entry.second.owner == owner && entry.second.notify_count != 0u;
+    });
+}
+
+void EarlyKernel::start_callbacks(ThreadInfo &thread, const psprecomp::AllegrexContext &saved,
+                                  std::function<void(psprecomp::AllegrexContext &)> after) {
+    thread.callback_saved = saved;
+    thread.after_callbacks = std::move(after);
+    thread.callback_queue.clear();
+    for (const auto &[uid, callback] : callbacks_) {
+        if (callback.owner == thread.uid && callback.notify_count != 0u) thread.callback_queue.push_back(uid);
+    }
+    start_next_callback(thread);
+}
+
+void EarlyKernel::start_next_callback(ThreadInfo &thread) {
+    CallbackInfo &callback = callbacks_.at(thread.callback_queue.front());
+    // callback(notify count, notify argument, common), run below the interrupted frame.
+    thread.context = *thread.callback_saved;
+    thread.context.set_gpr(4u, callback.notify_count);
+    thread.context.set_gpr(5u, callback.notify_argument);
+    thread.context.set_gpr(6u, callback.common);
+    thread.context.set_gpr(29u, (thread.callback_saved->gpr[29] - 0x100u) & ~0xFu);
+    thread.context.set_gpr(31u, kGuestCallReturnStub);
+    thread.context.pc = callback.function;
+    callback.notify_count = 0u;
+    callback.notify_argument = 0u;
+}
+
+void EarlyKernel::notify_callback(std::int32_t uid, std::uint32_t argument) {
+    const auto found = callbacks_.find(uid);
+    if (found == callbacks_.end()) return;
+    ++found->second.notify_count;
+    found->second.notify_argument = argument;
+    const auto owner = threads_.find(found->second.owner);
+    if (owner == threads_.end()) return;
+    ThreadInfo &thread = owner->second;
+    std::function<void(psprecomp::AllegrexContext &)> resume;
+    if (thread.state == ThreadState::Waiting && thread.resume_wait) {
+        resume = [this, request = *thread.resume_wait](psprecomp::AllegrexContext &context) {
+            block_current(context, request);
+        };
+    } else if (thread.state == ThreadState::Sleeping && thread.resume_sleep) {
+        resume = [this](psprecomp::AllegrexContext &context) { sleep_current_thread(context, true); };
+    } else {
+        return;
+    }
+    // Interrupt the *CB wait: run the callbacks, then wait again as before.
+    thread.resume_wait.reset();
+    thread.resume_sleep = false;
+    thread.on_wake = nullptr;
+    thread.timeout_address = 0u;
+    thread.end_of = 0;
+    thread.wait_label.clear();
+    start_callbacks(thread, thread.context, std::move(resume));
+    make_ready(thread);
+}
+
+void EarlyKernel::check_callbacks(psprecomp::AllegrexContext &context) {
+    const auto current = threads_.find(current_uid_);
+    if (in_interrupt() || current == threads_.end() || !has_pending_callbacks(current_uid_)) {
+        context.set_gpr(2u, 0u);
+        return;
+    }
+    psprecomp::AllegrexContext saved = context;
+    saved.pc = context.gpr[31];
+    start_callbacks(current->second, saved, [](psprecomp::AllegrexContext &resumed) { resumed.set_gpr(2u, 1u); });
+    context = current->second.context;
+}
+
+std::int32_t EarlyKernel::delete_callback(std::int32_t uid) {
+    if (callbacks_.erase(uid) == 0u) return static_cast<std::int32_t>(kUnknownCallback);
+    if (exit_callback_uid_ == uid) exit_callback_uid_ = 0;
+    if (umd_callback_uid_ == uid) umd_callback_uid_ = 0;
+    for (auto &slot : power_callback_slots_) if (slot == uid) slot = 0;
+    return 0;
 }
 
 bool EarlyKernel::refuse_wait_in_interrupt(psprecomp::AllegrexContext &context) {
@@ -536,6 +638,15 @@ void EarlyKernel::block_current(psprecomp::AllegrexContext &context, WaitRequest
     }
     ThreadInfo &thread = current->second;
     save_blocked_context(thread, context, 0u);
+    if (request.callbacks && has_pending_callbacks(current_uid_)) {
+        start_callbacks(thread, thread.context, [this, request](psprecomp::AllegrexContext &resumed) {
+            block_current(resumed, request);
+        });
+        context = thread.context;
+        return;
+    }
+    thread.resume_wait.reset();
+    if (request.callbacks) thread.resume_wait = request;
     thread.state = ThreadState::Waiting;
     thread.wake_at_us = request.deadline_us;
     thread.wait_sequence = next_ready_sequence_++;
@@ -575,7 +686,7 @@ void EarlyKernel::return_with_preemption(psprecomp::AllegrexContext &context, st
     context.set_gpr(2u, result);
 }
 
-void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context) {
+void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context, bool callbacks) {
     if (refuse_wait_in_interrupt(context)) return;
     const auto current = threads_.find(current_uid_);
     if (current == threads_.end()) {
@@ -589,6 +700,14 @@ void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context) {
         return;
     }
     save_blocked_context(thread, context, 0u);
+    if (callbacks && has_pending_callbacks(current_uid_)) {
+        start_callbacks(thread, thread.context, [this](psprecomp::AllegrexContext &resumed) {
+            sleep_current_thread(resumed, true);
+        });
+        context = thread.context;
+        return;
+    }
+    thread.resume_sleep = callbacks;
     thread.state = ThreadState::Sleeping;
     run_next_ready(context, "Every early-kernel guest thread has ended or is blocked with no deadline");
 }
@@ -598,9 +717,9 @@ void EarlyKernel::wait_current_until(psprecomp::AllegrexContext &context, std::u
     block_current(context, WaitRequest{"timed wait", deadline_us, 0u, std::move(on_wake), 0});
 }
 
-void EarlyKernel::delay_current_thread(psprecomp::AllegrexContext &context, std::uint32_t micros) {
+void EarlyKernel::delay_current_thread(psprecomp::AllegrexContext &context, std::uint32_t micros, bool callbacks) {
     // A zero delay still yields to every other ready thread.
-    wait_current_until(context, now_us_ + micros, nullptr);
+    block_current(context, WaitRequest{"delay", now_us_ + micros, 0u, nullptr, 0, callbacks});
 }
 
 std::int32_t EarlyKernel::wakeup_thread(psprecomp::AllegrexContext &context, ThreadUid uid) {
@@ -728,10 +847,14 @@ void register_early_threadman(EarlyKernel &kernel, psprecomp::Runtime &runtime) 
         });
     runtime.register_hle("ThreadManForUser", 0xCEADEB47u,  // sceKernelDelayThread
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.delay_current_thread(ctx, ctx.gpr[4]); });
-    // No callback notification is ever generated yet, so the CB variant has
-    // nothing extra to process.
     runtime.register_hle("ThreadManForUser", 0x68DA9E36u,  // sceKernelDelayThreadCB
-        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.delay_current_thread(ctx, ctx.gpr[4]); });
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.delay_current_thread(ctx, ctx.gpr[4], true); });
+    runtime.register_hle("ThreadManForUser", 0x349D6D6Cu,  // sceKernelCheckCallback
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.check_callbacks(ctx); });
+    runtime.register_hle("ThreadManForUser", 0xEDBA5844u,  // sceKernelDeleteCallback
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.delete_callback(static_cast<std::int32_t>(ctx.gpr[4]))));
+        });
     runtime.register_hle("ThreadManForUser", 0xD59EAD2Fu,
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
             const auto caller = kernel.current_uid();

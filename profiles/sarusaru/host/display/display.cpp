@@ -104,8 +104,10 @@ void register_display(Display &display, kernel::EarlyKernel &kernel, psprecomp::
         kernel.wait_current_until(ctx, Display::next_vblank_start_us(kernel.now_us()), nullptr);
     };
     runtime.register_hle("sceDisplay", 0x984C27E7u, wait_vblank_start);  // sceDisplayWaitVblankStart
-    // No callback notification is generated yet; see EarlyKernel.
-    runtime.register_hle("sceDisplay", 0x46F186C3u, wait_vblank_start);  // sceDisplayWaitVblankStartCB
+    runtime.register_hle("sceDisplay", 0x46F186C3u,  // sceDisplayWaitVblankStartCB
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            kernel.block_current(ctx, {"vblank", Display::next_vblank_start_us(kernel.now_us()), 0u, nullptr, 0, true});
+        });
     runtime.register_hle("sceDisplay", 0x36CDFADEu,  // sceDisplayWaitVblank: returns at once inside vblank
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
             if (Display::in_vblank(kernel.now_us())) { ctx.set_gpr(2u, 0u); return; }
