@@ -13,6 +13,7 @@
 #include "ge/ge.hpp"
 #include "game/frame_rate.hpp"
 #include "game/gameplay_camera.hpp"
+#include "game/intro_logos.hpp"
 #include "io/io_manager.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
@@ -44,6 +45,7 @@ struct SessionOptions {
     // Watches for the gameplay cameras (game/gameplay_camera.hpp), for
     // overrides that leave menus and cutscenes native.
     bool track_gameplay_camera{false};
+    bool skip_intro_logos{false};
     // The game module to load; empty finds it (find_game_module()).
     std::filesystem::path game_module;
 };
@@ -57,6 +59,8 @@ public:
     // Without a prepared executable, the one on the verified disc is used.
     GameSession(const std::filesystem::path &iso, const SessionOptions &options);
     GameSession(const std::filesystem::path &executable, const std::filesystem::path &iso, const SessionOptions &options);
+
+    ~GameSession();
 
     // Runs the game from its entry point until it stops or `dispatch_limit` is reached.
     void run(std::uint64_t dispatch_limit);
@@ -84,6 +88,7 @@ public:
     display::Display display;
     game::FrameRateOverride frame_rate;
     game::GameplayCamera gameplay_camera{display};
+    game::IntroLogos intro_logos;
     ge::Ge ge{kernel};
     rtc::Rtc rtc{kernel, rtc::Rtc::host_boot_local_unix_us()};
     modules::UtilityModules utility_modules;
@@ -96,6 +101,10 @@ public:
 
 private:
     bool install_kernel();
+    bool track_gameplay_camera_{};
+    static GameSession *observed_session_;
+    static void observe_call(psprecomp::Runtime &, psprecomp::AllegrexContext &, std::uint32_t, std::uint32_t);
+    static void observe_dispatch(psprecomp::Runtime &, psprecomp::AllegrexContext &, std::uint32_t, std::int32_t);
     std::string module_name_;
     std::uint32_t entry_{};
 };

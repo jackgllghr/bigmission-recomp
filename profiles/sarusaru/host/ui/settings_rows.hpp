@@ -19,7 +19,7 @@ enum class SettingRow {
     InternalResolution, Textures, FrameInterpolation, FrameRateCap, Fov, GameFrameRate,
     CelShading, Fullscreen, WindowSize,
     DeadZone,
-    Language, GameText, ConfirmButton,
+    Language, GameText, ConfirmButton, SkipIntroLogos,
 };
 
 struct SettingsTab {

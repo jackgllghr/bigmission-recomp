@@ -71,6 +71,29 @@ static void chained_switch_context(psprecomp::Runtime &, psprecomp::AllegrexCont
     ctx.pc = 0x08804120u;
 }
 
+static void test_chain_observer_lifetime() {
+    static unsigned calls = 0u;
+    const auto observer = +[](psprecomp::Runtime &, psprecomp::AllegrexContext &, std::uint32_t, std::uint32_t) { ++calls; };
+    psprecomp::set_runtime_pre_chained_call_hook(observer);
+    require(psprecomp::g_runtime_chain_observers_active, "pre-call observer did not enable instrumentation");
+    psprecomp::Runtime runtime;
+    runtime.register_function(0x08804100u, &chained_same_context, "recomp_unit_observed");
+    psprecomp::AllegrexContext ctx{};
+    ctx.pc = 0x08804100u;
+    require(runtime.invoke_chained_call(ctx) && calls == 1u, "pre-call hook did not observe a dynamic guest call");
+    psprecomp::set_runtime_post_chained_call_hook(observer);
+    psprecomp::set_runtime_pre_chained_call_hook(nullptr);
+    require(psprecomp::g_runtime_chain_observers_active, "removing pre-call hook disabled an active post-call hook");
+    psprecomp::set_runtime_post_chained_call_hook(nullptr);
+    require(!psprecomp::g_runtime_chain_observers_active, "last observer removal did not restore direct chaining");
+    psprecomp::set_runtime_post_chained_call_hook(observer);
+    psprecomp::set_runtime_pre_chained_call_hook(observer);
+    psprecomp::set_runtime_post_chained_call_hook(nullptr);
+    require(psprecomp::g_runtime_chain_observers_active, "removing post-call hook disabled an active pre-call hook");
+    psprecomp::set_runtime_pre_chained_call_hook(nullptr);
+    require(!psprecomp::g_runtime_chain_observers_active, "pre-call hook removal left instrumentation active");
+}
+
 static void test_chained_call_context_guard() {
     psprecomp::Runtime runtime;
     runtime.register_function(0x08804100u, &chained_same_context, "recomp_unit_chain_same");
@@ -872,6 +895,7 @@ static std::vector<std::uint8_t> make_relocation_test_prx() {
 
 int main() {
     try {
+        test_chain_observer_lifetime();
         test_import_return_context_guard();
         test_chained_call_context_guard();
         test_nested_direct_chain_context_guard();

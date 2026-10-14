@@ -113,6 +113,9 @@ X(DescWindowSize, "The window's size when the game starts. It can still be resiz
 X(RowDeadZone, "Stick dead zone", "スティックのデッドゾーン")
 X(DescDeadZone, "How far a stick must move before the game sees it. Raise it if a worn stick drifts.",
   "スティックをどれだけ倒すと反応するかを決めます。スティックが勝手に動く場合は上げてください。")
+X(RowSkipIntroLogos, "Skip intro logos", "起動時のロゴをスキップ")
+X(DescSkipIntroLogos, "Skip the opening logos automatically. You can also press the game’s Start button during the logos (Enter by default on keyboard).",
+  "起動時のロゴを自動でスキップします。ロゴの表示中にゲームのSTARTボタン（キーボードの初期設定はEnter）を押してもスキップできます。")
 X(RowConfirm, "Confirm button", "決定ボタン")
 X(ValueSouth, "South", "下")
 X(ValueEast, "East", "右")

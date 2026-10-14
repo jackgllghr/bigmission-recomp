@@ -99,7 +99,9 @@ std::uint32_t Controller::write_samples(psprecomp::GuestMemory &memory, std::uin
         const std::uint32_t sample = address + i * kSampleSize;
         memory.store32(sample, static_cast<std::uint32_t>(sample_time_us(index)));
         const Pad pad = pad_at(sample_time_us(index));
-        memory.store32(sample + 4u, pad.buttons);
+        // Older buffered samples must not release a shortcut consumed now.
+        if (sample_time_us(index) >= consumed_since_us_) consumed_buttons_ &= pad.buttons;
+        memory.store32(sample + 4u, pad.buttons & ~consumed_buttons_);
         // Digital mode reports the analog stick centred.
         memory.store8(sample + 8u, mode_ == 1u ? pad.lx : 0x80u);
         memory.store8(sample + 9u, mode_ == 1u ? pad.ly : 0x80u);

@@ -385,6 +385,14 @@ game's own visibility culling still uses the native view, so with a wider FOV
 objects just outside it can appear late at the screen edges. See
 [`docs/settings-investigation.md`](docs/settings-investigation.md).
 
+**Settings → Interface → Skip intro logos** skips the opening logos automatically
+(default Off). The equivalent setting is `skip_intro_logos = 1` under `[game]`.
+Press the game's **Start** button during the logos to skip them for this launch
+(Enter on the default keyboard bindings, or the controller's Start/Menu button).
+The press is consumed until release, so holding Start does not also activate the
+title screen. Logo resources still initialise and clean up normally; the title
+movie, autosave notice, menus and later cutscenes keep their normal behavior.
+
 `window_width`/`window_height` set the window's size at startup in points
 (default 960x544, twice the PSP's screen); the window stays resizable and the
 picture is letterboxed at the PSP's aspect ratio. `fullscreen = 1` opens
