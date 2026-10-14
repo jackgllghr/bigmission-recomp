@@ -286,6 +286,43 @@ void collect_relocated_data_code_pointers(const Elf32Image &elf,
     }
 }
 
+// A pointer built as LUI + ADDIU/ORI can keep its upper half in a callee-saved
+// register far from where the lower half is added, beyond what constant
+// propagation sees. The module's relocations pair the halves exactly: like the
+// loader, take each LO16 with the HI16 before it for the same segments and
+// read both after relocation. Loads and stores carry data addresses, so only
+// address-forming LO16 sites are considered.
+void collect_relocated_hi_lo_code_pointers(const Elf32Image &elf,
+                                           const GuestMemory &memory,
+                                           std::uint32_t load_base,
+                                           const std::vector<ExecutableRange> &ranges,
+                                           std::map<std::uint32_t, std::string> &seeds) {
+    constexpr std::uint32_t kRelocationHi16 = 5u;
+    constexpr std::uint32_t kRelocationLo16 = 6u;
+    constexpr std::uint32_t kOpcodeAddiu = 0x09u;
+    constexpr std::uint32_t kOpcodeOri = 0x0Du;
+    std::map<std::uint32_t, std::uint32_t> last_hi_by_segments;
+    for (const auto &site : elf.relocation_sites(load_base)) {
+        const std::uint32_t segments = site.patch_segment | (site.target_segment << 8u);
+        if (site.type == kRelocationHi16) {
+            last_hi_by_segments[segments] = site.patch_address;
+            continue;
+        }
+        if (site.type != kRelocationLo16) continue;
+        const auto hi = last_hi_by_segments.find(segments);
+        if (hi == last_hi_by_segments.end() || !memory.contains(hi->second, 4u) ||
+            !memory.contains(site.patch_address, 4u))
+            continue;
+        const std::uint32_t low_word = memory.load32(site.patch_address);
+        const std::uint32_t opcode = low_word >> 26u;
+        if (opcode != kOpcodeAddiu && opcode != kOpcodeOri) continue;
+        const auto low = static_cast<std::int16_t>(low_word & 0xFFFFu);
+        const std::uint32_t value = ((memory.load32(hi->second) & 0xFFFFu) << 16u) +
+                                    static_cast<std::uint32_t>(static_cast<std::int32_t>(low));
+        if ((value & 3u) == 0u) add_seed(seeds, ranges, value, "relocated_hi_lo_code_pointer");
+    }
+}
+
 std::map<std::uint32_t, std::string> collect_initial_seeds(const Elf32Image &elf,
                                                            const GuestMemory &memory,
                                                            std::uint32_t load_base,
@@ -303,6 +340,7 @@ std::map<std::uint32_t, std::string> collect_initial_seeds(const Elf32Image &elf
     }
     collect_materialized_code_pointers(memory, ranges, seeds);
     collect_relocated_data_code_pointers(elf, memory, load_base, ranges, seeds);
+    collect_relocated_hi_lo_code_pointers(elf, memory, load_base, ranges, seeds);
     // R_MIPS_32 relocations are the authoritative source for function pointers
     // stored in read-only tables embedded in the executable segment (init arrays,
     // vtables, callbacks). Scanning raw RX words would confuse J opcodes with pointers.

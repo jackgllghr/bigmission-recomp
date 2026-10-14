@@ -743,6 +743,77 @@ static void test_automatic_cross_unit_tail_chaining() {
 #endif
 }
 
+// A PRX whose callback pointer is split: the HI16 half is loaded into $fp in
+// one block and the LO16 half added in another, after a return.
+static std::vector<std::uint8_t> make_hi_lo_pointer_test_prx() {
+    std::vector<std::uint8_t> bytes(0x1D8u, 0u);
+    bytes[0] = 0x7Fu; bytes[1] = 'E'; bytes[2] = 'L'; bytes[3] = 'F';
+    bytes[4] = 1u; bytes[5] = 1u; bytes[6] = 1u;
+    put16(bytes, 16u, psprecomp::kElfTypePspPrx);
+    put16(bytes, 18u, 8u);
+    put32(bytes, 20u, 1u);
+    put32(bytes, 28u, 52u);
+    put32(bytes, 32u, 0x160u);
+    put16(bytes, 40u, 52u);
+    put16(bytes, 42u, 32u);
+    put16(bytes, 44u, 1u);
+    put16(bytes, 46u, 40u);
+    put16(bytes, 48u, 3u);
+
+    put32(bytes, 52u, 1u);       // PT_LOAD, R+X
+    put32(bytes, 56u, 0x100u);
+    put32(bytes, 68u, 0x40u);
+    put32(bytes, 72u, 0x40u);
+    put32(bytes, 76u, 5u);
+    put32(bytes, 80u, 16u);
+
+    const std::uint32_t code[] = {
+        0x3C1E0000u, // 0x00 lui   fp, %hi(callback)    R_MIPS_HI16
+        0x00000000u, // 0x04 nop
+        0x03E00008u, // 0x08 jr    ra
+        0x00000000u, // 0x0C nop
+        0x27C50030u, // 0x10 addiu a1, fp, %lo(callback) R_MIPS_LO16
+        0x03E00008u, // 0x14 jr    ra
+        0x00000000u, // 0x18 nop
+        0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u,
+        0x24020007u, // 0x30 callback: addiu v0, zero, 7
+        0x03E00008u, // 0x34 jr    ra
+        0x00000000u, // 0x38 nop
+        0x00000000u,
+    };
+    for (std::size_t i = 0; i < std::size(code); ++i) put32(bytes, 0x100u + i * 4u, code[i]);
+    put32(bytes, 0x140u, 0x00u);
+    put32(bytes, 0x144u, 5u);
+    put32(bytes, 0x148u, 0x10u);
+    put32(bytes, 0x14Cu, 6u);
+
+    const std::size_t sh1 = 0x160u + 40u;
+    put32(bytes, sh1 + 4u, 1u);
+    put32(bytes, sh1 + 8u, 6u);
+    put32(bytes, sh1 + 16u, 0x100u);
+    put32(bytes, sh1 + 20u, 0x40u);
+    put32(bytes, sh1 + 32u, 4u);
+    const std::size_t sh2 = 0x160u + 80u;
+    put32(bytes, sh2 + 4u, psprecomp::kSectionTypePspRel);
+    put32(bytes, sh2 + 16u, 0x140u);
+    put32(bytes, sh2 + 20u, 16u);
+    put32(bytes, sh2 + 28u, 1u);
+    put32(bytes, sh2 + 32u, 4u);
+    put32(bytes, sh2 + 36u, 8u);
+    return bytes;
+}
+
+static void test_relocated_hi_lo_pointer_discovery() {
+    auto elf = psprecomp::Elf32Image::from_bytes(make_hi_lo_pointer_test_prx(), "hi_lo_pointer.prx");
+    psprecomp::GuestMemory memory;
+    const auto stats = elf.load_and_relocate(memory, psprecomp::kDefaultPspUserLoadBase);
+    require(stats.r_mips_hi16 == 1u && stats.r_mips_lo16 == 1u && stats.invalid == 0u, "HI16/LO16 fixture did not relocate");
+    const auto program = psprecomp::analyze_program(elf, memory, psprecomp::kDefaultPspUserLoadBase);
+    const auto it = program.seeds.find(0x08804030u);
+    require(it != program.seeds.end() && it->second == "relocated_hi_lo_code_pointer",
+            "Split HI16/LO16 code pointer was not discovered");
+}
+
 static std::vector<std::uint8_t> make_relocation_test_prx() {
     std::vector<std::uint8_t> bytes(0x1B8u, 0u);
     bytes[0] = 0x7Fu; bytes[1] = 'E'; bytes[2] = 'L'; bytes[3] = 'F';
@@ -1716,6 +1787,7 @@ int main() {
         test_automatic_cfg_and_codegen();
         test_automatic_cross_unit_tail_chaining();
         test_materialized_function_pointer_discovery();
+        test_relocated_hi_lo_pointer_discovery();
 
         auto relocation_elf = psprecomp::Elf32Image::from_bytes(make_relocation_test_prx(), "synthetic_relocation.prx");
         psprecomp::GuestMemory relocation_memory;
