@@ -17,6 +17,12 @@ the intro, main menu, name entry, save/load dialogs and Options screen.
 Gameplay and other screens retain Japanese. See [`docs/english-main-menu.md`](docs/english-main-menu.md)
 for building the pack and selecting it with `--translation-pack FILE` or settings.
 
+For external translation, `tools/extract_translation_labels.py export` creates
+local UTF-8 CSV/JSON files with character, level and area context. Structured
+labels and unresolved text candidates are separate. See
+[`docs/translation-handoff.md`](docs/translation-handoff.md) for editing,
+validation and the remaining context gaps.
+
 ## Requirements
 
 - Apple Silicon Mac and Xcode command-line tools (`xcode-select --install`).

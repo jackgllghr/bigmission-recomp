@@ -108,6 +108,15 @@ dialog strings and prepared glyph-line replacement;
 documented in [`profiles/sarusaru/docs/english-main-menu.md`](profiles/sarusaru/docs/english-main-menu.md).
 Larger string allocation, general font/layout support and full-game translation remain unimplemented.
 
+Local authoring extraction now exports 232 contextual executable labels (entity,
+character, facility, level, mission, area and menu text) to UTF-8 CSV/JSON, plus
+a separate unresolved-candidate queue. Keys retain table identities and context
+evidence; conflicting area associations are explicit. Translator edits survive
+re-export and placeholder/source validation is available. See
+[`profiles/sarusaru/docs/translation-handoff.md`](profiles/sarusaru/docs/translation-handoff.md).
+Gameplay context confirmation, custom message/script decoding, image transcription
+and runtime import of these additional translations remain to do.
+
 ### 7. Distribution and verification
 
 Reproducible builds, synthetic public regression fixtures, real-device smoke
