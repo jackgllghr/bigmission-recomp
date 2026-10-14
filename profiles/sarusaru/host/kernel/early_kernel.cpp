@@ -43,6 +43,7 @@ void EarlyKernel::install(psprecomp::Runtime &runtime, std::uint32_t user_memory
     callbacks_.clear();
     exit_callback_uid_ = 0;
     power_callback_slots_.fill(0);
+    umd_callback_uid_ = 0;
     interrupts_enabled_ = true;
     free_ranges_ = {{start, next_stack_top_ - start}};
     next_uid_ = 0x100;
@@ -85,6 +86,24 @@ void EarlyKernel::switch_to(psprecomp::AllegrexContext &context, ThreadUid uid, 
     current_uid_ = uid;
     context = thread.context;
     psprecomp::set_runtime_thread_identity(uid, thread.name);
+}
+
+void EarlyKernel::save_blocked_context(ThreadInfo &thread, const psprecomp::AllegrexContext &context,
+                                       std::uint32_t result) noexcept {
+    // Inside an import the PC is still the import stub; resume after the call.
+    thread.context = context;
+    thread.context.pc = context.gpr[31];
+    thread.context.set_gpr(2u, result);
+}
+
+void EarlyKernel::run_next_ready(psprecomp::AllegrexContext &context, const char *idle_reason) {
+    if (ThreadInfo *next = best_ready_thread(); next != nullptr) {
+        switch_to(context, next->uid, *next);
+        return;
+    }
+    current_uid_ = 0;
+    psprecomp::set_runtime_thread_identity(-1, "idle");
+    runtime_->stop(idle_reason);
 }
 
 void EarlyKernel::prepare_thread_stack(ThreadInfo &thread) {
@@ -232,6 +251,12 @@ std::int32_t EarlyKernel::register_power_callback(std::int32_t slot, std::int32_
     return 0;
 }
 
+std::int32_t EarlyKernel::register_umd_callback(std::int32_t callback_uid) {
+    if (!callbacks_.contains(callback_uid)) return static_cast<std::int32_t>(kIllegalArgument);
+    umd_callback_uid_ = callback_uid;
+    return 0;
+}
+
 std::uint32_t EarlyKernel::suspend_interrupts() noexcept {
     const std::uint32_t previous = interrupts_enabled_ ? 1u : 0u;
     interrupts_enabled_ = false;
@@ -267,7 +292,7 @@ std::int32_t EarlyKernel::start_thread(psprecomp::AllegrexContext &context, Thre
     make_ready(thread);
     const auto current = threads_.find(current_uid_);
     if (current != threads_.end() && thread.priority < current->second.priority) {
-        current->second.context = context;
+        save_blocked_context(current->second, context, 0u);
         make_ready(current->second);
         switch_to(context, uid, thread);
     } else {
@@ -283,17 +308,46 @@ void EarlyKernel::exit_current_thread(psprecomp::AllegrexContext &context) {
         return;
     }
     current->second.state = ThreadState::Exited;
-    if (ThreadInfo *next = best_ready_thread(); next != nullptr) {
-        for (auto &[uid, candidate] : threads_) {
-            if (&candidate == next) {
-                switch_to(context, uid, candidate);
-                return;
-            }
-        }
+    run_next_ready(context, "All early-kernel guest threads exited; waits and scheduler idle are not implemented");
+}
+
+void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context) {
+    const auto current = threads_.find(current_uid_);
+    if (current == threads_.end()) {
+        runtime_->stop("Thread sleep with no current early-kernel thread");
+        return;
     }
-    current_uid_ = 0;
-    psprecomp::set_runtime_thread_identity(-1, "idle");
-    runtime_->stop("All early-kernel guest threads exited; waits and scheduler idle are not implemented");
+    ThreadInfo &thread = current->second;
+    if (thread.wakeup_count != 0u) {
+        --thread.wakeup_count;
+        context.set_gpr(2u, 0u);
+        return;
+    }
+    save_blocked_context(thread, context, 0u);
+    thread.state = ThreadState::Sleeping;
+    run_next_ready(context, "Every early-kernel guest thread is sleeping or exited; "
+                            "interrupts, timers and scheduler idle are not implemented");
+}
+
+std::int32_t EarlyKernel::wakeup_thread(psprecomp::AllegrexContext &context, ThreadUid uid) {
+    if (uid == 0) uid = current_uid_;
+    const auto found = threads_.find(uid);
+    if (found == threads_.end()) return static_cast<std::int32_t>(kUnknownThread);
+    ThreadInfo &thread = found->second;
+    if (thread.state == ThreadState::Dormant || thread.state == ThreadState::Exited)
+        return static_cast<std::int32_t>(kDormant);
+    if (thread.state != ThreadState::Sleeping) {
+        ++thread.wakeup_count;
+        return 0;
+    }
+    make_ready(thread);
+    const auto current = threads_.find(current_uid_);
+    if (current != threads_.end() && thread.priority < current->second.priority) {
+        save_blocked_context(current->second, context, 0u);
+        make_ready(current->second);
+        switch_to(context, uid, thread);
+    }
+    return 0;
 }
 
 const EarlyKernel::ThreadInfo *EarlyKernel::thread(ThreadUid uid) const noexcept {
@@ -316,8 +370,9 @@ void register_early_threadman(EarlyKernel &kernel, psprecomp::Runtime &runtime) 
         });
     runtime.register_hle("ThreadManForUser", 0xF475845Du,
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            const auto caller = kernel.current_uid();
             const auto result = kernel.start_thread(ctx, static_cast<ThreadUid>(ctx.gpr[4]), ctx.gpr[5], ctx.gpr[6]);
-            if (result != 0 || ctx.pc == ctx.gpr[31]) ctx.set_gpr(2u, static_cast<std::uint32_t>(result));
+            if (kernel.current_uid() == caller) ctx.set_gpr(2u, static_cast<std::uint32_t>(result));
         });
     runtime.register_hle("SysMemUserForUser", 0x237DBD4Fu,
         [&kernel](psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx) {
@@ -350,6 +405,18 @@ void register_early_threadman(EarlyKernel &kernel, psprecomp::Runtime &runtime) 
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
             ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.register_power_callback(
                 static_cast<std::int32_t>(ctx.gpr[4]), static_cast<std::int32_t>(ctx.gpr[5]))));
+        });
+    runtime.register_hle("ThreadManForUser", 0x9ACE131Eu,
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.sleep_current_thread(ctx); });
+    runtime.register_hle("ThreadManForUser", 0xD59EAD2Fu,
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            const auto caller = kernel.current_uid();
+            const auto result = kernel.wakeup_thread(ctx, static_cast<ThreadUid>(ctx.gpr[4]));
+            if (kernel.current_uid() == caller) ctx.set_gpr(2u, static_cast<std::uint32_t>(result));
+        });
+    runtime.register_hle("sceUmdUser", 0xAEE7404Du,
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.register_umd_callback(static_cast<std::int32_t>(ctx.gpr[4]))));
         });
     runtime.register_hle("Kernel_Library", 0x092968F4u,
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {

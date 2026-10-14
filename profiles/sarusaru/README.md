@@ -87,10 +87,10 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   first partition allocation (`UserSbrk`, type 3, 0x01300000 bytes, aligned to
   0x1000 at 0x08AAA000). PSP control-block initialization (`$k0`) and bootstrap
   stack reservation have been verified; they resolve the earlier guest fault.
-  Interrupt-mask state is modeled. Startup currently stops at unknown
-  `ThreadManForUser` NID `0x9ACE131E`. It is
-  deliberately unbound until its public PSP contract is identified. Thread
-  waits, delays and synchronization remain unimplemented.
+  Interrupt-mask state, thread sleep/wakeup (`0x9ACE131E`/`0xD59EAD2F`, per
+  the public PSPSDK stubs) and UMD callback registration are modeled. Startup
+  currently stops at `sceUmdUser::sceUmdCheckMedium`; no disc layer exists yet.
+  Delays, timed waits and synchronization objects remain unimplemented.
 - All seven CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
@@ -115,8 +115,11 @@ The pinned upstream is recorded in `config/supported_game.json`.
 - Extended the early kernel with deterministic ready-thread handoff, thread
   control-block initialization, bounded partition allocation/free, callback and
   exit-callback creation/registration, power-callback slot registration, and
-  interrupt-mask state. It does **not** deliver callbacks, power events or
-  guest interrupts.
+  interrupt-mask state, sleep/wakeup with priority preemption and UMD callback
+  registration. A thread blocked inside an import resumes at its return address
+  (previously a preempted `sceKernelStartThread` caller would have re-entered
+  the import stub). If every thread sleeps, execution stops explicitly. It does
+  **not** deliver callbacks, power/UMD events or guest interrupts.
 - Preserved checked VFPU scalar access for invalid register encodings instead
   of emitting uncompilable compile-time template operands.
 - Used normal runtime dispatch for direct targets outside the generated entry

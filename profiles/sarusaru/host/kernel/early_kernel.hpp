@@ -23,12 +23,15 @@ inline constexpr std::uint32_t kThreadExitStub = 0x08800000u;
 inline constexpr std::uint32_t kPowerInvalidCallback = 0x80000100u;
 inline constexpr std::uint32_t kPowerInvalidSlot = 0x80000102u;
 inline constexpr std::uint32_t kPowerSlotsFull = 0x80000022u;
+inline constexpr std::uint32_t kUnknownThread = 0x80020198u;
+inline constexpr std::uint32_t kDormant = 0x800201A2u;
 
-// Thread construction and stack ownership required before scheduling exists.
-// The module deliberately does not claim to run, delay, or synchronize threads.
+// Thread construction, stack ownership and cooperative scheduling: priority
+// preemption on start/wakeup, sleep/wakeup and exit. Delays, timed waits and
+// synchronization objects are deliberately not modeled yet.
 class EarlyKernel {
 public:
-    enum class ThreadState { Dormant, Ready, Running, Exited };
+    enum class ThreadState { Dormant, Ready, Running, Sleeping, Exited };
     void install(psprecomp::Runtime &runtime, std::uint32_t user_memory_start, std::uint32_t user_memory_top);
     void begin_main_thread(psprecomp::AllegrexContext &context, std::string name,
                            std::uint32_t priority);
@@ -39,6 +42,9 @@ public:
     [[nodiscard]] std::int32_t start_thread(psprecomp::AllegrexContext &context, ThreadUid uid,
                                             std::uint32_t argument_size, std::uint32_t argument_address);
     void exit_current_thread(psprecomp::AllegrexContext &context);
+    // Called from inside an import: a blocked caller resumes at its return address.
+    void sleep_current_thread(psprecomp::AllegrexContext &context);
+    [[nodiscard]] std::int32_t wakeup_thread(psprecomp::AllegrexContext &context, ThreadUid uid);
     [[nodiscard]] std::int32_t allocate_partition_memory(const std::string &name, std::uint32_t type,
                                                          std::uint32_t size, std::uint32_t address_or_alignment);
     [[nodiscard]] std::int32_t free_partition_memory(std::int32_t uid);
@@ -57,6 +63,7 @@ public:
         psprecomp::AllegrexContext context{};
         ThreadState state{ThreadState::Dormant};
         std::uint64_t ready_sequence{};
+        std::uint32_t wakeup_count{};
     };
     [[nodiscard]] const ThreadInfo *thread(ThreadUid uid) const noexcept;
     [[nodiscard]] ThreadUid current_uid() const noexcept { return current_uid_; }
@@ -72,6 +79,8 @@ public:
     [[nodiscard]] const CallbackInfo *callback(std::int32_t uid) const noexcept;
     [[nodiscard]] std::int32_t register_exit_callback(std::int32_t uid);
     [[nodiscard]] std::int32_t register_power_callback(std::int32_t slot, std::int32_t callback_uid);
+    [[nodiscard]] std::int32_t register_umd_callback(std::int32_t callback_uid);
+    [[nodiscard]] std::int32_t umd_callback() const noexcept { return umd_callback_uid_; }
     [[nodiscard]] bool interrupts_enabled() const noexcept { return interrupts_enabled_; }
     [[nodiscard]] std::uint32_t suspend_interrupts() noexcept;
     void resume_interrupts(bool enabled) noexcept { interrupts_enabled_ = enabled; }
@@ -91,11 +100,15 @@ private:
     std::map<std::int32_t, CallbackInfo> callbacks_;
     std::int32_t exit_callback_uid_{};
     std::array<std::int32_t, 16> power_callback_slots_{};
+    std::int32_t umd_callback_uid_{};
     bool interrupts_enabled_{true};
 
     void make_ready(ThreadInfo &thread) noexcept;
     [[nodiscard]] ThreadInfo *best_ready_thread() noexcept;
     void switch_to(psprecomp::AllegrexContext &context, ThreadUid uid, ThreadInfo &thread);
+    void save_blocked_context(ThreadInfo &thread, const psprecomp::AllegrexContext &context,
+                              std::uint32_t result) noexcept;
+    void run_next_ready(psprecomp::AllegrexContext &context, const char *idle_reason);
     void prepare_thread_stack(ThreadInfo &thread);
     [[nodiscard]] std::int32_t allocate_block(const std::string &name, std::uint32_t type,
                                               std::uint32_t size, std::uint32_t address_or_alignment);

@@ -41,6 +41,7 @@ int main() {
     cpu.pc = 0x08804444u;
     cpu.set_gpr(28u, 0x08801234u);
     kernel.begin_main_thread(cpu, "main", 0x30u);
+    const auto main_uid = kernel.current_uid();
     require(kernel.start_thread(cpu, uid, 3u, name_address) == 0, "thread start failed");
     thread = kernel.thread(uid);
     require(thread->state == sarusaru::kernel::EarlyKernel::ThreadState::Running && cpu.pc == 0x08805000u,
@@ -54,7 +55,8 @@ int main() {
     cpu.set_gpr(4u, name_address); cpu.set_gpr(5u, 0x08807000u); cpu.set_gpr(6u, 0x21u);
     cpu.set_gpr(7u, 0x400u); cpu.set_gpr(8u, 0u); cpu.set_gpr(28u, 0x08801234u);
     runtime.invoke_import("ThreadManForUser", 0x446D8DE6u, cpu);
-    thread = kernel.thread(static_cast<sarusaru::kernel::ThreadUid>(cpu.gpr[2]));
+    const auto guest_uid = static_cast<sarusaru::kernel::ThreadUid>(cpu.gpr[2]);
+    thread = kernel.thread(guest_uid);
     require(!runtime.stopped() && thread != nullptr && thread->name == "guest", "HLE thread creation failed");
 
     const auto callback_uid = kernel.create_callback("exit", 0x08809000u, 0xCAFEBABEu);
@@ -76,6 +78,9 @@ int main() {
             "invalid power callback slot accepted");
     require(static_cast<std::uint32_t>(kernel.register_power_callback(-1, 999)) == sarusaru::kernel::kPowerInvalidCallback,
             "unknown power callback accepted");
+    require(static_cast<std::uint32_t>(kernel.register_umd_callback(999)) == sarusaru::kernel::kIllegalArgument &&
+                kernel.register_umd_callback(callback_uid) == 0 && kernel.umd_callback() == callback_uid,
+            "UMD callback registration incorrect");
     require(kernel.interrupts_enabled() && kernel.suspend_interrupts() == 1u && !kernel.interrupts_enabled(),
             "interrupt suspend state incorrect");
     require(kernel.suspend_interrupts() == 0u, "nested interrupt suspend state incorrect");
@@ -91,5 +96,38 @@ int main() {
     require(!runtime.stopped() && thread != nullptr && thread->state == sarusaru::kernel::EarlyKernel::ThreadState::Running &&
                 cpu.pc == 0x08808000u,
             "thread exit did not schedule ready worker");
+
+    // Sleeping inside an import hands over to the ready main thread; the
+    // sleeper later resumes at its return address, not the import stub.
+    using State = sarusaru::kernel::EarlyKernel::ThreadState;
+    cpu.pc = 0x08808040u;
+    cpu.set_gpr(31u, 0x08808100u);
+    kernel.sleep_current_thread(cpu);
+    require(!runtime.stopped() && kernel.current_uid() == main_uid && kernel.thread(next_uid)->state == State::Sleeping &&
+                kernel.thread(next_uid)->context.pc == 0x08808100u,
+            "sleep did not switch to ready thread");
+    require(static_cast<std::uint32_t>(kernel.wakeup_thread(cpu, 999)) == sarusaru::kernel::kUnknownThread,
+            "unknown thread wakeup accepted");
+    require(static_cast<std::uint32_t>(kernel.wakeup_thread(cpu, guest_uid)) == sarusaru::kernel::kDormant,
+            "dormant thread wakeup accepted");
+    cpu.pc = 0x08804500u;
+    cpu.set_gpr(31u, 0x08804600u);
+    cpu.set_gpr(2u, 0xDEADBEEFu);
+    require(kernel.wakeup_thread(cpu, next_uid) == 0 && kernel.current_uid() == next_uid && cpu.pc == 0x08808100u &&
+                cpu.gpr[2] == 0u && kernel.thread(main_uid)->state == State::Ready &&
+                kernel.thread(main_uid)->context.pc == 0x08804600u,
+            "higher-priority wakeup did not preempt");
+
+    // A pending wakeup makes the next sleep return at once.
+    require(kernel.wakeup_thread(cpu, 0) == 0 && kernel.thread(next_uid)->wakeup_count == 1u, "self wakeup not counted");
+    kernel.sleep_current_thread(cpu);
+    require(kernel.current_uid() == next_uid && kernel.thread(next_uid)->wakeup_count == 0u && cpu.gpr[2] == 0u,
+            "pending wakeup did not satisfy sleep");
+
+    // With every thread asleep the kernel stops explicitly rather than idling.
+    kernel.sleep_current_thread(cpu);
+    require(kernel.current_uid() == main_uid, "sleep did not resume main thread");
+    kernel.sleep_current_thread(cpu);
+    require(runtime.stopped() && kernel.current_uid() == 0, "all-asleep state did not stop");
     return 0;
 }
