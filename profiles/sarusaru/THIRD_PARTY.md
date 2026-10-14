@@ -59,6 +59,19 @@ x64 a pinned prebuilt LGPL shared build is used instead (LGPL-3.0-or-later).
 `-DSARUSARU_FFMPEG=system` uses an installed FFmpeg; `OFF` builds without
 music or movies.
 
+## Host shell dependencies (downloaded at configure time, not in the repository)
+
+`cmake/Graphics.cmake` downloads each of these at a pinned version, checks its
+SHA-256 and builds or places it with the project. Releases must carry their
+notices.
+
+| Component | Version | Licence | Use |
+| --- | --- | --- | --- |
+| [SDL3](https://github.com/libsdl-org/SDL) | 3.4.16 | zlib | window, input, audio output, Vulkan loading; shared library |
+| [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) | vulkan-sdk-1.4.357.0 | Apache-2.0 OR MIT | headers only |
+| [glslang](https://github.com/KhronosGroup/glslang) | 16.5.0 | BSD-3-Clause and others (its `LICENSE.txt`) | build-time shader compiler; not shipped |
+| [MoltenVK](https://github.com/KhronosGroup/MoltenVK) (macOS) | 1.4.2 | Apache-2.0 | Vulkan on Metal; prebuilt `libMoltenVK.dylib` with `MoltenVK-LICENSE.txt` in `bin/lib/` |
+
 ## tiny-AES-c (Unlicense)
 
 `third_party/tiny_aes/aes.c` and `aes.h` are unmodified copies of

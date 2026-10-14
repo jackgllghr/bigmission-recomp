@@ -2,6 +2,16 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # FFmpeg (LGPL, dynamically linked) decodes the game's ATRAC music.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FFmpeg.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Graphics.cmake")
+if(SARUSARU_HAS_RENDERER)
+    add_library(sarusaru_shell STATIC host/shell/vulkan_loader.cpp)
+    target_include_directories(sarusaru_shell PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_shell PUBLIC SDL3::SDL3 Vulkan::Headers)
+    add_executable(sarusaru_vulkan_probe host/shell/vulkan_probe.cpp)
+    target_link_libraries(sarusaru_vulkan_probe PRIVATE sarusaru_shell)
+    set_target_properties(sarusaru_vulkan_probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+        BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+endif()
 add_library(sarusaru_atrac STATIC host/audio/atrac.cpp host/audio/atrac_decoder.cpp
     host/movie/psmf_demuxer.cpp host/movie/avc_decoder.cpp host/movie/psmf_player.cpp)
 target_include_directories(sarusaru_atrac PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")

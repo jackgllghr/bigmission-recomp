@@ -229,6 +229,11 @@ The pinned upstream is recorded in `config/supported_game.json`.
   Pictures are assumed to leave the decoder in presentation order at
   29.97 Hz; only start position 0 is modeled. Demuxing and H.264 decoding
   come from Yakumo (see `THIRD_PARTY.md`).
+- Added the host shell's dependencies (`cmake/Graphics.cmake`): SDL3 3.4.16,
+  Vulkan-Headers, glslang 16.5.0 and, on macOS, MoltenVK 1.4.2, all pinned and
+  hash-checked (see `THIRD_PARTY.md`). Vulkan is never linked; functions are
+  loaded through SDL (`shell/vulkan_loader.*`). `sarusaru_vulkan_probe`
+  lists the GPUs Vulkan sees. `-DSARUSARU_RENDERER=OFF` builds headless only.
 - Added scripted controller input for unattended runs: timed pad states
   that controller samples follow at their own virtual timestamps.
 - `sceKernelUnloadModule` returns the module ID on success, as on the PSP;

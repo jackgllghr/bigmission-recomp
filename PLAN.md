@@ -143,8 +143,11 @@ networking (`sceNet*`, 21 in total).
 
 ### Presentation and media (milestone 2, interactive)
 
-10. [ ] Host shell: SDL3 window, event loop, real-time pacing on top of the
-       virtual event queue, host input feeding `sceCtrl`.
+10. [~] Host shell: pinned SDL3, Vulkan headers, glslang and (macOS)
+       MoltenVK build with the project; Vulkan is loaded at run time through
+       SDL (verified on Apple M4). Still to come: window, event loop,
+       real-time pacing on top of the virtual event queue, host input feeding
+       `sceCtrl`, audio output.
 11. [ ] GE rendering: Vulkan (MoltenVK on macOS) renderer over the headless
         GE state; framebuffer presentation. Largest single item.
 12. [~] Audio: `sceAudio` output channels are modeled headless on the
