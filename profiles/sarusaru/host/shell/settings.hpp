@@ -13,12 +13,13 @@ namespace sarusaru::shell {
 
 enum class Action : std::size_t {
     Up, Down, Left, Right, Circle, Cross, Square, Triangle, L, R, Start, Select,
-    AnalogLeft, AnalogRight, AnalogUp, AnalogDown, FastForward, Quit, Count
+    AnalogLeft, AnalogRight, AnalogUp, AnalogDown, FastForward, Quit, CameraLeft, CameraRight, CameraUp, CameraDown, CameraReset, Count
 };
 inline constexpr std::size_t kActionCount = static_cast<std::size_t>(Action::Count);
 inline constexpr std::array<std::string_view, kActionCount> kActionNames = {
     "up", "down", "left", "right", "circle", "cross", "square", "triangle", "l", "r", "start", "select",
-    "analog_left", "analog_right", "analog_up", "analog_down", "fast_forward", "quit"
+    "analog_left", "analog_right", "analog_up", "analog_down", "fast_forward", "quit",
+    "camera_left", "camera_right", "camera_up", "camera_down", "camera_reset"
 };
 struct Binding {
     enum class Kind { Key, Button, Axis };

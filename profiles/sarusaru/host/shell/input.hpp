@@ -18,6 +18,8 @@ struct GamepadState {
 struct InputState {
     ctrl::Controller::Pad pad;
     bool fast_forward{}, quit{};
+    float camera_x{}, camera_y{};
+    bool camera_reset{};
 };
 // Pure mapping shared by live polling and synthetic tests (no window/device required).
 [[nodiscard]] InputState map_input(const ControlSettings &settings, std::span<const bool> keys,

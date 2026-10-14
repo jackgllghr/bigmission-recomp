@@ -113,6 +113,11 @@ Text action_text(shell::Action action) {
     case Action::AnalogRight: return Text::ActionAnalogRight;
     case Action::AnalogUp: return Text::ActionAnalogUp;
     case Action::AnalogDown: return Text::ActionAnalogDown;
+    case Action::CameraLeft: return Text::ActionCameraLeft;
+    case Action::CameraRight: return Text::ActionCameraRight;
+    case Action::CameraUp: return Text::ActionCameraUp;
+    case Action::CameraDown: return Text::ActionCameraDown;
+    case Action::CameraReset: return Text::ActionCameraReset;
     case Action::FastForward: return Text::ActionFastForward;
     case Action::Quit:
     case Action::Count: break;

@@ -89,6 +89,7 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
     }
     display::register_display(display, kernel, runtime, std::move(vcount_hook), std::move(vblank_wait_hook));
     track_gameplay_camera_ = options.track_gameplay_camera;
+    camera_control_ = options.camera_control;
     ge::register_ge(ge, kernel, runtime);
     rtc::register_rtc(rtc, runtime);
     modules::register_utility_modules(utility_modules, runtime);
@@ -134,9 +135,10 @@ void GameSession::observe_call(psprecomp::Runtime &rt, psprecomp::AllegrexContex
                                std::uint32_t pc, std::uint32_t) {
     if (auto *session = observed_session_) {
         session->intro_logos.on_call(pc, rt.memory(), ctx, session->controller, session->kernel.now_us());
+        if (session->camera_control_) session->orbit_camera.on_call(pc, rt.memory(), ctx, session->kernel.now_us());
         if (session->track_gameplay_camera_) {
             session->gameplay_camera.on_call(pc);
-        } else if (session->intro_logos.finished()) {
+        } else if (!session->camera_control_ && session->intro_logos.finished()) {
             // Restore direct chaining after startup when no camera observer is needed.
             psprecomp::set_runtime_pre_chained_call_hook(nullptr);
             psprecomp::set_runtime_pre_dispatch_hook(nullptr);

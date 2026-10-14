@@ -14,6 +14,7 @@
 #include "game/frame_rate.hpp"
 #include "game/gameplay_camera.hpp"
 #include "game/intro_logos.hpp"
+#include "game/orbit_camera.hpp"
 #include "io/io_manager.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
@@ -46,6 +47,7 @@ struct SessionOptions {
     // overrides that leave menus and cutscenes native.
     bool track_gameplay_camera{false};
     bool skip_intro_logos{false};
+    bool camera_control{false};
     // The game module to load; empty finds it (find_game_module()).
     std::filesystem::path game_module;
 };
@@ -89,6 +91,7 @@ public:
     game::FrameRateOverride frame_rate;
     game::GameplayCamera gameplay_camera{display};
     game::IntroLogos intro_logos;
+    game::OrbitCamera orbit_camera;
     ge::Ge ge{kernel};
     rtc::Rtc rtc{kernel, rtc::Rtc::host_boot_local_unix_us()};
     modules::UtilityModules utility_modules;
@@ -102,6 +105,7 @@ public:
 private:
     bool install_kernel();
     bool track_gameplay_camera_{};
+    bool camera_control_{};
     static GameSession *observed_session_;
     static void observe_call(psprecomp::Runtime &, psprecomp::AllegrexContext &, std::uint32_t, std::uint32_t);
     static void observe_dispatch(psprecomp::Runtime &, psprecomp::AllegrexContext &, std::uint32_t, std::int32_t);

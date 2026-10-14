@@ -66,6 +66,9 @@ InputState map_input(const ControlSettings &settings, std::span<const bool> keys
     };
     result.pad.lx = axis(value(Action::AnalogRight) - value(Action::AnalogLeft));
     result.pad.ly = axis(value(Action::AnalogDown) - value(Action::AnalogUp));
+    result.camera_x = value(Action::CameraRight) - value(Action::CameraLeft);
+    result.camera_y = value(Action::CameraDown) - value(Action::CameraUp);
+    result.camera_reset = value(Action::CameraReset) > 0.5f;
     result.fast_forward = value(Action::FastForward) > 0.5f;
     result.quit = value(Action::Quit) > 0.5f;
     return result;

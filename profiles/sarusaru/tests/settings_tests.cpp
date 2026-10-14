@@ -99,7 +99,26 @@ int main() {
     state = map_input(defaults.controls, keys, pads);
     require(state.pad.buttons == (kButtonCross | kButtonStart | kButtonL) && state.pad.lx == 1 && state.pad.ly == 255,
             "multi-pad buttons, triggers or axis extremes failed");
-    pads = {};
+    pads = {}; keys.fill(false);
+    pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTX] = 6000;
+    require(map_input(defaults.controls, keys, pads).camera_x == 0.0f, "camera stick drift escaped dead zone");
+    pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTX] = 19660;
+    pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTY] = -32768;
+    pads[0].buttons[SDL_GAMEPAD_BUTTON_RIGHT_STICK] = true;
+    state = map_input(defaults.controls, keys, pads);
+    require(std::abs(state.camera_x - 0.5f) < 0.001f && state.camera_y == -1 && state.camera_reset &&
+                state.pad.buttons == 0 && state.pad.lx == 128 && state.pad.ly == 128,
+            "camera stick was not proportional or changed the PSP pad");
+    pads = {}; keys[SDL_SCANCODE_KP_4] = true; keys[SDL_SCANCODE_KP_8] = true;
+    state = map_input(defaults.controls, keys, pads);
+    require(state.camera_x == -1 && state.camera_y == -1 && state.pad.buttons == 0,
+            "default camera keyboard mapping failed");
+    const auto camera_keys = parse_settings("[keyboard]\ncamera_left = U\ncamera_reset = O\n");
+    require(parse_settings(serialize_settings(camera_keys)) == camera_keys, "camera bindings did not round-trip");
+    keys.fill(false); keys[SDL_SCANCODE_U] = true; keys[SDL_SCANCODE_O] = true;
+    state = map_input(camera_keys.controls, keys, pads);
+    require(state.camera_x == -1 && state.camera_reset, "camera remapping failed");
+    keys.fill(false);
     pads[0].axes[SDL_GAMEPAD_AXIS_LEFTX] = 6000;
     require(map_input(defaults.controls, keys, pads).pad.lx == 128, "stick noise escaped dead zone");
     pads[0].axes[SDL_GAMEPAD_AXIS_LEFTX] = 32767;
