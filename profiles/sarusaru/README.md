@@ -63,8 +63,12 @@ python3 profiles/sarusaru/scripts/build_and_run_macos.py -- \
 
 The game runs until you quit, and its exit code is preserved. The script works
 from any directory; explicit relative paths are resolved from your current
-directory. It uses the normal per-user settings unless you pass `--settings`
-or set `SARUSARU_SETTINGS`.
+directory. By default this developer script uses
+`profiles/sarusaru/resources/settings.ini`, so edits to that file apply to the
+next launch. It prints the selected absolute settings path. An explicit
+`--settings` option or `SARUSARU_SETTINGS` overrides that default; the explicit
+option takes precedence over the environment variable. Directly launching the
+executable still uses the normal per-user settings by default.
 
 After the bootstrap script has generated the game code once:
 
@@ -83,7 +87,8 @@ position. Saves go to the same per-user memory stick as the bootstrap's.
 
 ### Settings and rebinding
 
-The shell creates `settings.ini` on its first normal launch. On macOS it lives
+When launched directly without a settings override, the shell creates
+`settings.ini` on its first normal launch. On macOS it lives
 in `~/Library/Application Support/SaruSaruRecomp/`; on Windows in
 `%APPDATA%/SaruSaruRecomp/`; on Linux in
 `$XDG_CONFIG_HOME/SaruSaruRecomp/` (or `~/.config/SaruSaruRecomp/`).
