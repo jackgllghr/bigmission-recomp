@@ -130,7 +130,7 @@ First implementation slice: optional English pack for the intro, title/main menu
 name entry, save/load and Options screens, using image regions, bounded read-only
 dialog strings and prepared glyph-line replacement;
 documented in [`profiles/sarusaru/docs/english-main-menu.md`](profiles/sarusaru/docs/english-main-menu.md).
-Larger string allocation, general font/layout support and full-game translation remain unimplemented.
+General string allocation, general font/layout support and full-game translation remain unimplemented.
 
 Local authoring extraction now exports 232 contextual executable labels (entity,
 character, facility, level, mission, area and menu text) to UTF-8 CSV/JSON, plus

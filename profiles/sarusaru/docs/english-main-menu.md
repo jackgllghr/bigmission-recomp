@@ -57,6 +57,8 @@ Gameplay, movies, minigame content beyond shared controls and other unrecognized
 text retain Japanese. The fourth main-menu entry remains progression-dependent.
 The optional [English v1 build](english-v1.md) additionally includes machine
 drafts for 193 structured gameplay names; the default menu-only pack remains V2.
+The [English dialogue v1 pack](english-dialogue-v1.md) also includes 71 compact
+messages, with source page counts and controller glyphs preserved.
 
 The UTF-8 authoring catalog is
 [`resources/translations/english-menu.json`](../resources/translations/english-menu.json).

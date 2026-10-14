@@ -136,13 +136,15 @@ def export(elf_path, output):
         offset = int(table['offset'], 0) + int(record) * table['stride']
         names[key] = elf[offset:offset + table['name_bytes']].split(b'\0', 1)[0].decode('cp932')
     messages, rows, blanks = extract(elf, metadata, names)
-    csv_path = output / 'dialogue.csv'
-    if csv_path.exists():
-        rows = read_edits(csv_path, rows, DIALOGUE_FIELDS, protected_tokens)
     draft = PROFILE / 'resources/translations/english-dialogue-v1.json'
     if draft.exists():
         from dialogue_drafts import seed_dialogue
         seed_dialogue(rows, json.loads(draft.read_text(encoding='utf-8')))
+    csv_path = output / 'dialogue.csv'
+    if csv_path.exists():
+        # Existing CSV edits, including intentional Japanese fallback, override
+        # defaults. Never re-seed a page a translator deliberately cleared.
+        rows = read_edits(csv_path, rows, DIALOGUE_FIELDS, protected_tokens)
     bundle = {'schema': 1, 'source_locale': 'ja', 'target_locale': 'en',
               'disc_id': supported['disc_id'], 'executable_sha256': sha(elf),
               'adapter_evidence': {key: metadata[key] for key in

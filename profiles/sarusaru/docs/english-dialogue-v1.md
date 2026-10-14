@@ -105,7 +105,12 @@ original source bytes. A local test against the relocated supported executable
 checks all 71 redirected streams byte-for-byte, alongside the 232 existing
 text replacements and unchanged neighboring `.rodata`.
 
-Native visual checks use an isolated preview and memory-stick directory.
+Native startup accepts all 71 records. An isolated Vulkan font preview reads the
+redirected guest stream and shows readable Latin text and the original triangle
+glyph within the native cell budget. This is a font/layout check, not a claim
+that every in-game trigger was exercised; the title-scene message factory is
+unavailable for a full dialogue-widget test. Captures and probe code stay local
+under `captures/english-dialogue-v1-font-preview/` and `progress/`.
 Individual gameplay triggers, all page sequences and voice/text timing still
 need human acceptance testing. English v1 is a runtime translation draft,
 not a claim of full-game translation or end-to-end game/save compatibility.
