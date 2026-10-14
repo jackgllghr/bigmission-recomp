@@ -92,9 +92,9 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
-  `ThreadManForUser::sceKernelSuspendDispatchThread` after loading the AV
-  codec utility module, running its callbacks and initialising its sound
-  system (audio channels and SAS). `SARUSARU_TRACE_SCHED=1` logs
+  initialises its sound system (audio channels and SAS) and enters its main
+  loop: 100,000 dispatches reach 4.2 s of guest time and 127 GE display
+  lists without an unmodeled import. `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
@@ -158,6 +158,10 @@ The pinned upstream is recorded in `config/supported_game.json`.
 - Added semaphores and event flags (`kernel/sync.cpp`): FIFO or priority wait
   queues, AND/OR waits with clear-all/clear-pattern, single or multiple
   waiters, overflow and count validation, and `WAIT_DELETE` on deletion.
+- Added `sceKernelSuspendDispatchThread`/`ResumeDispatchThread`: while
+  suspended nothing preempts the current thread and its waits fail with
+  `CAN_NOT_WAIT`; resuming lets a thread made ready meanwhile preempt. Both
+  fail while CPU interrupts are masked.
 - Added interrupt delivery: queued guest handlers run on a priority-0
   interrupt pseudo-thread with its own stack and return through a kernel stub;
   waits from interrupt context fail with `CAN_NOT_WAIT`. `InterruptManager`

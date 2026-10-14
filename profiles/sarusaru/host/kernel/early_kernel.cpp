@@ -58,6 +58,7 @@ void EarlyKernel::install(psprecomp::Runtime &runtime, std::uint32_t user_memory
     power_callback_slots_.fill(0);
     umd_callback_uid_ = 0;
     interrupts_enabled_ = true;
+    dispatch_enabled_ = true;
     free_ranges_ = {{start, next_stack_top_ - start}};
     next_uid_ = 0x100;
     current_uid_ = 0;
@@ -331,8 +332,24 @@ std::int32_t EarlyKernel::delete_callback(std::int32_t uid) {
     return 0;
 }
 
+std::int32_t EarlyKernel::suspend_dispatch() noexcept {
+    if (!interrupts_enabled_) return static_cast<std::int32_t>(kInterruptsDisabled);
+    const std::int32_t previous = dispatch_enabled_ ? 1 : 0;
+    dispatch_enabled_ = false;
+    return previous;
+}
+
+void EarlyKernel::resume_dispatch(psprecomp::AllegrexContext &context, std::uint32_t state) {
+    if (!interrupts_enabled_) {
+        context.set_gpr(2u, kInterruptsDisabled);
+        return;
+    }
+    dispatch_enabled_ = state != 0u;
+    return_with_preemption(context, 0u);
+}
+
 bool EarlyKernel::refuse_wait_in_interrupt(psprecomp::AllegrexContext &context) {
-    if (!in_interrupt()) return false;
+    if (!in_interrupt() && dispatch_enabled_) return false;
     context.set_gpr(2u, kCanNotWait);
     return true;
 }
@@ -534,7 +551,7 @@ std::int32_t EarlyKernel::start_thread(psprecomp::AllegrexContext &context, Thre
     thread.context.pc = thread.entry;
     make_ready(thread);
     const auto current = threads_.find(current_uid_);
-    if (current != threads_.end() && thread.priority < current->second.priority) {
+    if (dispatch_enabled_ && current != threads_.end() && thread.priority < current->second.priority) {
         save_blocked_context(current->second, context, 0u);
         make_ready(current->second);
         switch_to(context, uid, thread);
@@ -677,7 +694,7 @@ bool EarlyKernel::release_wait(ThreadUid uid, std::uint32_t result) {
 void EarlyKernel::return_with_preemption(psprecomp::AllegrexContext &context, std::uint32_t result) {
     const auto current = threads_.find(current_uid_);
     ThreadInfo *next = best_ready_thread();
-    if (current != threads_.end() && next != nullptr && next->priority < current->second.priority) {
+    if (dispatch_enabled_ && current != threads_.end() && next != nullptr && next->priority < current->second.priority) {
         save_blocked_context(current->second, context, result);
         make_ready(current->second);
         switch_to(context, next->uid, *next);
@@ -734,7 +751,7 @@ std::int32_t EarlyKernel::wakeup_thread(psprecomp::AllegrexContext &context, Thr
     }
     make_ready(thread);
     const auto current = threads_.find(current_uid_);
-    if (current != threads_.end() && thread.priority < current->second.priority) {
+    if (dispatch_enabled_ && current != threads_.end() && thread.priority < current->second.priority) {
         save_blocked_context(current->second, context, 0u);
         make_ready(current->second);
         switch_to(context, uid, thread);
@@ -845,6 +862,12 @@ void register_early_threadman(EarlyKernel &kernel, psprecomp::Runtime &runtime) 
             ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.now_us()));
             ctx.set_gpr(3u, static_cast<std::uint32_t>(kernel.now_us() >> 32u));
         });
+    runtime.register_hle("ThreadManForUser", 0x3AD58B8Cu,  // sceKernelSuspendDispatchThread
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.suspend_dispatch()));
+        });
+    runtime.register_hle("ThreadManForUser", 0x27E22EC2u,  // sceKernelResumeDispatchThread
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.resume_dispatch(ctx, ctx.gpr[4]); });
     runtime.register_hle("ThreadManForUser", 0xCEADEB47u,  // sceKernelDelayThread
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.delay_current_thread(ctx, ctx.gpr[4]); });
     runtime.register_hle("ThreadManForUser", 0x68DA9E36u,  // sceKernelDelayThreadCB

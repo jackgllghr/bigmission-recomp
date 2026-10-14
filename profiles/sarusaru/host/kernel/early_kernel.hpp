@@ -34,6 +34,7 @@ inline constexpr std::uint32_t kIllegalAttribute = 0x80020191u;
 inline constexpr std::uint32_t kIllegalThread = 0x80020197u;
 inline constexpr std::uint32_t kNotDormant = 0x800201A4u;
 inline constexpr std::uint32_t kCanNotWait = 0x800201A7u;
+inline constexpr std::uint32_t kInterruptsDisabled = 0x80020064u;
 inline constexpr std::uint32_t kWaitTimeout = 0x800201A8u;
 inline constexpr std::uint32_t kThreadTerminated = 0x800201ACu;
 inline constexpr std::uint32_t kWaitDelete = 0x800201B5u;
@@ -180,6 +181,11 @@ public:
     [[nodiscard]] bool interrupts_enabled() const noexcept { return interrupts_enabled_; }
     [[nodiscard]] std::uint32_t suspend_interrupts() noexcept;
     void resume_interrupts(bool enabled) noexcept { interrupts_enabled_ = enabled; }
+    // While dispatch is suspended the current thread keeps the CPU: nothing
+    // preempts it and its waits fail with kCanNotWait.
+    [[nodiscard]] std::int32_t suspend_dispatch() noexcept;
+    void resume_dispatch(psprecomp::AllegrexContext &context, std::uint32_t state);
+    [[nodiscard]] bool dispatch_enabled() const noexcept { return dispatch_enabled_; }
 
 private:
     psprecomp::Runtime *runtime_{};
@@ -203,6 +209,7 @@ private:
     std::array<std::int32_t, 16> power_callback_slots_{};
     std::int32_t umd_callback_uid_{};
     bool interrupts_enabled_{true};
+    bool dispatch_enabled_{true};
 
     void make_ready(ThreadInfo &thread) noexcept;
     [[nodiscard]] ThreadInfo *best_ready_thread() noexcept;

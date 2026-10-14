@@ -132,6 +132,24 @@ int main() {
     h.call(0x369ED59Du, 0x08804600u);
     require(h.cpu.gpr[2] == 6000u, "system time incorrect");
 
+    // Suspended dispatch: no preemption, and waits fail instead of blocking.
+    const auto eager = h.kernel.create_thread("eager", 0x08806100u, 0x10u, 0x400u, 0u, 0u);
+    h.call(0x3AD58B8Cu, 0x08804610u);
+    require(h.cpu.gpr[2] == 1u && !h.kernel.dispatch_enabled(), "dispatch suspend");
+    require(h.kernel.start_thread(h.cpu, eager, 0u, 0u) == 0 && h.kernel.current_uid() == main_uid,
+            "higher-priority thread preempted with dispatch suspended");
+    h.call(kDelay, 0x08804620u, {100u});
+    require(h.kernel.current_uid() == main_uid && h.cpu.gpr[2] == kCanNotWait, "wait accepted with dispatch suspended");
+    h.call(0x27E22EC2u, 0x08804630u, {1u});
+    require(h.kernel.dispatch_enabled() && h.kernel.current_uid() == eager &&
+                h.kernel.thread(main_uid)->context.pc == 0x08804630u,
+            "resume did not let the ready thread preempt");
+    h.call(kExitThread, 0x08806110u, {0u});
+    require(h.kernel.current_uid() == main_uid, "main did not resume");
+    h.kernel.suspend_interrupts();
+    require(static_cast<std::uint32_t>(h.kernel.suspend_dispatch()) == kInterruptsDisabled, "suspend with interrupts off");
+    h.kernel.resume_interrupts(true);
+
     // With no deadline and nothing runnable, execution stops and names the wait.
     const auto lonely = h.sync.create_semaphore("lonely", 0u, 0, 1);
     h.call(kWaitSema, 0x08804700u, {static_cast<std::uint32_t>(lonely), 1u, 0u});
