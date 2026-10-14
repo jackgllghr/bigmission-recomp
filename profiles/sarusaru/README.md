@@ -3,8 +3,11 @@
 Native recompilation work for **Saru! Get You! SaruSaru Daisakusen** (Japan),
 disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 
-**Early macOS arm64 build: the game boots, renders and plays sound in a
-window, but is not verified playable end to end.** File-based settings and
+**Early build: on macOS arm64 the game boots, renders and plays sound in a
+window, but is not verified playable end to end. Linux (x86-64, arm64) and
+Windows x86-64 builds are being brought up: Linux arm64 compiles the game and
+passes the tests; Windows and Linux x86-64 are compiled and tested only by CI
+(no game code there), and none of them has been played yet.** File-based settings and
 keyboard/gamepad rebinding are available, as are 60 FPS frame interpolation at
 the original game speed, a FOV override and window size/fullscreen settings.
 A first launcher chooses the disc image and edits the main settings with a
@@ -16,8 +19,17 @@ The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
 ## Requirements
 
-- Apple Silicon Mac and Xcode command-line tools (`xcode-select --install`).
-- CMake 3.20+, Ninja, Python 3.10+ (`brew install cmake ninja python`).
+- One of these hosts, with CMake 3.20+, Ninja and Python 3.10+:
+  - **macOS arm64**: Xcode command-line tools (`xcode-select --install`) and
+    `brew install cmake ninja python`.
+  - **Linux x86-64 or arm64**: a C++20 compiler (GCC 13 or Clang 17),
+    `make`, and SDL3's X11, Wayland and audio development packages. On
+    Ubuntu 24.04 the list is in [`scripts/linux.Dockerfile`](scripts/linux.Dockerfile),
+    which also builds an environment for compiling the Linux port from another
+    system (`docker build -t sarusaru-linux -f profiles/sarusaru/scripts/linux.Dockerfile .`).
+    A Vulkan driver is needed to play.
+  - **Windows x86-64**: Visual Studio 2022 with the C++ workload, run from its
+    *x64 Native Tools Command Prompt* (which provides `cl`, `cmake` and `ninja`).
 - Your own legally obtained compatible ISO. Its name does not matter.
 
 No commercial game files or generated game code are included. The profile uses
@@ -31,10 +43,13 @@ compatibility and release-grade image validation remain future work.
 From the repository root:
 
 ```sh
-python3 profiles/sarusaru/scripts/bootstrap_macos.py \
+python3 profiles/sarusaru/scripts/bootstrap.py \
   '../Saru! Get You! SaruSaru Daisakusen (Japan).iso'
 ```
 
+The scripts work on every supported host and build into `out/<host>/`:
+`macos-arm64`, `linux-x64`, `linux-arm64` or `windows-x64` (the examples below
+use `macos-arm64`; on Windows the programs end in `.exe`).
 The script validates/extracts the executable, builds/tests the framework,
 analyzes imports and code, generates/compiles the AOT corpus, runs the tests
 again, and executes startup with a 20-second timeout. Initial AOT compilation
@@ -53,7 +68,7 @@ Build and launch with one command (also prepares and generates game code on
 the first run):
 
 ```sh
-python3 profiles/sarusaru/scripts/build_and_run_macos.py
+python3 profiles/sarusaru/scripts/build_and_run.py
 ```
 
 The script uses the ISO path saved during preparation. On a fresh checkout, or
@@ -61,7 +76,7 @@ if the ISO has moved, pass `--iso '/path/to/game.iso'`. It builds incrementally
 with two jobs; `--jobs 1` reduces memory pressure. Pass game options after `--`:
 
 ```sh
-python3 profiles/sarusaru/scripts/build_and_run_macos.py -- \
+python3 profiles/sarusaru/scripts/build_and_run.py -- \
   --settings profiles/sarusaru/resources/settings.ini
 ```
 
@@ -321,7 +336,7 @@ It currently runs on native non-MSVC builds, not cross-compilation builds.
 | `analysis/bootstrap.log` | Startup result from the build script |
 | `generated/` | Game-derived C++ corpus; never commit or publish as source |
 | `progress/` | Local lock and scratch work |
-| `../../out/macos-arm64/` | Native tools and diagnostic binary |
+| `../../out/<host>/` | Native tools and diagnostic binary |
 
 The ISO is opened read-only. Preparation stages inputs before publishing them
 and refuses to overwrite an existing different executable or symlink target.

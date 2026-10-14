@@ -133,6 +133,22 @@ tests and packages for every confirmed target. Per-user data survives upgrades.
 Publish tested compatibility and unresolved issues. Resolve derived-code
 distribution policy before public prebuilt game releases.
 
+### Desktop platforms chunk (milestone 7)
+
+- [x] Build scripts for every desktop host (`scripts/bootstrap.py`,
+      `scripts/build_and_run.py`), building into `out/<host>/`.
+- [x] Linux arm64: framework, profile and the full game compile with GCC 13;
+      all tests pass (Docker on Apple Silicon, `scripts/linux.Dockerfile`).
+- [x] Windows build settings: `/utf-8`, `/bigobj` for generated units, a
+      64 MiB main-thread stack (the game runs chained guest calls on it),
+      executables beside the bundled FFmpeg DLLs.
+- [x] CI building and testing the framework and profile on Windows x64, Linux
+      x64, Linux arm64 and macOS arm64 (`.github/workflows/build.yml`).
+- [ ] Windows x64: first green CI run; compile the generated game with MSVC.
+- [ ] Linux x64: compile the generated game.
+- [ ] Play to the title screen on Windows and Linux (Vulkan drivers, audio,
+      gamepads, settings and save locations).
+
 ## Proof and safety
 
 Use invented fixtures for public ISO/import tests. Keep local analysis reports,

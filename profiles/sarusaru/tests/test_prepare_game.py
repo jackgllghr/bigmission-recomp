@@ -71,6 +71,14 @@ def image_bytes():
     return data, supported, executable
 
 
+def symlink(link, target, directory=False):
+    """Creates <link>, or skips the test where the user may not (Windows without Developer Mode)."""
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except OSError as exc:
+        raise unittest.SkipTest(f"symlinks unavailable: {exc}")
+
+
 class IsoTests(unittest.TestCase):
     def open_image(self, data):
         stream = tempfile.TemporaryFile()
@@ -185,7 +193,7 @@ class InstallTests(unittest.TestCase):
         target = self.root / "target"
         target.mkdir()
         dest = self.root / "game"
-        dest.symlink_to(target, target_is_directory=True)
+        symlink(dest, target, directory=True)
         with self.assertRaisesRegex(InvalidImage, "symlink"):
             install_inputs(dest, b"invented", {}, [], self.root / "own.iso")
         self.assertEqual(list(target.iterdir()), [])
@@ -195,7 +203,7 @@ class InstallTests(unittest.TestCase):
         dest.mkdir()
         target = self.root / "valuable"
         target.write_bytes(b"invented")
-        (dest / "BOOT.elf").symlink_to(target)
+        symlink(dest / "BOOT.elf", target)
         with self.assertRaises(InvalidImage):
             install_inputs(dest, b"invented", {}, [], self.root / "own.iso")
         self.assertEqual(target.read_bytes(), b"invented")

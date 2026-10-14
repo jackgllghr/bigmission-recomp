@@ -7,7 +7,8 @@ with the aim of making the game available on Windows, macOS, Linux, and Android
 with improved performance and configurability, and providing a foundation for
 translating the game.
 
-The project currently includes a macOS arm64 diagnostic bootstrap and is
+The project currently runs on macOS arm64, with Linux and Windows builds being
+brought up, and is
 **not playable yet**. See the
 [project plan](PLAN.md) and [profile instructions](profiles/sarusaru/README.md).
 

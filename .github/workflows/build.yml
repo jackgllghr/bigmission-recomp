@@ -1,0 +1,62 @@
+# Builds the framework and the SaruSaru profile on every target desktop host and
+# runs their tests. No game files exist here, so the game itself (which needs
+# code generated from the player's own disc) is not built.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: windows-x64
+            runner: windows-2022
+          - host: linux-x64
+            runner: ubuntu-24.04
+          - host: linux-arm64
+            runner: ubuntu-24.04-arm
+          - host: macos-arm64
+            runner: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxfixes-dev libxtst-dev \
+            libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev libdrm-dev libgbm-dev libegl-dev
+
+      - name: Install macOS packages
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: bash
+        run: |
+          extra=()
+          if [ "${{ runner.os }}" = macOS ]; then extra+=(-DCMAKE_OSX_ARCHITECTURES=arm64); fi
+          cmake -S . -B out/${{ matrix.host }} -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_BUILD_BOOTSTRAP=OFF "${extra[@]}"
+
+      - name: Build
+        run: cmake --build out/${{ matrix.host }} --parallel 4
+
+      - name: Test
+        run: ctest --test-dir out/${{ matrix.host }} --output-on-failure
