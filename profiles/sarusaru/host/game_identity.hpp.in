@@ -6,5 +6,6 @@
 namespace sarusaru {
 inline constexpr std::string_view executable_sha256 = "@SARUSARU_EXECUTABLE_SHA256@";
 inline constexpr std::uint64_t executable_size = @SARUSARU_EXECUTABLE_SIZE@u;
+inline constexpr std::string_view disc_id = "@SARUSARU_DISC_ID@";
 inline constexpr std::uint32_t load_base = @SARUSARU_LOAD_BASE@u;
 }

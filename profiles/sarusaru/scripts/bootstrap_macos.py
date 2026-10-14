@@ -53,7 +53,7 @@ def bootstrap(iso, jobs):
     run("ctest", "--test-dir", BUILD, "--output-on-failure")
 
     print("Running diagnostic host with a 20-second wall-clock timeout.", flush=True)
-    command = [str(BUILD / "bin/sarusaru_bootstrap"), str(elf)]
+    command = [str(BUILD / "bin/sarusaru_bootstrap"), str(elf), str(iso)]
     try:
         result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=20)
     except subprocess.TimeoutExpired as exc:

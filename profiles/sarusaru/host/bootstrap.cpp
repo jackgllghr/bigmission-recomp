@@ -1,6 +1,9 @@
 #include "game_identity.hpp"
 #include "startup_hle.hpp"
+#include "ctrl/controller.hpp"
 #include "kernel/early_kernel.hpp"
+#include "umd/disc_image.hpp"
+#include "umd/umd_drive.hpp"
 #include "psprecomp/common.hpp"
 #include "psprecomp/elf32.hpp"
 #include "psprecomp/runtime.hpp"
@@ -10,6 +13,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -24,17 +28,33 @@ void disable_chaining() {
         throw psprecomp::Error("Could not disable AOT chaining for diagnostic execution");
     }
 }
+
+// The disc must be the one the executable was prepared from: its UMD_DATA.BIN
+// names the supported disc and its BOOT.BIN is byte-identical to BOOT.elf.
+void verify_disc(sarusaru::umd::DiscImage &disc) {
+    const auto umd_data = disc.find("UMD_DATA.BIN");
+    if (!umd_data) throw psprecomp::Error("Disc image has no UMD_DATA.BIN");
+    const auto bytes = disc.read_file(*umd_data, 4096u);
+    const std::string_view text(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+    const std::string expected = std::string(sarusaru::disc_id.substr(0u, 4u)) + "-" +
+                                 std::string(sarusaru::disc_id.substr(4u)) + "|";
+    if (!text.starts_with(expected)) throw psprecomp::Error("Disc image is not the supported game disc");
+    const auto boot = disc.find("PSP_GAME/SYSDIR/BOOT.BIN");
+    if (!boot || boot->size != sarusaru::executable_size ||
+        psprecomp::sha256(disc.read_file(*boot, boot->size)) != sarusaru::executable_sha256)
+        throw psprecomp::Error("Disc image executable does not match the prepared executable");
+}
 }
 
 int main(int argc, char **argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--help") {
-        std::cout << "Usage: sarusaru_bootstrap <prepared BOOT.elf>\n"
-                     "Diagnostic only: no PSP kernel, renderer, audio or gameplay yet.\n"
+        std::cout << "Usage: sarusaru_bootstrap <prepared BOOT.elf> <game ISO>\n"
+                     "Diagnostic only: no complete PSP kernel, renderer, audio or gameplay yet.\n"
                      "Exit 3 identifies an incomplete runtime or exhausted dispatch budget.\n";
         return 0;
     }
-    if (argc != 2) {
-        std::cerr << "Usage: sarusaru_bootstrap <prepared BOOT.elf>\n";
+    if (argc != 3) {
+        std::cerr << "Usage: sarusaru_bootstrap <prepared BOOT.elf> <game ISO>\n";
         return 2;
     }
     try {
@@ -46,6 +66,8 @@ int main(int argc, char **argv) {
         if (psprecomp::sha256(elf.bytes()) != sarusaru::executable_sha256) {
             throw psprecomp::Error("Unsupported executable hash; prepare your compatible ISO first");
         }
+        sarusaru::umd::DiscImage disc(argv[2]);
+        verify_disc(disc);
         disable_chaining();
         psprecomp::Runtime runtime;
         const auto relocations = elf.load_and_relocate(runtime.memory(), sarusaru::load_base);
@@ -72,6 +94,10 @@ int main(int argc, char **argv) {
         // Keep the bootstrap stack and its guard area outside guest allocations.
         early_kernel.install(runtime, image_end, 0x09FF6000u);
         sarusaru::kernel::register_early_threadman(early_kernel, runtime);
+        sarusaru::umd::UmdDrive umd_drive(disc);
+        sarusaru::umd::register_umd(umd_drive, runtime);
+        sarusaru::ctrl::Controller controller;
+        sarusaru::ctrl::register_ctrl(controller, runtime);
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.

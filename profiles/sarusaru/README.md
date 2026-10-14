@@ -89,9 +89,14 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   stack reservation have been verified; they resolve the earlier guest fault.
   Interrupt-mask state, thread sleep/wakeup (`0x9ACE131E`/`0xD59EAD2F`, per
   the public PSPSDK stubs) and UMD callback registration are modeled. Startup
-  currently stops at `sceUmdUser::sceUmdCheckMedium`; no disc layer exists yet.
-  Delays, timed waits and synchronization objects remain unimplemented.
-- All seven CTest suites pass, including 17 ISO/preparation cases and seven
+  passes `sceUmdUser` drive activation and `sceCtrl` configuration, then stops
+  at `sceCtrl::sceCtrlReadBufferPositive`. That call blocks until the next
+  vblank sample on hardware; no guest clock or vblank exists yet. Delays,
+  timed waits and synchronization objects remain unimplemented.
+- The bootstrap takes the ISO as a second argument and reads it in place. The
+  disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
+  must be byte-identical to the prepared executable.
+- All nine CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -120,6 +125,13 @@ The pinned upstream is recorded in `config/supported_game.json`.
   (previously a preempted `sceKernelStartThread` caller would have re-entered
   the import stub). If every thread sleeps, execution stops explicitly. It does
   **not** deliver callbacks, power/UMD events or guest interrupts.
+- Added a read-only ISO9660 disc reader with the same structural limits as
+  `prepare_game.py` (case-insensitive lookup, no `.`/`..` resolution, extents
+  bounded by the volume), and a UMD drive model: medium present, synchronous
+  activate/deactivate of `disc0:`, drive/error status. A drive-status wait that
+  can never be satisfied stops execution. Eject/swap are not modeled.
+- Added `sceCtrl` sampling mode, sampling cycle and idle-cancel threshold as
+  validated state. Controller reads are not bound yet.
 - Preserved checked VFPU scalar access for invalid register encodings instead
   of emitting uncompilable compile-time template operands.
 - Used normal runtime dispatch for direct targets outside the generated entry

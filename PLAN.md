@@ -103,9 +103,11 @@ executes startup through the modeled SDK/compiler configuration imports and
 creates and starts guest threads, and services the first partition allocation.
 Correct thread control-block setup and bootstrap-stack reservation resolve the
 earlier guest fault. Thread sleep/wakeup and UMD callback registration are
-modeled; startup now stops at `sceUmdUser::sceUmdCheckMedium`, the first disc
-query, pending a UMD layer backed by the user's prepared ISO.
-Seven CTest suites pass,
+modeled. A read-only ISO9660 UMD layer reads the user's own ISO in place,
+after binding it to the prepared executable; drive activation and controller
+configuration are modeled. Startup now stops at `sceCtrl::sceCtrlReadBufferPositive`,
+which blocks on vblank sampling and needs a guest time model first.
+Nine CTest suites pass,
 including 17 input/preparation cases and seven generated-native-code cases.
 Repeat generation rewrites zero source units. Three game-neutral generator
 defects discovered during this work were reproduced with synthetic fixtures,

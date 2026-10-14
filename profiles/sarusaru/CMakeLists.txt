@@ -15,6 +15,15 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_include_directories(sarusaru_early_kernel_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_early_kernel_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_early_kernel_tests COMMAND sarusaru_early_kernel_tests)
+    add_executable(sarusaru_umd_tests
+        tests/umd_tests.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp)
+    target_include_directories(sarusaru_umd_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_umd_tests PRIVATE psprecomp_core)
+    add_test(NAME sarusaru_umd_tests COMMAND sarusaru_umd_tests)
+    add_executable(sarusaru_ctrl_tests tests/ctrl_tests.cpp host/ctrl/controller.cpp)
+    target_include_directories(sarusaru_ctrl_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_ctrl_tests PRIVATE psprecomp_core)
+    add_test(NAME sarusaru_ctrl_tests COMMAND sarusaru_ctrl_tests)
 endif()
 
 option(SARUSARU_BUILD_BOOTSTRAP "Build the diagnostic host with locally generated AOT code" OFF)
@@ -26,6 +35,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
     string(JSON SARUSARU_EXECUTABLE_SHA256 GET "${supported_game}" executable_sha256)
     string(JSON SARUSARU_EXECUTABLE_SIZE GET "${supported_game}" executable_size)
     string(JSON SARUSARU_LOAD_BASE GET "${supported_game}" load_base)
+    string(JSON SARUSARU_DISC_ID GET "${supported_game}" disc_id)
     configure_file(host/game_identity.hpp.in game_identity.hpp @ONLY)
 
     file(GLOB aot_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generated/generated_*.cpp")
@@ -36,7 +46,8 @@ if(SARUSARU_BUILD_BOOTSTRAP)
         target_compile_options(sarusaru_aot PRIVATE -O0)
     endif()
 
-    add_executable(sarusaru_bootstrap host/bootstrap.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp)
+    add_executable(sarusaru_bootstrap host/bootstrap.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
+        host/umd/disc_image.cpp host/umd/umd_drive.cpp host/ctrl/controller.cpp)
     target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot)
     set_target_properties(sarusaru_bootstrap PROPERTIES
