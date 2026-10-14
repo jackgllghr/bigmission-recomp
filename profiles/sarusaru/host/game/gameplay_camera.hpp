@@ -28,12 +28,9 @@ public:
     static constexpr std::uint32_t kStagePause = 0x08866918u;
 
     explicit GameplayCamera(const display::Display &display) : display_(display) {}
-    ~GameplayCamera();
     GameplayCamera(const GameplayCamera &) = delete;
     GameplayCamera &operator=(const GameplayCamera &) = delete;
 
-    // Installs the runtime's call hooks (process-wide; one instance at a time).
-    void install();
     // Records a guest call; what the hooks do, exposed for tests.
     void on_call(std::uint32_t target_pc) noexcept;
     // Whether the game frame now being drawn, or the one before it, ran a
@@ -47,7 +44,6 @@ private:
     bool seen_{};
     std::uint64_t last_frame_{};
     std::uint64_t calls_{};
-    bool installed_{};
 };
 
 } // namespace sarusaru::game

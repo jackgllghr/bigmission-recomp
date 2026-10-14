@@ -26,6 +26,12 @@ int main() {
     const Settings defaults = default_settings();
     require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
     require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
+    require(!defaults.skip_intro_logos, "intro logos must play by default");
+    const auto skipped = parse_settings("[game]\nskip_intro_logos = 1\n");
+    require(skipped.skip_intro_logos && parse_settings(serialize_settings(skipped)) == skipped,
+            "intro logo option does not round-trip");
+    rejects("[game]\nskip_intro_logos = 2");
+    rejects("[game]\nskip_intro_logos = yes");
     require(!defaults.cel_shading, "cel shading must default to off");
     const auto cel = parse_settings("[graphics]\ncel_shading = 1\n");
     require(cel.cel_shading && parse_settings(serialize_settings(cel)) == cel, "cel shading does not round-trip");

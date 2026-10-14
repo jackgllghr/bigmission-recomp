@@ -209,7 +209,13 @@ void rows() {
             const auto view = describe(row, settings);
             require(!view.label.empty() && !view.value.empty() && !view.description.empty(), "row without text");
         }
-    require(seen == 13, "settings rows missing from the tabs");
+    require(describe(SettingRow::SkipIntroLogos, settings).value == "Off", "logo skip must start off");
+    step(SettingRow::SkipIntroLogos, settings, 1);
+    require(settings.skip_intro_logos && describe(SettingRow::SkipIntroLogos, settings).value == "On",
+            "logo skip did not turn on");
+    step(SettingRow::SkipIntroLogos, settings, -1);
+    require(!settings.skip_intro_logos, "logo skip did not turn off");
+    require(seen == 14, "settings rows missing from the tabs");
 }
 
 void bindings() {

@@ -65,6 +65,7 @@ struct Settings {
     // Which face button confirms in the launcher and the port's screens: the
     // south one (cross) by default, or the east one (circle) as the game does.
     bool confirm_south{true};
+    bool skip_intro_logos{false};
     Language language{Language::Auto};
     bool operator==(const Settings &) const = default;
 };

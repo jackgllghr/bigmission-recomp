@@ -60,7 +60,7 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
                          const SessionOptions &options)
     : game_module(options.game_module.empty() ? GameModule() : GameModule(options.game_module)),
       elf(executable.empty() ? executable_from_disc(iso, kIdentity) : load_executable(executable)), disc(iso), chaining_configured(configure_chaining(options.count_every_dispatch)),
-      frame_rate(options.experimental_game_frame_rate),
+      frame_rate(options.experimental_game_frame_rate), intro_logos(options.skip_intro_logos),
       savedata(options.memory_stick, [this] { return startup_hle.compiled_sdk_version(); }) {
     verify_disc(disc, kIdentity);
     const auto relocations = elf.load_and_relocate(runtime.memory(), load_base);
@@ -88,7 +88,7 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
         };
     }
     display::register_display(display, kernel, runtime, std::move(vcount_hook), std::move(vblank_wait_hook));
-    if (options.track_gameplay_camera) gameplay_camera.install();
+    track_gameplay_camera_ = options.track_gameplay_camera;
     ge::register_ge(ge, kernel, runtime);
     rtc::register_rtc(rtc, runtime);
     modules::register_utility_modules(utility_modules, runtime);
@@ -116,6 +116,37 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
     cpu.set_gpr(29u, stack);
     cpu.set_gpr(31u, kernel::kThreadExitStub);
     kernel.begin_main_thread(cpu, "module_start", 0x20u);
+    observed_session_ = this;
+    psprecomp::set_runtime_pre_chained_call_hook(&observe_call);
+    psprecomp::set_runtime_pre_dispatch_hook(&observe_dispatch);
+}
+
+GameSession *GameSession::observed_session_ = nullptr;
+
+GameSession::~GameSession() {
+    if (observed_session_ != this) return;
+    observed_session_ = nullptr;
+    psprecomp::set_runtime_pre_chained_call_hook(nullptr);
+    psprecomp::set_runtime_pre_dispatch_hook(nullptr);
+}
+
+void GameSession::observe_call(psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx,
+                               std::uint32_t pc, std::uint32_t) {
+    if (auto *session = observed_session_) {
+        session->intro_logos.on_call(pc, rt.memory(), ctx, session->controller, session->kernel.now_us());
+        if (session->track_gameplay_camera_) {
+            session->gameplay_camera.on_call(pc);
+        } else if (session->intro_logos.finished()) {
+            // Restore direct chaining after startup when no camera observer is needed.
+            psprecomp::set_runtime_pre_chained_call_hook(nullptr);
+            psprecomp::set_runtime_pre_dispatch_hook(nullptr);
+        }
+    }
+}
+
+void GameSession::observe_dispatch(psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx,
+                                   std::uint32_t pc, std::int32_t) {
+    observe_call(rt, ctx, pc, 0u);
 }
 
 void GameSession::run(std::uint64_t dispatch_limit) {

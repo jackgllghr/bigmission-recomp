@@ -102,11 +102,13 @@ void set_runtime_post_dispatch_hook(RuntimePostDispatchHook hook) noexcept {
 }
 void set_runtime_pre_chained_call_hook(RuntimePreChainedCallHook hook) noexcept {
     g_pre_chained_call_hook = hook;
-    if (hook != nullptr) g_runtime_chain_observers_active = true;
+    g_runtime_chain_observers_active = g_counted_pc_size != 0u ||
+        g_pre_chained_call_hook != nullptr || g_post_chained_call_hook != nullptr;
 }
 void set_runtime_post_chained_call_hook(RuntimePostChainedCallHook hook) noexcept {
     g_post_chained_call_hook = hook;
-    if (hook != nullptr) g_runtime_chain_observers_active = true;
+    g_runtime_chain_observers_active = g_counted_pc_size != 0u ||
+        g_pre_chained_call_hook != nullptr || g_post_chained_call_hook != nullptr;
 }
 
 void set_runtime_post_import_hook(RuntimePostImportHook hook) noexcept { g_post_import_hook = hook; }
@@ -255,10 +257,10 @@ bool Runtime::invoke_chained_call(AllegrexContext &ctx, GuestMemory::AotFastView
     // ownership change. Avoid constructing/checking a two-field token on every
     // dynamic native chain boundary in the city hot path.
     const std::uint64_t caller_generation = g_runtime_thread_switch_generation_fast;
-#if !defined(PSPRECOMP_AOT_PRODUCTION_FASTPATHS)
+    // Profiles use pre-call hooks for game behavior as well as diagnostics,
+    // so they remain available at this boundary in production.
     if (g_pre_chained_call_hook != nullptr)
         g_pre_chained_call_hook(*this, ctx, target_pc, native_depth);
-#endif
     struct DepthGuard {
         std::uint32_t &depth;
         explicit DepthGuard(std::uint32_t &value) : depth(value) { ++depth; }
@@ -299,10 +301,10 @@ bool Runtime::invoke_chained_unit(AllegrexContext &ctx, std::uint32_t unit_index
     const std::uint32_t target_pc = ctx.pc;
     const std::uint32_t native_depth = chain_depth_;
     const std::uint64_t caller_generation = g_runtime_thread_switch_generation_fast;
-#if !defined(PSPRECOMP_AOT_PRODUCTION_FASTPATHS)
+    // Profiles use pre-call hooks for game behavior as well as diagnostics,
+    // so they remain available at this boundary in production.
     if (g_pre_chained_call_hook != nullptr)
         g_pre_chained_call_hook(*this, ctx, target_pc, native_depth);
-#endif
     struct DepthGuard {
         std::uint32_t &depth;
         explicit DepthGuard(std::uint32_t &value) : depth(value) { ++depth; }

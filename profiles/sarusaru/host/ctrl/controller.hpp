@@ -30,6 +30,11 @@ public:
         std::uint8_t ly{0x80u};
     };
     void set_pad(const Pad &pad) noexcept { pad_ = pad; }
+    // Hide a host shortcut from guest samples until each button is released.
+    void consume_buttons(std::uint32_t buttons, std::uint64_t now_us) noexcept {
+        consumed_buttons_ |= buttons;
+        consumed_since_us_ = now_us;
+    }
     // From each event's time (virtual microseconds) the pad holds its state.
     struct ScriptEvent { std::uint64_t time_us{}; Pad pad; };
     void set_script(std::vector<ScriptEvent> script) { script_ = std::move(script); }
@@ -57,6 +62,8 @@ private:
     std::int32_t idle_reset_{-1};
     std::int32_t idle_back_{-1};
     Pad pad_;
+    std::uint32_t consumed_buttons_{};
+    std::uint64_t consumed_since_us_{};
     std::vector<ScriptEvent> script_;
     std::uint64_t last_read_sample_{};
 };

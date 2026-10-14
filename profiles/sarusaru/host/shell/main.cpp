@@ -104,6 +104,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
         sarusaru::SessionOptions options;
         options.memory_stick = sarusaru::utility::default_memory_stick();
         options.experimental_game_frame_rate = settings.experimental_game_frame_rate;
+        options.skip_intro_logos = settings.skip_intro_logos;
         const sarusaru::gpu::FovOverride fov(settings.fov_degrees);
         options.track_gameplay_camera = fov.enabled();
         // A game that cannot start (a moved or changed disc image) goes back

@@ -12,7 +12,7 @@ constexpr SettingRow kGraphics[] = {SettingRow::InternalResolution, SettingRow::
     SettingRow::FrameRateCap, SettingRow::Fov, SettingRow::GameFrameRate, SettingRow::CelShading};
 constexpr SettingRow kWindow[] = {SettingRow::Fullscreen, SettingRow::WindowSize};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone};
-constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::ConfirmButton};
+constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::ConfirmButton, SettingRow::SkipIntroLogos};
 constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabWindow, kWindow},
                                  {Text::TabControls, kControls}, {Text::TabInterface, kInterface}};
 
@@ -161,6 +161,11 @@ RowView describe(SettingRow row, const shell::Settings &settings) {
         view.value = text(settings.translation_language == "en" ? Text::ValueGameEnglish : Text::ValueGameJapanese);
         view.description = text(Text::DescGameText);
         break;
+    case SettingRow::SkipIntroLogos:
+        view.label = text(Text::RowSkipIntroLogos);
+        view.value = on_off(settings.skip_intro_logos);
+        view.description = text(Text::DescSkipIntroLogos);
+        break;
     case SettingRow::ConfirmButton:
         view.label = text(Text::RowConfirm);
         view.value = text(settings.confirm_south ? Text::ValueSouth : Text::ValueEast);
@@ -225,6 +230,9 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
     // The launcher downloads the English pack before it lets this turn English on.
     case SettingRow::GameText:
         settings.translation_language = settings.translation_language == "en" ? "ja" : "en";
+        break;
+    case SettingRow::SkipIntroLogos:
+        settings.skip_intro_logos = !settings.skip_intro_logos;
         break;
     case SettingRow::ConfirmButton:
         settings.confirm_south = !settings.confirm_south;

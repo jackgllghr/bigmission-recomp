@@ -206,6 +206,8 @@ Settings parse_settings(std::string_view text) {
                 settings.translation_pack = value == "none" ? std::filesystem::path{} : std::filesystem::path(value);
             } else if (full == "input.dead_zone") {
                 settings.controls.dead_zone = number(value, 0.0f, 0.95f);
+            } else if (full == "game.skip_intro_logos") {
+                settings.skip_intro_logos = integer(value, 0, 1) != 0;
             } else if (full == "game.disc") {
                 settings.game_disc = decode_path(value);
             } else if (full == "interface.confirm") {
@@ -254,6 +256,8 @@ std::string serialize_settings(const Settings &settings) {
         << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n'
         << "\n[game]\n# The disc image (.iso) the launcher plays; empty until one is chosen. % and # are written as %XX.\n"
         << "disc = " << encode_path(settings.game_disc) << '\n'
+        << "# 1 = skip the opening logos. Start also skips them with this off.\nskip_intro_logos = "
+        << (settings.skip_intro_logos ? 1 : 0) << '\n'
         << "\n[interface]\n# The gamepad button that confirms in the launcher: south (cross) or east (circle, as in the game).\n"
         << "confirm = " << (settings.confirm_south ? "south" : "east") << '\n'
         << "# The launcher's language: auto (the system's), en or ja. The game's own text stays Japanese.\n"
