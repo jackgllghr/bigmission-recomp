@@ -147,8 +147,10 @@ networking (`sceNet*`, 21 in total).
 12. [~] Audio: `sceAudio` output channels are modeled headless on the
         virtual clock (blocking output paces the audio thread; samples are
         counted, not played). `sceSasCore` synthesizes VAG voices with
-        envelopes and mixes grains (reverb recorded, not applied). Still to
-        come: `sceAtrac`, reverb, and host output through SDL3 audio.
+        envelopes and mixes grains (reverb recorded, not applied).
+        `sceAtrac3plus` decodes streamed or in-memory ATRAC3/ATRAC3plus
+        tracks with FFmpeg (LGPL, dynamically linked, built from a pinned
+        source). Still to come: reverb and host output through SDL3 audio.
 13. [ ] Movies: `scePsmfPlayer`/`sceMpeg` playback, if the game uses them
         on the path to gameplay.
 14. [~] Utility dialogs: savedata is modeled (load/save/list/delete/sizes on
@@ -180,11 +182,12 @@ and `disc0:` file I/O. Controller, display, headless GE, RTC, utility-module,
 Startup now runs five game threads, draws its first display lists, reads its
 first data file, initialises its sound system (printing progress to stdout),
 and enters its main loop. A longer run loads title-screen data, queries and
-auto-loads its save (none on a fresh memory stick), and draws for 21 s of guest
-time (635 GE display lists, 42,552 primitives) before stopping at
-`sceAtrac3plus::sceAtracGetAtracID`.
+auto-loads its save (none on a fresh memory stick), streams its first music
+track through ATRAC3plus decoding, and draws for 57 s of guest time (1,719 GE
+display lists, over a million primitives) before stopping at
+`ModuleMgrForUser::sceKernelLoadModule`.
 
-Twenty-one CTest suites pass. Repeat generation rewrites zero source units.
+Twenty-two CTest suites pass. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
 - three generator defects reproduced with synthetic fixtures;

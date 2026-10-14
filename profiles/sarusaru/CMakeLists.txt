@@ -1,5 +1,15 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# FFmpeg (LGPL, dynamically linked) decodes the game's ATRAC music.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FFmpeg.cmake")
+add_library(sarusaru_atrac STATIC host/audio/atrac.cpp host/audio/atrac_decoder.cpp)
+target_include_directories(sarusaru_atrac PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+target_link_libraries(sarusaru_atrac PUBLIC psprecomp_core)
+if(SARUSARU_HAS_FFMPEG)
+    target_compile_definitions(sarusaru_atrac PRIVATE SARUSARU_HAS_FFMPEG=1)
+    target_link_libraries(sarusaru_atrac PUBLIC sarusaru_ffmpeg)
+endif()
+
 # PSP-format save data. aes.c is tiny-AES-c, compiled as C++ like the rest.
 add_library(sarusaru_savedata STATIC
     host/save_data/aes128.cpp host/save_data/param_sfo.cpp host/save_data/savedata_crypto.cpp
@@ -81,6 +91,10 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     add_executable(sarusaru_savedata_dialog_tests tests/savedata_dialog_tests.cpp)
     target_link_libraries(sarusaru_savedata_dialog_tests PRIVATE sarusaru_savedata)
     add_test(NAME sarusaru_savedata_dialog_tests COMMAND sarusaru_savedata_dialog_tests)
+    add_executable(sarusaru_atrac_tests tests/atrac_tests.cpp)
+    target_link_libraries(sarusaru_atrac_tests PRIVATE sarusaru_atrac)
+    sarusaru_use_ffmpeg(sarusaru_atrac_tests)
+    add_test(NAME sarusaru_atrac_tests COMMAND sarusaru_atrac_tests)
 endif()
 
 option(SARUSARU_BUILD_BOOTSTRAP "Build the diagnostic host with locally generated AOT code" OFF)
@@ -109,7 +123,8 @@ if(SARUSARU_BUILD_BOOTSTRAP)
         host/rtc/rtc.cpp host/modules/utility_modules.cpp host/audio/audio.cpp
         host/sas/sas.cpp)
     target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
-    target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot sarusaru_savedata)
+    target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot sarusaru_savedata sarusaru_atrac)
+    sarusaru_use_ffmpeg(sarusaru_bootstrap)
     set_target_properties(sarusaru_bootstrap PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     if(PSPRECOMP_BUILD_PROFILE_TESTS)

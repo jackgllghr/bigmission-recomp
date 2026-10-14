@@ -32,6 +32,30 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
+## Yakumo ATRAC and FFmpeg build code (MIT)
+
+Also adapted from Yakumo at the same revision:
+
+- `cmake/FFmpeg.cmake` (from `profiles/mhp3rd/cmake/FFmpeg.cmake`): option and
+  target names changed to `SARUSARU_*`/`sarusaru_*`; a parallel-jobs default added.
+- `host/audio/atrac_decoder.*` (FFmpeg frame decoder): namespace and macro renamed.
+- `host/audio/atrac.cpp`: WAVE header parsing, the sample-position convention
+  and all-on-memory decoding from `host/hle/hle_atrac.cpp`; the streaming API
+  this game uses is new.
+
+## FFmpeg (LGPL-2.1-or-later, dynamically linked, not in the repository)
+
+Configuring the build downloads FFmpeg 7.1.5 from ffmpeg.org, checks its
+SHA-256 (pinned in `cmake/FFmpeg.cmake`) and builds only `libavcodec` and
+`libavutil` with the ATRAC3, ATRAC3plus and H.264 decoders; the build fails if
+the configuration is not LGPL-only. The shared libraries are placed in
+`bin/lib/` next to the executable with `FFmpeg-COPYING.LGPLv2.1.txt` and
+`FFmpeg-SOURCE.txt` (source URL, hash and configure flags). Releases must ship
+those notices and keep FFmpeg dynamically linked and replaceable. On Windows
+x64 a pinned prebuilt LGPL shared build is used instead (LGPL-3.0-or-later).
+`-DSARUSARU_FFMPEG=system` uses an installed FFmpeg; `OFF` builds without
+music or movies.
+
 ## tiny-AES-c (Unlicense)
 
 `third_party/tiny_aes/aes.c` and `aes.h` are unmodified copies of

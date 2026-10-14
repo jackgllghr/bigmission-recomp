@@ -92,14 +92,15 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
-  initialises its sound system, queries and auto-loads its save (none on a
-  fresh memory stick) and draws for 21 s of guest time (635 GE lists) before
-  stopping at `sceAtrac3plus::sceAtracGetAtracID`. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
+  initialises its sound system, auto-loads its save (none on a fresh memory
+  stick), streams its first ATRAC3plus music track and draws for 57 s of
+  guest time (1,719 GE lists) before stopping at
+  `ModuleMgrForUser::sceKernelLoadModule`. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All twenty-one CTest suites pass, including 17 ISO/preparation cases and seven
+- All twenty-two CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -215,6 +216,17 @@ The pinned upstream is recorded in `config/supported_game.json`.
   engineered descriptions and are not hardware-verified. Reverb settings are
   validated and recorded but not applied (effect sends are dropped); the
   multichannel output mode and the noise spectrum are not modeled.
+- Added `sceAtrac3plus` (`audio/atrac.cpp`) on FFmpeg: GetAtracID/SetData/
+  Release/Reinit, DecodeData with sample-accurate encoder delay, loop and end
+  handling, GetRemainFrame, GetNextSample, SetLoopNum, and streaming through
+  GetStreamDataInfo/AddStreamData. A streamed track's guest buffer is a
+  staging area (refills always go to its start, where the PSP uses varying
+  positions); supplied frames move to a host queue, and supply wraps from the
+  loop-end frame to the loop-start frame. After a loop jump the decoder
+  restarts without warm-up. Running out of streamed data is reported as
+  `BUFFER_IS_EMPTY`. `SARUSARU_TRACE_ATRAC=1` traces it. FFmpeg 7.1.5 is
+  built at configure time from a pinned, hash-checked source (see
+  `THIRD_PARTY.md`).
 - Added the savedata utility (adapted from Yakumo's MIT save-data code; see
   `THIRD_PARTY.md`): InitStart/GetStatus/Update/ShutdownStart with the
   INIT→VISIBLE→QUIT→FINISHED lifecycle, and AUTOLOAD/LOAD, AUTOSAVE/SAVE,

@@ -1,5 +1,6 @@
 #include "game_identity.hpp"
 #include "startup_hle.hpp"
+#include "audio/atrac.hpp"
 #include "audio/audio.hpp"
 #include "ctrl/controller.hpp"
 #include "display/display.hpp"
@@ -126,6 +127,8 @@ int main(int argc, char **argv) {
         sarusaru::audio::register_audio(audio, runtime);
         sarusaru::sas::SasCore sas;
         sarusaru::sas::register_sas(sas, runtime);
+        sarusaru::audio::AtracLibrary atrac(sarusaru::audio::make_ffmpeg_decoder);
+        sarusaru::audio::register_atrac(atrac, runtime);
         sarusaru::utility::SavedataUtility savedata(sarusaru::utility::default_memory_stick(),
                                                     [&startup_hle] { return startup_hle.compiled_sdk_version(); });
         sarusaru::utility::register_savedata(savedata, runtime);
