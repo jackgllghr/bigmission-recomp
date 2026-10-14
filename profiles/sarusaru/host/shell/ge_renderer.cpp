@@ -406,6 +406,8 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     std::vector<std::uint32_t> texels;
     if (!gpu::decode_texture(memory, texture, texels) || texels.size() < static_cast<std::size_t>(texture.width) * texture.height)
         return VK_NULL_HANDLE;
+    if (translation_pack_ != nullptr)
+        translation_pack_->apply(texture, texels);
     Texture entry;
     if (!vk_.create_image(texture.width, texture.height, kColorFormat,
                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, entry.image))

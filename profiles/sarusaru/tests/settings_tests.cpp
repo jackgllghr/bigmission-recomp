@@ -26,6 +26,11 @@ int main() {
     const Settings defaults = default_settings();
     require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
     require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
+    const auto english = parse_settings("[translation]\nlanguage = en\npack = packs/English menu.sstp\n");
+    require(english.language == "en" && english.translation_pack == "packs/English menu.sstp", "translation selection not parsed");
+    require(parse_settings(serialize_settings(english)) == english, "translation settings do not round-trip");
+    rejects("[translation]\nlanguage = fr");
+    rejects("[translation]\npack = ");
     const auto custom = parse_settings(
         "[graphics]\r\ninternal_resolution = 4\r\nwindow_width = 1920\nwindow_height = 1080\nfullscreen = 1\nframe_rate = 30\nexperimental_game_frame_rate = 60\nframe_interpolation = 1\nfov_degrees = 75\n"
         "[input]\ndead_zone = 0.3\n[keyboard]\ncircle = C, V\nquit = none\nfast_forward = F\n"

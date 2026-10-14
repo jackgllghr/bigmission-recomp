@@ -33,6 +33,9 @@ struct ControlSettings {
     bool operator==(const ControlSettings &) const = default;
 };
 struct Settings {
+    std::string language{"ja"};
+    // Relative paths resolve beside the selected settings file.
+    std::filesystem::path translation_pack;
     std::uint32_t internal_resolution{2};
     // The window's size at startup, in points (it stays resizable), and
     // whether it opens fullscreen at the desktop's resolution instead.

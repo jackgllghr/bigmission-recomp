@@ -8,9 +8,14 @@ window, but is not verified playable end to end.** File-based settings and
 keyboard/gamepad rebinding are available, as are 60 FPS frame interpolation at
 the original game speed, a FOV override and window size/fullscreen settings.
 The launcher, in-game settings UI, timing-correct higher simulation rates and
-translation are still to come. Native game cadence overrides are available as
+full translation are still to come. Native game cadence overrides are available as
 an explicit experiment.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
+
+An optional English title/main-menu texture pack is available as a prototype.
+It uses the supplied English logo and translated menu labels; other screens
+retain Japanese. See [`docs/english-main-menu.md`](docs/english-main-menu.md)
+for building the pack and selecting it with `--translation-pack FILE` or settings.
 
 ## Requirements
 

@@ -122,7 +122,7 @@ Settings parse_settings(std::string_view text) {
         try {
             if (content.front() == '[' && content.back() == ']') {
                 section = trim(content.substr(1, content.size() - 2));
-                if (section != "graphics" && section != "input" && section != "keyboard" && section != "gamepad")
+                if (section != "graphics" && section != "input" && section != "keyboard" && section != "gamepad" && section != "translation")
                     throw std::runtime_error("unknown section: " + section);
                 continue;
             }
@@ -156,6 +156,12 @@ Settings parse_settings(std::string_view text) {
                 settings.fov_degrees = number(value, 0.0f, 120.0f);
                 if (settings.fov_degrees != 0.0f && settings.fov_degrees < 30.0f)
                     throw std::runtime_error("FOV must be 0 (native) or 30-120 degrees");
+            } else if (full == "translation.language") {
+                if (value != "ja" && value != "en") throw std::runtime_error("language must be ja or en");
+                settings.language = value;
+            } else if (full == "translation.pack") {
+                if (value.empty()) throw std::runtime_error("pack needs a path or none");
+                settings.translation_pack = value == "none" ? std::filesystem::path{} : std::filesystem::path(value);
             } else if (full == "input.dead_zone") {
                 settings.controls.dead_zone = number(value, 0.0f, 0.95f);
             } else throw std::runtime_error("unknown setting: " + full);
@@ -185,6 +191,10 @@ std::string serialize_settings(const Settings &settings) {
         << "frame_interpolation = " << (settings.frame_interpolation ? 1 : 0) << '\n'
         << "# Vertical FOV of the game's 3D camera: 0 = native (about 36.5); 30-120. HUD and 2D stay as they are.\n"
         << "fov_degrees = " << decimal(settings.fov_degrees) << '\n'
+        << "\n[translation]\n# ja = original; en = English menu pack. Restart to change languages.\n"
+        << "language = " << settings.language << '\n'
+        << "# Pack path relative to this settings file, or none.\npack = "
+        << (settings.translation_pack.empty() ? "none" : settings.translation_pack.generic_string()) << '\n'
         << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n';
     for (const bool keyboard : {true, false}) {
         out << (keyboard ? "\n[keyboard]\n" : "\n[gamepad]\n");

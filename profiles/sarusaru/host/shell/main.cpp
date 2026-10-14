@@ -6,6 +6,7 @@
 // the shell pumps events, presents the displayed framebuffer and waits until
 // real time catches up with guest time.
 #include "session.hpp"
+#include "game_identity.hpp"
 #include "gpu/fov.hpp"
 #include "gpu/frame_interpolator.hpp"
 #include "kernel/guest_clock.hpp"
@@ -34,6 +35,7 @@ constexpr const char *kUsage =
     "Usage: sarusaru [--settings FILE] [--scale N] <prepared BOOT.elf> <game ISO>\n"
     "  --settings FILE  settings and bindings (default: per-user settings.ini)\n"
     "  --scale N  override the file's internal resolution (1-8 times 480x272)\n"
+    "  --translation-pack FILE  select an English menu texture pack for this run\n"
     "  --print-default-settings  print the settings file template and exit\n"
     "Alt+Enter or F11 toggles fullscreen.\n"
     "Default keys: arrows d-pad, Z circle, X cross, A square, S triangle, Q/W L/R, Enter start,\n"
@@ -65,6 +67,7 @@ void set_window_icon(SDL_Window *window) {
 
 int main(int argc, char **argv) {
     std::optional<std::uint32_t> scale;
+    std::filesystem::path translation_override;
     std::filesystem::path settings_path;
     std::vector<std::string_view> paths;
     for (int i = 1; i < argc; ++i) {
@@ -79,6 +82,10 @@ int main(int argc, char **argv) {
         }
         if (arg == "--settings" && i + 1 < argc) {
             settings_path = argv[++i];
+            continue;
+        }
+        if (arg == "--translation-pack" && i + 1 < argc) {
+            translation_override = std::filesystem::absolute(argv[++i]);
             continue;
         }
         if (arg == "--scale" && i + 1 < argc) {
@@ -107,6 +114,14 @@ int main(int argc, char **argv) {
     try {
         if (settings_path.empty()) settings_path = sarusaru::shell::default_settings_path();
         settings = sarusaru::shell::load_settings(settings_path);
+        if (!translation_override.empty()) {
+            settings.language = "en";
+            settings.translation_pack = translation_override;
+        } else if (!settings.translation_pack.empty() && settings.translation_pack.is_relative()) {
+            settings.translation_pack = settings_path.parent_path() / settings.translation_pack;
+        }
+        if (settings.language == "en" && settings.translation_pack.empty())
+            throw std::runtime_error("English needs a translation pack; use --translation-pack FILE or [translation] pack");
         if (scale) settings.internal_resolution = *scale;
         std::cout << "Settings: " << settings_path.string() << '\n';
         if (settings.experimental_game_frame_rate != 0)
@@ -153,6 +168,19 @@ int main(int argc, char **argv) {
             options.memory_stick = sarusaru::utility::default_memory_stick();
             options.experimental_game_frame_rate = settings.experimental_game_frame_rate;
             sarusaru::GameSession game(std::string(paths[0]), std::string(paths[1]), options);
+            std::optional<sarusaru::translation::TexturePack> translation_pack;
+            if (settings.language == "en") {
+                translation_pack = sarusaru::translation::TexturePack::load(settings.translation_pack,
+                    sarusaru::disc_id, sarusaru::executable_sha256, [&](std::string_view path) {
+                        const auto entry = game.disc.find(path);
+                        if (!entry || entry->directory || entry->size > 32u * 1024u * 1024u)
+                            throw std::runtime_error("translation pack: missing or oversized source " + std::string(path));
+                        return game.disc.read_file(*entry, 32u * 1024u * 1024u);
+                    });
+                renderer.set_translation_pack(&*translation_pack);
+                std::cout << "Translation: " << translation_pack->locale() << " (" << translation_pack->size()
+                          << " menu textures); untranslated screens retain Japanese\n";
+            }
             auto &memory = game.runtime.memory();
             // Frame interpolation: each draw is also blended with its match in
             // the previous game frame, for the in-between picture. A game frame

@@ -42,6 +42,10 @@ add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cp
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_gpu PUBLIC psprecomp_core)
 
+add_library(sarusaru_translation STATIC host/translation/texture_pack.cpp)
+target_include_directories(sarusaru_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+target_link_libraries(sarusaru_translation PUBLIC psprecomp_core)
+
 # PSP-format save data. aes.c is tiny-AES-c, compiled as C++ like the rest.
 add_library(sarusaru_savedata STATIC
     host/save_data/aes128.cpp host/save_data/param_sfo.cpp host/save_data/savedata_crypto.cpp
@@ -52,6 +56,9 @@ target_link_libraries(sarusaru_savedata PUBLIC psprecomp_core)
 
 if(PSPRECOMP_BUILD_PROFILE_TESTS)
     enable_testing()
+    add_executable(sarusaru_translation_pack_tests tests/translation_pack_tests.cpp)
+    target_link_libraries(sarusaru_translation_pack_tests PRIVATE sarusaru_translation)
+    add_test(NAME sarusaru_translation_pack_tests COMMAND sarusaru_translation_pack_tests)
     add_executable(sarusaru_frame_rate_tests tests/frame_rate_tests.cpp
         host/display/display.cpp host/kernel/early_kernel.cpp)
     target_link_libraries(sarusaru_frame_rate_tests PRIVATE sarusaru_frame_rate)
@@ -244,7 +251,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
             target_include_directories(sarusaru PRIVATE
                 "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/resources>")
         endif()
-        target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_shell sarusaru_controls)
+        target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_shell sarusaru_controls sarusaru_translation)
         sarusaru_use_ffmpeg(sarusaru)
         set_target_properties(sarusaru PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
