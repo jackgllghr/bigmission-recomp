@@ -4,6 +4,14 @@
 #include <cmath>
 
 namespace sarusaru::shell {
+Input::Input(ControlSettings settings) : settings_(std::move(settings)) {
+    int count = 0;
+    if (SDL_JoystickID *ids = SDL_GetGamepads(&count); ids != nullptr) {
+        for (int i = 0; i < count; ++i)
+            if (auto *pad = SDL_OpenGamepad(ids[i])) gamepads_.push_back(pad);
+        SDL_free(ids);
+    }
+}
 Input::~Input() {
     for (auto *gamepad : gamepads_) SDL_CloseGamepad(gamepad);
 }

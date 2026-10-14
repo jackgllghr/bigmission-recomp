@@ -93,6 +93,42 @@ std::string binding_names(const std::vector<Binding> &bindings) {
     }
     return out;
 }
+// Paths are written as UTF-8 with '%', '#' (the comment mark), control
+// characters and spaces at either end as %XX, so any path survives the file.
+std::string encode_path(const std::filesystem::path &path) {
+    const auto utf8 = path.u8string();
+    const std::string text(utf8.begin(), utf8.end());
+    std::string out;
+    const auto first = text.find_first_not_of(' '), last = text.find_last_not_of(' ');
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const auto c = static_cast<unsigned char>(text[i]);
+        const bool edge_space = c == ' ' && (first == text.npos || i < first || i > last);
+        if (c == '%' || c == '#' || c < 0x20u || c == 0x7Fu || edge_space) {
+            char escaped[4];
+            std::snprintf(escaped, sizeof escaped, "%%%02X", c);
+            out += escaped;
+        } else {
+            out += static_cast<char>(c);
+        }
+    }
+    return out;
+}
+std::filesystem::path decode_path(std::string_view text) {
+    std::string out;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] != '%') {
+            out += text[i];
+            continue;
+        }
+        if (i + 2 >= text.size()) throw std::runtime_error("incomplete %XX escape in a path");
+        int value{};
+        const auto [end, error] = std::from_chars(text.data() + i + 1, text.data() + i + 3, value, 16);
+        if (error != std::errc{} || end != text.data() + i + 3) throw std::runtime_error("invalid %XX escape in a path");
+        out += static_cast<char>(value);
+        i += 2;
+    }
+    return std::filesystem::path(std::u8string(out.begin(), out.end()));
+}
 } // namespace
 
 Settings default_settings() {
@@ -122,7 +158,8 @@ Settings parse_settings(std::string_view text) {
         try {
             if (content.front() == '[' && content.back() == ']') {
                 section = trim(content.substr(1, content.size() - 2));
-                if (section != "graphics" && section != "input" && section != "keyboard" && section != "gamepad" && section != "translation")
+                if (section != "graphics" && section != "input" && section != "keyboard" && section != "gamepad" &&
+                    section != "translation" && section != "game" && section != "interface")
                     throw std::runtime_error("unknown section: " + section);
                 continue;
             }
@@ -158,12 +195,22 @@ Settings parse_settings(std::string_view text) {
                     throw std::runtime_error("FOV must be 0 (native) or 30-120 degrees");
             } else if (full == "translation.language") {
                 if (value != "ja" && value != "en") throw std::runtime_error("language must be ja or en");
-                settings.language = value;
+                settings.translation_language = value;
             } else if (full == "translation.pack") {
                 if (value.empty()) throw std::runtime_error("pack needs a path or none");
                 settings.translation_pack = value == "none" ? std::filesystem::path{} : std::filesystem::path(value);
             } else if (full == "input.dead_zone") {
                 settings.controls.dead_zone = number(value, 0.0f, 0.95f);
+            } else if (full == "game.disc") {
+                settings.game_disc = decode_path(value);
+            } else if (full == "interface.confirm") {
+                if (value != "east" && value != "south") throw std::runtime_error("confirm must be east or south");
+                settings.confirm_south = value == "south";
+            } else if (full == "interface.language") {
+                if (value == "auto") settings.language = Language::Auto;
+                else if (value == "en") settings.language = Language::English;
+                else if (value == "ja") settings.language = Language::Japanese;
+                else throw std::runtime_error("language must be auto, en or ja");
             } else throw std::runtime_error("unknown setting: " + full);
         } catch (const std::exception &error) {
             throw std::runtime_error("settings line " + std::to_string(line_number) + ": " + error.what());
@@ -189,13 +236,21 @@ std::string serialize_settings(const Settings &settings) {
         << "# 1 = 60 FPS motion at native game speed: an interpolated picture between game frames.\n"
         << "# Adds one vblank of latency; needs experimental_game_frame_rate = 0.\n"
         << "frame_interpolation = " << (settings.frame_interpolation ? 1 : 0) << '\n'
-        << "# Vertical FOV of the game's 3D camera: 0 = native (about 36.5); 30-120. HUD and 2D stay as they are.\n"
+        << "# Gameplay camera vertical FOV: 0 = native (about 36.5); 30-120. Menus, cutscenes and HUD stay native.\n"
         << "fov_degrees = " << decimal(settings.fov_degrees) << '\n'
         << "\n[translation]\n# ja = original; en = English menu pack. Restart to change languages.\n"
-        << "language = " << settings.language << '\n'
+        << "language = " << settings.translation_language << '\n'
         << "# Pack path relative to this settings file, or none.\npack = "
         << (settings.translation_pack.empty() ? "none" : settings.translation_pack.generic_string()) << '\n'
-        << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n';
+        << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n'
+        << "\n[game]\n# The disc image (.iso) the launcher plays; empty until one is chosen. % and # are written as %XX.\n"
+        << "disc = " << encode_path(settings.game_disc) << '\n'
+        << "\n[interface]\n# The gamepad button that confirms in the launcher: south (cross) or east (circle, as in the game).\n"
+        << "confirm = " << (settings.confirm_south ? "south" : "east") << '\n'
+        << "# The launcher's language: auto (the system's), en or ja. The game's own text stays Japanese.\n"
+        << "language = "
+        << (settings.language == Language::English ? "en" : settings.language == Language::Japanese ? "ja" : "auto")
+        << '\n';
     for (const bool keyboard : {true, false}) {
         out << (keyboard ? "\n[keyboard]\n" : "\n[gamepad]\n");
         const auto &controls = keyboard ? settings.controls.keyboard : settings.controls.gamepad;
@@ -248,5 +303,27 @@ Settings load_settings(const std::filesystem::path &path) {
     const bool closed = std::fclose(file) == 0;
     if (!written || !closed) throw std::runtime_error("Cannot write settings: " + path.string());
     return settings;
+}
+void save_settings(const std::filesystem::path &path, const Settings &settings) {
+    if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path());
+    auto temporary = path;
+    temporary += ".new";
+    const std::string text = serialize_settings(settings);
+    {
+        std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+        out.write(text.data(), static_cast<std::streamsize>(text.size()));
+        out.close();
+        if (!out) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+            throw std::runtime_error("Cannot write settings: " + temporary.string());
+        }
+    }
+    std::error_code error;
+    std::filesystem::rename(temporary, path, error);
+    if (error) {
+        std::filesystem::remove(temporary, error);
+        throw std::runtime_error("Cannot replace settings: " + path.string());
+    }
 }
 } // namespace sarusaru::shell

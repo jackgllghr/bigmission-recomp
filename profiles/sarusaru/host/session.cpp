@@ -1,5 +1,6 @@
 #include "session.hpp"
 
+#include "game_disc.hpp"
 #include "game_identity.hpp"
 #include "psprecomp/common.hpp"
 #include "psprecomp/sha256.hpp"
@@ -20,19 +21,7 @@ psprecomp::Elf32Image load_executable(const std::filesystem::path &path) {
     return elf;
 }
 
-// The disc must be the one the executable was prepared from: its UMD_DATA.BIN
-// names the supported disc and its BOOT.BIN is byte-identical to BOOT.elf.
-void verify_disc(umd::DiscImage &disc) {
-    const auto umd_data = disc.find("UMD_DATA.BIN");
-    if (!umd_data) throw psprecomp::Error("Disc image has no UMD_DATA.BIN");
-    const auto bytes = disc.read_file(*umd_data, 4096u);
-    const std::string_view text(reinterpret_cast<const char *>(bytes.data()), bytes.size());
-    const std::string expected = std::string(disc_id.substr(0u, 4u)) + "-" + std::string(disc_id.substr(4u)) + "|";
-    if (!text.starts_with(expected)) throw psprecomp::Error("Disc image is not the supported game disc");
-    const auto boot = disc.find("PSP_GAME/SYSDIR/BOOT.BIN");
-    if (!boot || boot->size != executable_size || psprecomp::sha256(disc.read_file(*boot, boot->size)) != executable_sha256)
-        throw psprecomp::Error("Disc image executable does not match the prepared executable");
-}
+constexpr DiscIdentity kIdentity{disc_id, executable_size, executable_sha256};
 
 bool configure_chaining(bool count_every_dispatch) {
     if (count_every_dispatch) {
@@ -48,6 +37,8 @@ bool configure_chaining(bool count_every_dispatch) {
 
 } // namespace
 
+DiscIdentity supported_disc() { return kIdentity; }
+
 bool GameSession::install_kernel() {
     std::uint32_t image_end = load_base;
     for (std::size_t index = 0; index < elf.segments().size(); ++index) {
@@ -62,12 +53,15 @@ bool GameSession::install_kernel() {
     return true;
 }
 
+GameSession::GameSession(const std::filesystem::path &iso, const SessionOptions &options)
+    : GameSession({}, iso, options) {}
+
 GameSession::GameSession(const std::filesystem::path &executable, const std::filesystem::path &iso,
                          const SessionOptions &options)
-    : elf(load_executable(executable)), disc(iso), chaining_configured(configure_chaining(options.count_every_dispatch)),
+    : elf(executable.empty() ? executable_from_disc(iso, kIdentity) : load_executable(executable)), disc(iso), chaining_configured(configure_chaining(options.count_every_dispatch)),
       frame_rate(options.experimental_game_frame_rate),
       savedata(options.memory_stick, [this] { return startup_hle.compiled_sdk_version(); }) {
-    verify_disc(disc);
+    verify_disc(disc, kIdentity);
     const auto relocations = elf.load_and_relocate(runtime.memory(), load_base);
     if (relocations.invalid != 0u || relocations.unsupported != 0u)
         throw psprecomp::Error("Cannot execute an incompletely relocated image");
@@ -93,6 +87,7 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
         };
     }
     display::register_display(display, kernel, runtime, std::move(vcount_hook), std::move(vblank_wait_hook));
+    if (options.track_gameplay_camera) gameplay_camera.install();
     ge::register_ge(ge, kernel, runtime);
     rtc::register_rtc(rtc, runtime);
     modules::register_utility_modules(utility_modules, runtime);

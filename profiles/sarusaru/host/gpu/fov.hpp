@@ -7,9 +7,11 @@
 // widens or narrows every perspective projection by the same factor, so the
 // common camera reaches the chosen FOV and narrower ones (zooms, the startup
 // scene) keep their proportion to it. Orthographic and screen-space draws are
-// untouched, so the HUD and 2D menus stay as they are. The game does not know:
-// its own visibility culling still uses the native view, so objects just
-// outside it can appear late at the edges of a wider one.
+// untouched, so the HUD and 2D menus stay as they are. The shell applies it
+// only to frames a gameplay camera drives (game/gameplay_camera.hpp), so the
+// title, 3D menus and cutscenes stay native. The game does not know: its own
+// visibility culling still uses the native view, so objects just outside it
+// can appear late at the edges of a wider one.
 #include "gpu/ge_state.hpp"
 
 namespace sarusaru::gpu {

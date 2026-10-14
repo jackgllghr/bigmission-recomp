@@ -7,8 +7,10 @@ disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 window, but is not verified playable end to end.** File-based settings and
 keyboard/gamepad rebinding are available, as are 60 FPS frame interpolation at
 the original game speed, a FOV override and window size/fullscreen settings.
-The launcher, in-game settings UI, timing-correct higher simulation rates and
-full translation are still to come. Native game cadence overrides are available as
+A first launcher chooses the disc image and edits the main settings with a
+gamepad, keyboard, mouse or touch screen. The in-game settings UI, binding
+capture, save management, timing-correct higher simulation rates and
+translation are still to come. Native game cadence overrides are available as
 an explicit experiment.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
@@ -95,6 +97,85 @@ out/macos-arm64/bin/sarusaru profiles/sarusaru/game/BOOT.elf \
   '../Saru! Get You! SaruSaru Daisakusen (Japan).iso'
 ```
 
+With only the ISO (`sarusaru game.iso`) the executable is read from the disc
+image itself, after the same SHA-256 check; no prepared `BOOT.elf` is needed.
+
+### Launcher
+
+Started with no disc image, `sarusaru` opens the launcher in the game's
+window: **Play**, **Settings**, **Game disc** and **Quit** over the series'
+sky, sunburst and yellow swoosh, with the title art. The focused control turns
+yellow and wears Pipo's red siren lamp.
+
+- **Game disc** checks a disc image before keeping it in `settings.ini`
+  (`[game] disc`): an ISO9660 image whose `UMD_DATA.BIN` names UCJS10060 and
+  whose `BOOT.BIN` is the supported executable. Another PSP game, a damaged
+  image or a different executable gets a sentence saying so. The image is
+  found with the launcher's own browser (folders, `.iso` files and common
+  places such as home, downloads and mounted drives, all reachable with a
+  gamepad), the system file picker, or by dropping the file on the window.
+- **Settings** has Graphics, Window, Controls and Interface tabs: resolution, 60 FPS
+  motion, the frame rate cap, FOV, the experimental update rate (flagged in
+  red, as is interpolation it switches off), fullscreen, window size, the
+  stick dead zone, the language and the confirm button. Values step with left/right, the
+  row's arrows, or by activating it; each is saved at once.
+- **Controls** (from Settings' Controls tab) lists every PSP control with
+  its keyboard and gamepad inputs, drawn as keycaps and the pad's own glyphs.
+  On a focused cell, confirm (or a click or tap) sets a new input, the north
+  button or `+` adds another, and the west button or Backspace clears it
+  (the mouse and touch get small + and x buttons in the cell). The next input
+  is captured: a key, where Esc cancels (Esc itself is set in
+  `settings.ini`); or a gamepad button, bound on release so even the back
+  button can be bound, with a 1-second hold of it, or 6 seconds without a
+  press, cancelling; or a stick or trigger in the direction pushed. A click
+  or tap cancels either. An input shared with another action is pointed out
+  (it is allowed), and each device can be reset to its defaults.
+- **Play** starts the game in the same window. A game that cannot start (a
+  moved image) returns to the launcher with the reason.
+
+Every screen works with each device alone. The arrow keys, d-pad or left stick
+move the focus; Enter or the confirm button activates; Esc, the other face
+button, a mouse's back button or Android's Back go back; Q/W or L1/R1 switch
+tabs. The mouse focuses what it hovers. A finger taps, dragging a list
+scrolls it (without pressing the row it started on), and a Back pill appears
+for the mouse and touch. The button hints along the bottom follow the device
+last used: PlayStation shapes, Xbox or Nintendo letters (from SDL's labels
+for the pad), or keyboard keys. Confirm is the south button (cross) by
+default; `[interface] confirm = east` makes it circle, as the game itself
+confirms in this Japanese release.
+Layout scales with the window from a 960x544 design.
+
+The launcher speaks **English and Japanese**. `[interface] language` is
+`auto` (Japanese when the system's preferred language is, English otherwise),
+`en` or `ja`, and the Interface tab switches it at once; each language is
+named in itself there. All text is in `host/ui/texts.inc`, one line per text
+with both languages, and the tests check both have every text with the same
+`{0}` placeholders. The disc check reports reasons, not sentences, so they
+are worded in the chosen language. Reasons the game itself gives for not
+starting are still English, inside a translated sentence. The game's own text
+is unchanged (Japanese).
+
+The launcher draws with [Dear ImGui](https://github.com/ocornut/imgui) on the
+shell's Vulkan context, in Luckiest Guy (titles, with M PLUS Rounded 1c Black
+for Japanese) and M PLUS Rounded 1c (text, including Japanese file names); see [`THIRD_PARTY.md`](THIRD_PARTY.md). They
+are downloaded at configure time, pinned and hash-checked, into
+`bin/resources/` beside the executable with their licences.
+
+`SARUSARU_UI_SCRIPT` drives the launcher without a person, for checks with
+each device: keys through SDL, buttons through an SDL virtual gamepad (which
+can claim to be a PlayStation, Xbox or Switch pad), mouse and touch input
+straight to Dear ImGui, file drops, and `capture FILE` to save a BMP of the
+next frame; `padhold` and `axis` hold buttons and push sticks for binding
+capture. The commands are listed in `host/ui/ui_script.hpp`, e.g.:
+
+```sh
+SARUSARU_UI_SCRIPT='wait 1; pad dpdown; pad east; wait 0.5; capture /tmp/settings.bmp; quit' \
+  out/macos-arm64/bin/sarusaru --settings /tmp/test-settings.ini
+```
+
+The launcher writes the settings file it was given, so point developer runs at
+a scratch file rather than the committed `resources/settings.ini`.
+
 `--scale N` overrides the settings file's internal resolution for this run
 (1-8 times 480x272, default 2). Default keys: arrows d-pad, Z circle
 (confirm in this Japanese release), X cross,
@@ -155,8 +236,7 @@ directions inverts an axis. Triggers can bind any action. Buttons activate
 above half travel; stick axes have a rescaled dead zone, while triggers use
 their unipolar range. Connected controllers contribute together, and normal
 hot-plugging remains supported. One source may intentionally trigger several
-actions. These settings will be the backing model for the launcher's in-game
-screen; there is no settings screen yet.
+actions. The launcher edits all of these, bindings included.
 
 `frame_rate` is a **presentation cap**, from 1 to 60; 0 presents at every native
 PSP vblank (about 59.94 Hz). It leaves guest vblank timing, input sampling,
@@ -206,14 +286,17 @@ overridden game frames and the chosen interval. The windowed shell uses the
 settings file instead. Both paths verify the supported executable before the
 game-specific hook is installed.
 
-`fov_degrees` sets the vertical FOV of the game's 3D camera (0 for native, about
-36.5 degrees, or 30-120). Every perspective projection the game uploads is
-rescaled by the same factor, so narrower cameras keep their proportion to the
-common one; orthographic and screen-space draws (the HUD, 2D menus) are
-unchanged. It applies to every 3D scene, including menus and cutscenes, since
-the projection alone does not tell them apart. The game's own visibility
-culling still uses the native view, so with a wider FOV objects just outside
-it can appear late at the screen edges. See
+`fov_degrees` sets the vertical FOV of the gameplay camera (0 for native, about
+36.5 degrees, or 30-120). It applies only while a player-following gameplay
+camera drives the frame: in stages and in the stage hub. The title and main
+menu, 3D menus such as stage select, the warp tunnel, stage introductions and
+other cutscenes keep the native FOV. A pause during gameplay keeps the wide
+view behind the pause menu. While it applies, every perspective
+projection is rescaled by the same factor, so zooms keep their proportion;
+orthographic and screen-space draws (the HUD, 2D menus) are unchanged. With
+frame interpolation the switch is eased over one in-between picture. The
+game's own visibility culling still uses the native view, so with a wider FOV
+objects just outside it can appear late at the screen edges. See
 [`docs/settings-investigation.md`](docs/settings-investigation.md).
 
 `window_width`/`window_height` set the window's size at startup in points
@@ -245,15 +328,15 @@ It currently runs on native non-MSVC builds, not cross-compilation builds.
 
 ## Local files (ignored by Git)
 
-| Path | Contents |
-| --- | --- |
-| `game/BOOT.elf` | Executable extracted from your own ISO |
-| `game/input.json` | Source ISO path, disc metadata and file inventory |
-| `analysis/main.json`, `analysis/*.csv` | Analysis, imports and candidate functions |
-| `analysis/bootstrap.log` | Startup result from the build script |
-| `generated/` | Game-derived C++ corpus; never commit or publish as source |
-| `progress/` | Local lock and scratch work |
-| `../../out/macos-arm64/` | Native tools and diagnostic binary |
+| Path                                   | Contents                                                   |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `game/BOOT.elf`                        | Executable extracted from your own ISO                     |
+| `game/input.json`                      | Source ISO path, disc metadata and file inventory          |
+| `analysis/main.json`, `analysis/*.csv` | Analysis, imports and candidate functions                  |
+| `analysis/bootstrap.log`               | Startup result from the build script                       |
+| `generated/`                           | Game-derived C++ corpus; never commit or publish as source |
+| `progress/`                            | Local lock and scratch work                                |
+| `../../out/macos-arm64/`               | Native tools and diagnostic binary                         |
 
 The ISO is opened read-only. Preparation stages inputs before publishing them
 and refuses to overwrite an existing different executable or symlink target.
@@ -524,7 +607,8 @@ These are game-neutral fixes; game identity and bootstrap choices stay here.
 
 The acceptance run with real input (new game, a level, save and reload),
 then writing GPU results back to guest memory, the GE registers GeState does
-not model yet, and the settings, launcher and translation milestones. See
+not model yet, the rest of the launcher (save management, an in-game menu, Android
+document picking) and translation. See
 [`../../PLAN.md`](../../PLAN.md) and [`YAKUMO_REUSE.md`](YAKUMO_REUSE.md).
 
 The desired prebuilt release model still requires review of distribution of

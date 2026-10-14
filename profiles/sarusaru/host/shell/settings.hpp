@@ -32,8 +32,11 @@ struct ControlSettings {
     float dead_zone{0.2f};
     bool operator==(const ControlSettings &) const = default;
 };
+// The launcher's language; Auto follows the system's preferred language.
+enum class Language { Auto, English, Japanese };
+
 struct Settings {
-    std::string language{"ja"};
+    std::string translation_language{"ja"};
     // Relative paths resolve beside the selected settings file.
     std::filesystem::path translation_pack;
     std::uint32_t internal_resolution{2};
@@ -49,9 +52,15 @@ struct Settings {
     // Draws an in-between picture for each native game frame and presents
     // both: 60 FPS motion at the original game speed, one vblank later.
     bool frame_interpolation{false};
-    // 0 = native; otherwise the 3D camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
+    // 0 = native; otherwise the gameplay camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
     ControlSettings controls;
+    // The player's disc image, chosen in the launcher (empty until then).
+    std::filesystem::path game_disc;
+    // Which face button confirms in the launcher and the port's screens: the
+    // south one (cross) by default, or the east one (circle) as the game does.
+    bool confirm_south{true};
+    Language language{Language::Auto};
     bool operator==(const Settings &) const = default;
 };
 
@@ -62,5 +71,8 @@ struct Settings {
 [[nodiscard]] std::filesystem::path default_settings_path();
 // Missing files are created with defaults; malformed existing files are never overwritten.
 [[nodiscard]] Settings load_settings(const std::filesystem::path &path);
+// Replaces the file with `settings` through a temporary file, so a failed
+// write leaves the old file intact.
+void save_settings(const std::filesystem::path &path, const Settings &settings);
 
 } // namespace sarusaru::shell

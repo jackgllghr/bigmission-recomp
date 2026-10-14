@@ -3,6 +3,7 @@
 // One running game: the verified executable and disc, the runtime with the
 // generated code, and every HLE module this profile provides, wired together
 // and ready to start. Shared by the diagnostic bootstrap and the windowed shell.
+#include "game_disc.hpp"
 #include "startup_hle.hpp"
 #include "audio/atrac.hpp"
 #include "audio/audio.hpp"
@@ -10,6 +11,7 @@
 #include "display/display.hpp"
 #include "ge/ge.hpp"
 #include "game/frame_rate.hpp"
+#include "game/gameplay_camera.hpp"
 #include "io/io_manager.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
@@ -38,11 +40,19 @@ struct SessionOptions {
     std::filesystem::path memory_stick;
     // 0 = original cadence. Other supported rates opt into uncompensated game timing.
     std::uint32_t experimental_game_frame_rate{};
+    // Watches for the gameplay cameras (game/gameplay_camera.hpp), for
+    // overrides that leave menus and cutscenes native.
+    bool track_gameplay_camera{false};
 };
+
+// The disc this build plays (config/supported_game.json).
+[[nodiscard]] DiscIdentity supported_disc();
 
 class GameSession {
 public:
     // Verifies the executable and the disc (throws psprecomp::Error) and builds everything.
+    // Without a prepared executable, the one on the verified disc is used.
+    GameSession(const std::filesystem::path &iso, const SessionOptions &options);
     GameSession(const std::filesystem::path &executable, const std::filesystem::path &iso, const SessionOptions &options);
 
     // Runs the game from its entry point until it stops or `dispatch_limit` is reached.
@@ -68,6 +78,7 @@ public:
     ctrl::Controller controller;
     display::Display display;
     game::FrameRateOverride frame_rate;
+    game::GameplayCamera gameplay_camera{display};
     ge::Ge ge{kernel};
     rtc::Rtc rtc{kernel, rtc::Rtc::host_boot_local_unix_us()};
     modules::UtilityModules utility_modules;
