@@ -91,13 +91,13 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   the public PSPSDK stubs) and UMD callback registration are modeled. Startup
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
-  lists, opens `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
-  `sceRtc::sceRtcGetCurrentClockLocalTime`. `SARUSARU_TRACE_SCHED=1` logs
+  lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
+  `sceUtility::sceUtilityLoadModule` (`0x2A2B3DE0`, module `0x300`). `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All fourteen CTest suites pass, including 17 ISO/preparation cases and seven
+- All fifteen CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -179,7 +179,12 @@ The pinned upstream is recorded in `config/supported_game.json`.
   complete when issued; a failed async open still returns a descriptor
   carrying the error. Writes to stdout/stderr go to the host log. Write
   access to the disc is refused; other devices and relative paths stop
-  execution. Disc timestamps are not yet reported.
+  execution. Disc timestamps are not yet reported. The ISO9660 file ioctls
+  for start sector (`0x01020006`) and size (`0x01020007`) are modeled; other
+  ioctl commands stop execution.
+- Added `sceRtcGetCurrentClockLocalTime`: host local time sampled once at
+  boot plus virtual guest time, so the clock advances exactly with guest
+  time. `SARUSARU_RTC_EPOCH` (Unix seconds) pins the boot time.
 - Mapped the PSP's 16 KiB scratchpad RAM (`0x00010000`) in the framework's
   `GuestMemory`, which previously faulted on it. Accesses use the checked
   slow paths; the main-RAM fast path is unchanged.

@@ -4,6 +4,7 @@
 #include "display/display.hpp"
 #include "ge/ge.hpp"
 #include "io/io_manager.hpp"
+#include "rtc/rtc.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
 #include "kernel/sync.hpp"
@@ -113,6 +114,8 @@ int main(int argc, char **argv) {
         sarusaru::display::register_display(display, early_kernel, runtime);
         sarusaru::ge::Ge ge(early_kernel);
         sarusaru::ge::register_ge(ge, early_kernel, runtime);
+        sarusaru::rtc::Rtc rtc(early_kernel, sarusaru::rtc::Rtc::host_boot_local_unix_us());
+        sarusaru::rtc::register_rtc(rtc, runtime);
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.

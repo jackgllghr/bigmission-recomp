@@ -45,6 +45,10 @@ int main() {
         const auto lbn = io.open("disc0:/sce_lbn0x15_size0xBB8", kOpenRead);
         require(lbn >= 3 && io.read(lbn, kBuffer, 3000u) == 3000 && memory.load8(kBuffer + 2999u) == static_cast<std::uint8_t>(2999u * 7u),
                 "sector extent read");
+        require(io.ioctl(lbn, 0x01020007u, kResult, 8u) == 0 && memory.load32(kResult) == 3000u &&
+                    memory.load32(kResult + 4u) == 0u && io.ioctl(lbn, 0x01020006u, kResult, 4u) == 0 &&
+                    memory.load32(kResult) == 21u && io.ioctl(lbn, 0x01020007u, kResult, 4u) == static_cast<std::int32_t>(kInvalidArgument),
+                "file ioctls");
         require(io.close(lbn) == 0 && io.open("disc0:/sce_lbn0x17_size0x1000", kOpenRead) ==
                     static_cast<std::int32_t>(kFileNotFound),
                 "extent beyond volume accepted");

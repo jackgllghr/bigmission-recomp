@@ -220,6 +220,27 @@ std::int32_t IoManager::close_directory(std::int32_t fd) {
     return 0;
 }
 
+std::int32_t IoManager::ioctl(std::int32_t fd, std::uint32_t command, std::uint32_t out_address,
+                               std::uint32_t out_length) {
+    File *open_file = file(fd);
+    if (open_file == nullptr || open_file->directory || open_file->open_failed) return static_cast<std::int32_t>(kBadFile);
+    auto &memory = runtime_->memory();
+    switch (command) {
+    case 0x01020006u:  // File start sector.
+        if (out_length < 4u || !memory.contains(out_address, 4u)) return static_cast<std::int32_t>(kInvalidArgument);
+        memory.store32(out_address, open_file->entry.sector);
+        return 0;
+    case 0x01020007u:  // File size in bytes.
+        if (out_length < 8u || !memory.contains(out_address, 8u)) return static_cast<std::int32_t>(kInvalidArgument);
+        memory.store32(out_address, open_file->entry.size);
+        memory.store32(out_address + 4u, 0u);
+        return 0;
+    default:
+        runtime_->stop("sceIoIoctl command " + psprecomp::hex32(command) + " is not modeled yet");
+        return static_cast<std::int32_t>(kInvalidArgument);
+    }
+}
+
 std::int32_t IoManager::open_async(const std::string &path, std::uint32_t flags) {
     const auto result = open(path, flags);
     if (runtime_->stopped()) return result;
@@ -329,6 +350,11 @@ void register_io(IoManager &io, psprecomp::Runtime &runtime) {
     runtime.register_hle("IoFileMgrForUser", 0xEB092469u,  // sceIoDclose
         [&io](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
             ctx.set_gpr(2u, static_cast<std::uint32_t>(io.close_directory(static_cast<std::int32_t>(ctx.gpr[4]))));
+        });
+    runtime.register_hle("IoFileMgrForUser", 0x63632449u,  // sceIoIoctl(fd, cmd, in, inlen, out in t0, outlen in t1)
+        [&io](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(io.ioctl(static_cast<std::int32_t>(ctx.gpr[4]), ctx.gpr[5],
+                                                                ctx.gpr[8], ctx.gpr[9])));
         });
     // Operations complete when issued, so waiting and polling both collect at once.
     const auto collect = [&io](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {

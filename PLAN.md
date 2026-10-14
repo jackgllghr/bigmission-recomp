@@ -127,7 +127,8 @@ networking (`sceNet*`, 21 in total).
 7. [~] File I/O: done for `disc0:` paths and `sce_lbn` extents (read-only,
        backed by `DiscImage`), async I/O, stat, directory listing and stdio.
        Still to come when reached: `ms0:` on a per-user host directory with
-       path confinement, `umd0:` raw access, Devctl/Ioctl, relative paths.
+       path confinement, `umd0:` raw access, Devctl and further Ioctl
+       commands, relative paths.
 8. [ ] Modules and overlays: `ModuleMgrForUser` load/start of on-disc modules.
        Establish which modules and code overlays load at runtime, decide
        AOT vs. HLE for each, and measure generated-code coverage.

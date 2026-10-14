@@ -50,6 +50,10 @@ public:
     [[nodiscard]] std::int32_t read_directory(std::int32_t fd, std::uint32_t address);
     [[nodiscard]] std::int32_t close_directory(std::int32_t fd);
 
+    // ISO9660 file ioctls: 0x01020006 start sector (4 bytes), 0x01020007 size (8 bytes).
+    [[nodiscard]] std::int32_t ioctl(std::int32_t fd, std::uint32_t command, std::uint32_t out_address,
+                                     std::uint32_t out_length);
+
     [[nodiscard]] std::int32_t open_async(const std::string &path, std::uint32_t flags);
     [[nodiscard]] std::int32_t read_async(std::int32_t fd, std::uint32_t address, std::uint32_t size);
     [[nodiscard]] std::int32_t close_async(std::int32_t fd);
