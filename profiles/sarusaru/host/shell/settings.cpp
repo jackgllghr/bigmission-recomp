@@ -183,7 +183,7 @@ std::string serialize_settings(const Settings &settings) {
         << "# 1 = 60 FPS motion at native game speed: an interpolated picture between game frames.\n"
         << "# Adds one vblank of latency; needs experimental_game_frame_rate = 0.\n"
         << "frame_interpolation = " << (settings.frame_interpolation ? 1 : 0) << '\n'
-        << "# Vertical FOV of the game's 3D camera: 0 = native (about 36.5); 30-120. HUD and 2D stay as they are.\n"
+        << "# Gameplay camera vertical FOV: 0 = native (about 36.5); 30-120. Menus, cutscenes and HUD stay native.\n"
         << "fov_degrees = " << decimal(settings.fov_degrees) << '\n'
         << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n';
     for (const bool keyboard : {true, false}) {

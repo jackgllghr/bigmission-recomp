@@ -34,7 +34,7 @@ if(SARUSARU_HAS_FFMPEG)
 endif()
 
 # GE display-list state and texture decoding (adapted from Yakumo).
-add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp)
+add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gameplay_camera.cpp)
 target_include_directories(sarusaru_frame_rate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_frame_rate PUBLIC psprecomp_core)
 
@@ -113,6 +113,10 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     add_executable(sarusaru_fov_tests tests/fov_tests.cpp)
     target_link_libraries(sarusaru_fov_tests PRIVATE sarusaru_gpu)
     add_test(NAME sarusaru_fov_tests COMMAND sarusaru_fov_tests)
+    add_executable(sarusaru_gameplay_camera_tests tests/gameplay_camera_tests.cpp host/display/display.cpp
+        host/kernel/early_kernel.cpp)
+    target_link_libraries(sarusaru_gameplay_camera_tests PRIVATE sarusaru_frame_rate)
+    add_test(NAME sarusaru_gameplay_camera_tests COMMAND sarusaru_gameplay_camera_tests)
     add_executable(sarusaru_texture_decode_tests tests/texture_decode_tests.cpp)
     target_link_libraries(sarusaru_texture_decode_tests PRIVATE sarusaru_gpu)
     add_test(NAME sarusaru_texture_decode_tests COMMAND sarusaru_texture_decode_tests)

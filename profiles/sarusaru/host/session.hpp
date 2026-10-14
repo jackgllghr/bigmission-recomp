@@ -10,6 +10,7 @@
 #include "display/display.hpp"
 #include "ge/ge.hpp"
 #include "game/frame_rate.hpp"
+#include "game/gameplay_camera.hpp"
 #include "io/io_manager.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
@@ -38,6 +39,9 @@ struct SessionOptions {
     std::filesystem::path memory_stick;
     // 0 = original cadence. Other supported rates opt into uncompensated game timing.
     std::uint32_t experimental_game_frame_rate{};
+    // Watches for the gameplay cameras (game/gameplay_camera.hpp), for
+    // overrides that leave menus and cutscenes native.
+    bool track_gameplay_camera{false};
 };
 
 class GameSession {
@@ -68,6 +72,7 @@ public:
     ctrl::Controller controller;
     display::Display display;
     game::FrameRateOverride frame_rate;
+    game::GameplayCamera gameplay_camera{display};
     ge::Ge ge{kernel};
     rtc::Rtc rtc{kernel, rtc::Rtc::host_boot_local_unix_us()};
     modules::UtilityModules utility_modules;

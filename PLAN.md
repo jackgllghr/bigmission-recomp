@@ -82,8 +82,8 @@ needs document-picker integration, lifecycle handling and touch-accessible setup
       routine. Fixed-step gameplay speed is not compensated yet.
 - [x] Frame interpolation: 60 FPS motion at native game speed from blended GE
       draws between native game frames; real frames are unchanged, one vblank later.
-- [~] FOV: projection-level override of every perspective camera. Not yet camera-level:
-      menu and cutscene cameras are not distinguished, and guest culling keeps the native view.
+- [x] FOV: gameplay cameras only (stage follow camera, hub); title, 3D menus and cutscenes
+      stay native. Guest culling keeps the native view; other stage types are unverified.
 - [x] Window size at startup and fullscreen (Alt+Enter/F11 toggle).
 - [ ] Verify interpolation in stages, cutscenes and dialogs; higher simulation
       rates remain uncompensated; the presentation cap does not change simulation speed.

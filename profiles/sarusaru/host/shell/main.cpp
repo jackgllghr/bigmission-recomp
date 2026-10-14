@@ -152,6 +152,8 @@ int main(int argc, char **argv) {
             sarusaru::SessionOptions options;
             options.memory_stick = sarusaru::utility::default_memory_stick();
             options.experimental_game_frame_rate = settings.experimental_game_frame_rate;
+            const sarusaru::gpu::FovOverride fov(settings.fov_degrees);
+            options.track_gameplay_camera = fov.enabled();
             sarusaru::GameSession game(std::string(paths[0]), std::string(paths[1]), options);
             auto &memory = game.runtime.memory();
             // Frame interpolation: each draw is also blended with its match in
@@ -161,10 +163,14 @@ int main(int argc, char **argv) {
             sarusaru::gpu::FrameInterpolator interpolator;
             sarusaru::gpu::DrawCall between;
             std::uint64_t frame_requests = game.display.framebuffer_requests();
-            // FOV: every perspective projection is rescaled before the draw
-            // reaches the renderer (and the interpolator).
-            const sarusaru::gpu::FovOverride fov(settings.fov_degrees);
-            if (fov.enabled()) game.ge.state().set_view_hook([&fov](sarusaru::gpu::DrawCall &call) { fov.apply(call); });
+            // FOV: while a gameplay camera drives the frame, every perspective
+            // projection is rescaled before the draw reaches the renderer (and
+            // the interpolator, which then eases the change over a frame).
+            // The title, menus and cutscenes keep the native projection.
+            if (fov.enabled())
+                game.ge.state().set_view_hook([&fov, &game](sarusaru::gpu::DrawCall &call) {
+                    if (game.gameplay_camera.active()) fov.apply(call);
+                });
             game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) {
                 renderer.draw(memory, call);
                 if (!interpolating) return;

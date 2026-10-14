@@ -93,6 +93,7 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
         };
     }
     display::register_display(display, kernel, runtime, std::move(vcount_hook), std::move(vblank_wait_hook));
+    if (options.track_gameplay_camera) gameplay_camera.install();
     ge::register_ge(ge, kernel, runtime);
     rtc::register_rtc(rtc, runtime);
     modules::register_utility_modules(utility_modules, runtime);

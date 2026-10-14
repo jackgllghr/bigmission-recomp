@@ -150,7 +150,40 @@ and the interpolator see the draw. Orthographic and through-mode draws are
 untouched. This is projection-level, not camera-level. Menus and cutscenes
 with 3D cameras widen too, and the game's culling does not know about the wider
 view. In the stage hub at 60 degrees no missing geometry was visible at the
-edges. A camera-level hook remains the refinement:
+edges.
+
+The override applies only to gameplay-camera frames (`game/gameplay_camera.*`).
+Every scene shares one camera parameter block, `*(*(0x08A82B24) + 20)`, which
+holds the near plane at +0 and the yaw at +240. A routine at 0x088807A4 copies
+its vectors to the render camera at 0x08AA59E0 and 0x08AA59F0. The block's
+contents alone do not separate scripted and gameplay cameras, so the hook
+uses the routine that writes it, found with a write watch (chaining off) on
+the block's position:
+
+| Scene | Camera writer |
+| --- | --- |
+| Title, menus | none (static) |
+| Hub, while walking | 0x08809014 (0x08809814 runs every hub frame) |
+| Warp tunnel | 0x0882CEB4 |
+| Stage intro | 0x088946A0, then 0x088944DC / 0x088944F4 |
+| Stage gameplay | 0x0888A09C, the follow camera |
+
+Call hooks showed that 0x0888A09C and 0x08809814 run once per game frame
+exactly while the player is in control. They stop in the stage-select and
+pause menus, and only three stray calls happen during the stage load. Both
+are reached through cross-unit calls, so the runtime's pre-chained-call and
+pre-dispatch hooks see them, at no measurable speed cost. A frame counts as
+gameplay if either ran in that game frame or the one before.
+
+Verification at FOV 60 against native, one capture per second over a scripted
+run: the title, main menu, load menu and loading (25-66 s), stage select
+(73-75 s), tunnel and intro (76-85 s) and pause (101-104 s) were
+pixel-identical to native. The hub (67-72 s) and stage gameplay (86-100 s,
+105 s on) were widened. Untested: other stage types and vehicles, which may
+use other follow cameras and would then stay native; mid-stage events;
+minigames.
+
+Remaining refinement:
 
 1. Trace the producer of the projection upload and its camera/FOV parameters.
 2. Identify gameplay/menu/cutscene camera state and any intentional zoom paths.

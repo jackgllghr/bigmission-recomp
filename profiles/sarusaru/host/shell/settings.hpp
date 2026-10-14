@@ -46,7 +46,7 @@ struct Settings {
     // Draws an in-between picture for each native game frame and presents
     // both: 60 FPS motion at the original game speed, one vblank later.
     bool frame_interpolation{false};
-    // 0 = native; otherwise the 3D camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
+    // 0 = native; otherwise the gameplay camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
     ControlSettings controls;
     bool operator==(const Settings &) const = default;

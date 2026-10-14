@@ -191,14 +191,16 @@ overridden game frames and the chosen interval. The windowed shell uses the
 settings file instead. Both paths verify the supported executable before the
 game-specific hook is installed.
 
-`fov_degrees` sets the vertical FOV of the game's 3D camera (0 for native, about
-36.5 degrees, or 30-120). Every perspective projection the game uploads is
-rescaled by the same factor, so narrower cameras keep their proportion to the
-common one; orthographic and screen-space draws (the HUD, 2D menus) are
-unchanged. It applies to every 3D scene, including menus and cutscenes, since
-the projection alone does not tell them apart. The game's own visibility
-culling still uses the native view, so with a wider FOV objects just outside
-it can appear late at the screen edges. See
+`fov_degrees` sets the vertical FOV of the gameplay camera (0 for native, about
+36.5 degrees, or 30-120). It applies only while a player-following gameplay
+camera drives the frame: in stages and in the stage hub. The title and main
+menu, 3D menus (stage select, pause), the warp tunnel, stage introductions and
+other cutscenes keep the native FOV. While it applies, every perspective
+projection is rescaled by the same factor, so zooms keep their proportion;
+orthographic and screen-space draws (the HUD, 2D menus) are unchanged. With
+frame interpolation the switch is eased over one in-between picture. The
+game's own visibility culling still uses the native view, so with a wider FOV
+objects just outside it can appear late at the screen edges. See
 [`docs/settings-investigation.md`](docs/settings-investigation.md).
 
 `window_width`/`window_height` set the window's size at startup in points
