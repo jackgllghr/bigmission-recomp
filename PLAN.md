@@ -151,7 +151,10 @@ networking (`sceNet*`, 21 in total).
         come: `sceAtrac`, reverb, and host output through SDL3 audio.
 13. [ ] Movies: `scePsmfPlayer`/`sceMpeg` playback, if the game uses them
         on the path to gameplay.
-14. [ ] Utility dialogs: message dialog, OSK, savedata (feeds milestone 3).
+14. [~] Utility dialogs: savedata is modeled (load/save/list/delete/sizes on
+        a per-user PSP-layout memory stick, PSP save encryption with the
+        public keys, mode 3 for this game). No dialog UI is drawn yet. Still
+        to come: message dialog, OSK, and checking saves against a PSP.
 15. [ ] Ad-hoc networking: report "unavailable" faithfully so single-player
         paths proceed; real multiplayer is out of scope for now.
 16. [ ] Acceptance run: title screen, new game, representative level,
@@ -176,11 +179,12 @@ and `disc0:` file I/O. Controller, display, headless GE, RTC, utility-module,
 
 Startup now runs five game threads, draws its first display lists, reads its
 first data file, initialises its sound system (printing progress to stdout),
-and enters its main loop. A longer run loads title-screen data, a minigame
-archive and the save-dialog assets over 8.8 s of guest time (266 GE display
-lists), then stops at `sceUtilitySavedataInitStart`.
+and enters its main loop. A longer run loads title-screen data, queries and
+auto-loads its save (none on a fresh memory stick), and draws for 21 s of guest
+time (635 GE display lists, 42,552 primitives) before stopping at
+`sceAtrac3plus::sceAtracGetAtracID`.
 
-Nineteen CTest suites pass. Repeat generation rewrites zero source units.
+Twenty-one CTest suites pass. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
 - three generator defects reproduced with synthetic fixtures;

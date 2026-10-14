@@ -92,14 +92,14 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
-  initialises its sound system (audio channels and SAS) and enters its main
-  loop: 100,000 dispatches reach 4.2 s of guest time and 127 GE display
-  lists without an unmodeled import. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
+  initialises its sound system, queries and auto-loads its save (none on a
+  fresh memory stick) and draws for 21 s of guest time (635 GE lists) before
+  stopping at `sceAtrac3plus::sceAtracGetAtracID`. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All nineteen CTest suites pass, including 17 ISO/preparation cases and seven
+- All twenty-one CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -215,6 +215,15 @@ The pinned upstream is recorded in `config/supported_game.json`.
   engineered descriptions and are not hardware-verified. Reverb settings are
   validated and recorded but not applied (effect sends are dropped); the
   multichannel output mode and the noise spectrum are not modeled.
+- Added the savedata utility (adapted from Yakumo's MIT save-data code; see
+  `THIRD_PARTY.md`): InitStart/GetStatus/Update/ShutdownStart with the
+  INIT→VISIBLE→QUIT→FINISHED lifecycle, and AUTOLOAD/LOAD, AUTOSAVE/SAVE,
+  LIST*, DELETE* and SIZES on PSP-layout folders under a per-user memory
+  stick (`~/Library/Application Support/SaruSaruRecomp/memstick` on macOS;
+  `SARUSARU_MEMSTICK` overrides). Saves are encrypted and signed as on a PSP
+  with the public keys, in the mode the game's SDK selects (mode 3 here).
+  List modes pick the first suitable entry; no dialog is drawn. Mode 3 has
+  not yet been verified against a save made by a PSP.
 - Added `sceUtilityLoadModule`/`UnloadModule` for the PSPSDK utility module
   IDs. The libraries they load are provided by HLE at their import interface,
   so this records state only, with bad-ID, already-loaded and not-loaded

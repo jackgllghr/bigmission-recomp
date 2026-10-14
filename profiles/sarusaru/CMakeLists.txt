@@ -1,5 +1,13 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# PSP-format save data. aes.c is tiny-AES-c, compiled as C++ like the rest.
+add_library(sarusaru_savedata STATIC
+    host/save_data/aes128.cpp host/save_data/param_sfo.cpp host/save_data/savedata_crypto.cpp
+    host/save_data/savedata_store.cpp host/utility/savedata_dialog.cpp third_party/tiny_aes/aes.c)
+set_source_files_properties(third_party/tiny_aes/aes.c PROPERTIES LANGUAGE CXX)
+target_include_directories(sarusaru_savedata PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host" "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+target_link_libraries(sarusaru_savedata PUBLIC psprecomp_core)
+
 if(PSPRECOMP_BUILD_PROFILE_TESTS)
     enable_testing()
     add_test(NAME sarusaru_prepare_tests
@@ -67,6 +75,12 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_include_directories(sarusaru_sas_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_sas_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_sas_tests COMMAND sarusaru_sas_tests)
+    add_executable(sarusaru_savedata_tests tests/savedata_tests.cpp)
+    target_link_libraries(sarusaru_savedata_tests PRIVATE sarusaru_savedata)
+    add_test(NAME sarusaru_savedata_tests COMMAND sarusaru_savedata_tests)
+    add_executable(sarusaru_savedata_dialog_tests tests/savedata_dialog_tests.cpp)
+    target_link_libraries(sarusaru_savedata_dialog_tests PRIVATE sarusaru_savedata)
+    add_test(NAME sarusaru_savedata_dialog_tests COMMAND sarusaru_savedata_dialog_tests)
 endif()
 
 option(SARUSARU_BUILD_BOOTSTRAP "Build the diagnostic host with locally generated AOT code" OFF)
@@ -95,7 +109,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
         host/rtc/rtc.cpp host/modules/utility_modules.cpp host/audio/audio.cpp
         host/sas/sas.cpp)
     target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
-    target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot)
+    target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot sarusaru_savedata)
     set_target_properties(sarusaru_bootstrap PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     if(PSPRECOMP_BUILD_PROFILE_TESTS)

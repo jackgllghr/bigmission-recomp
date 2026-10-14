@@ -3,7 +3,7 @@
 Reference: [TeamGDB/Yakumo](https://github.com/TeamGDB/Yakumo), observed revision
 `39ac05f1a166703430d18826bc5877f4feb6b511` (2026-10-13).
 This is a shortlist from source inspection, not a complete correctness or licence
-audit. **No Yakumo code has been copied into this profile yet.**
+audit. The save-data module has been adopted (see below and `THIRD_PARTY.md`).
 
 Yakumo builds on PSPRecomp, but most of its PSP host implementation lives under
 `profiles/mhp3rd/host`. It cannot simply be selected for a different game.
@@ -19,6 +19,16 @@ Yakumo builds on PSPRecomp, but most of its PSP host implementation lives under
 | `input/` | Bindings, chords, device mappings | Replace Monster Hunter action presets; keep right-stick gameplay hooks game-specific. |
 | `ui/file_browser.cpp`, `ui/text_input.cpp` | Gamepad-driven browser and on-screen keyboard | These depend on UI layer/widgets, Vulkan renderer, SDL3 and per-user storage. Adapt as a coherent UI module, not isolated file copies. |
 | `text/language.cpp` | Translation-pack parsing ideas | Game archive keys and runtime patching are Monster Hunter-specific; do not copy its text-discovery or memory addresses. |
+
+## Adopted: save data
+
+`save_data/` (AES-128, PARAM.SFO, save crypto, PSP-layout store), the utility
+dialog lifecycle and the savedata HLE were audited and adapted (2026-10-14):
+no game-specific addresses or hooks; the Monster Hunter-specific pieces (fixed
+crypto mode 5, the save import/transfer menu, and its comments) were removed
+or parameterised. Tests cover AES (FIPS-197), CMAC (RFC 4493), PARAM.SFO,
+all three crypto modes, the store and the utility's request sequence. Mode 3
+output has not yet been checked against a save made by a PSP.
 
 ## Licence considerations
 

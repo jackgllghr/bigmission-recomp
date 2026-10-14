@@ -12,6 +12,7 @@
 #include "kernel/interrupts.hpp"
 #include "kernel/sync.hpp"
 #include "umd/disc_image.hpp"
+#include "utility/savedata_dialog.hpp"
 #include "umd/umd_drive.hpp"
 #include "psprecomp/common.hpp"
 #include "psprecomp/elf32.hpp"
@@ -125,6 +126,10 @@ int main(int argc, char **argv) {
         sarusaru::audio::register_audio(audio, runtime);
         sarusaru::sas::SasCore sas;
         sarusaru::sas::register_sas(sas, runtime);
+        sarusaru::utility::SavedataUtility savedata(sarusaru::utility::default_memory_stick(),
+                                                    [&startup_hle] { return startup_hle.compiled_sdk_version(); });
+        sarusaru::utility::register_savedata(savedata, runtime);
+        std::cout << "Memory stick: " << savedata.memory_stick().string() << '\n';
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.
