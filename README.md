@@ -1,9 +1,19 @@
-# PSPRecomp
+# Saru Get You: Saru Saru Daisakusen Recompilation
 
-**SaruSaru project:** this checkout adds a macOS arm64 diagnostic bootstrap for
-*Saru! Get You! SaruSaru Daisakusen*. It is **not playable yet**. See the
+![Saru Get You: Saru Saru Daisakusen](include/image/SaruSaruBigMission.png)
+
+This is a recompilation project of **Saru Get You: Saru Saru Daisakusen**,
+with the aim of making the game available on Windows, macOS, Linux, and Android
+with improved performance and configurability, and providing a foundation for
+translating the game.
+
+The project currently includes a macOS arm64 diagnostic bootstrap and is
+**not playable yet**. See the
 [project plan](PLAN.md) and [profile instructions](profiles/sarusaru/README.md).
-The upstream framework documentation follows below.
+
+## PSPRecomp framework
+
+The project is built on PSPRecomp. The upstream framework documentation follows below.
 
 PSPRecomp is a static recompilation framework for PSP software. It reads an Allegrex/MIPS executable, analyzes guest code, emits C++ translation units, and runs them through a native host runtime instead of shipping a PSP interpreter or JIT.
 
