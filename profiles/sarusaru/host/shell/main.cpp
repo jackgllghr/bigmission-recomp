@@ -350,8 +350,7 @@ int main(int argc, char **argv) {
                     sarusaru::ui::Layer layer(window, vulkan);
                     if (!layer.create(error)) throw psprecomp::Error(error);
                     sarusaru::ui::Launcher menu(layer, settings, settings_path, sarusaru::supported_disc());
-                    if (!start_failure.empty())
-                        menu.show_problem("Could not start", "The game could not start: " + start_failure);
+                    if (!start_failure.empty()) menu.show_start_failure(start_failure);
                     if (menu.run(script ? &*script : nullptr) == sarusaru::ui::Launcher::Outcome::Quit) {
                         status = 0;
                         break;

@@ -24,8 +24,12 @@ struct FileEntry {
 // Throws std::filesystem::filesystem_error when the folder cannot be read.
 [[nodiscard]] std::vector<FileEntry> list_folder(const std::filesystem::path &folder, bool all_files);
 
+// A drive is named as its own folder is; the others are named by the
+// launcher in the player's language.
+enum class PlaceKind { Home, Desktop, Downloads, Documents, Storage, Computer, Drive };
 struct Place {
-    std::string name;
+    PlaceKind kind;
+    std::string name;  // UTF-8, for drives
     std::filesystem::path path;
 };
 // The usual starting points that exist here: home, desktop, downloads,

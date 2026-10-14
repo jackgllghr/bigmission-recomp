@@ -200,6 +200,11 @@ Settings parse_settings(std::string_view text) {
             } else if (full == "interface.confirm") {
                 if (value != "east" && value != "south") throw std::runtime_error("confirm must be east or south");
                 settings.confirm_south = value == "south";
+            } else if (full == "interface.language") {
+                if (value == "auto") settings.language = Language::Auto;
+                else if (value == "en") settings.language = Language::English;
+                else if (value == "ja") settings.language = Language::Japanese;
+                else throw std::runtime_error("language must be auto, en or ja");
             } else throw std::runtime_error("unknown setting: " + full);
         } catch (const std::exception &error) {
             throw std::runtime_error("settings line " + std::to_string(line_number) + ": " + error.what());
@@ -231,7 +236,11 @@ std::string serialize_settings(const Settings &settings) {
         << "\n[game]\n# The disc image (.iso) the launcher plays; empty until one is chosen. % and # are written as %XX.\n"
         << "disc = " << encode_path(settings.game_disc) << '\n'
         << "\n[interface]\n# The gamepad button that confirms in the launcher: south (cross) or east (circle, as in the game).\n"
-        << "confirm = " << (settings.confirm_south ? "south" : "east") << '\n';
+        << "confirm = " << (settings.confirm_south ? "south" : "east") << '\n'
+        << "# The launcher's language: auto (the system's), en or ja. The game's own text stays Japanese.\n"
+        << "language = "
+        << (settings.language == Language::English ? "en" : settings.language == Language::Japanese ? "ja" : "auto")
+        << '\n';
     for (const bool keyboard : {true, false}) {
         out << (keyboard ? "\n[keyboard]\n" : "\n[gamepad]\n");
         const auto &controls = keyboard ? settings.controls.keyboard : settings.controls.gamepad;

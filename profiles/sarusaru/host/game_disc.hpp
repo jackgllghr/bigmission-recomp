@@ -22,12 +22,12 @@ struct DiscIdentity {
     std::string_view executable_sha256;
 };
 
+// What a disc image turned out to be. The launcher words the reasons in the
+// player's language.
 struct DiscCheck {
-    enum class Result { Supported, Unreadable, NotAnIso, NotPspGame, OtherGame, OtherExecutable };
+    enum class Result { Supported, Missing, Unreadable, NotAnIso, NotPspGame, OtherGame, OtherExecutable };
     Result result{Result::Unreadable};
     std::string disc_id;  // as UMD_DATA.BIN names it, when it has one
-    // A sentence for the player saying what is wrong (empty when supported).
-    std::string problem;
     [[nodiscard]] bool supported() const noexcept { return result == Result::Supported; }
 };
 

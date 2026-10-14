@@ -32,6 +32,9 @@ struct ControlSettings {
     float dead_zone{0.2f};
     bool operator==(const ControlSettings &) const = default;
 };
+// The launcher's language; Auto follows the system's preferred language.
+enum class Language { Auto, English, Japanese };
+
 struct Settings {
     std::uint32_t internal_resolution{2};
     // The window's size at startup, in points (it stays resizable), and
@@ -54,6 +57,7 @@ struct Settings {
     // Which face button confirms in the launcher and the port's screens: the
     // south one (cross) by default, or the east one (circle) as the game does.
     bool confirm_south{true};
+    Language language{Language::Auto};
     bool operator==(const Settings &) const = default;
 };
 

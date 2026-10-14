@@ -10,7 +10,9 @@ namespace {
 
 Fonts g_fonts;
 
-ImFont *load(const char *file) {
+// With `merge`, the face's glyphs join the font loaded last, for the
+// characters that one lacks.
+ImFont *load(const char *file, bool merge = false) {
     const auto path = resource_path(std::string("fonts/") + file);
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error)) {
@@ -21,6 +23,7 @@ ImFont *load(const char *file) {
     const auto utf8 = path.u8string();
     ImFontConfig config;
     config.OversampleH = 2;
+    config.MergeMode = merge;
     return ImGui::GetIO().Fonts->AddFontFromFileTTF(std::string(utf8.begin(), utf8.end()).c_str(), 0.0f, &config);
 }
 
@@ -39,6 +42,9 @@ bool load_fonts() {
     g_fonts.body = load("MPLUSRounded1c-Bold.ttf");
     g_fonts.strong = load("MPLUSRounded1c-ExtraBold.ttf");
     g_fonts.display = load("LuckiestGuy-Regular.ttf");
+    // Luckiest Guy is Latin only: Japanese titles and buttons come from the
+    // heaviest M PLUS Rounded 1c, which suits its chunky lettering.
+    if (g_fonts.display != nullptr) load("MPLUSRounded1c-Black.ttf", true);
     const bool complete = g_fonts.body != nullptr && g_fonts.strong != nullptr && g_fonts.display != nullptr;
     ImFont *fallback = g_fonts.body != nullptr ? g_fonts.body : ImGui::GetIO().Fonts->AddFontDefaultVector();
     if (g_fonts.body == nullptr) g_fonts.body = fallback;

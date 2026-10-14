@@ -4,6 +4,7 @@
 // each row says about the current settings, and how left/right (or a tap on
 // its arrows) changes them. Pure, so the tests check it without a window.
 #include "shell/settings.hpp"
+#include "ui/text.hpp"
 
 #include <array>
 #include <span>
@@ -15,15 +16,17 @@ namespace sarusaru::ui {
 enum class SettingRow {
     InternalResolution, FrameInterpolation, FrameRateCap, Fov, GameFrameRate,
     Fullscreen, WindowSize,
-    DeadZone, ConfirmButton,
+    DeadZone,
+    Language, ConfirmButton,
 };
 
 struct SettingsTab {
-    std::string_view title;
+    Text title;
     std::span<const SettingRow> rows;
 };
 [[nodiscard]] std::span<const SettingsTab> settings_tabs();
 
+// In the current language (ui/text.hpp).
 struct RowView {
     std::string label;
     std::string value;

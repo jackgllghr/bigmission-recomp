@@ -7,6 +7,9 @@
 #include "synthetic_iso.hpp"
 #include "ui/file_list.hpp"
 #include "ui/settings_rows.hpp"
+#include "ui/text.hpp"
+
+#include <set>
 
 #include <chrono>
 #include <cstdlib>
@@ -51,8 +54,41 @@ std::vector<std::uint8_t> disc_image(std::string_view umd_data, const std::vecto
     return image;
 }
 
+// Every text exists in both languages with the same placeholders, and
+// formatting fills them in.
+void texts() {
+    using namespace sarusaru::ui;
+    using sarusaru::shell::Language;
+    const auto placeholders = [](std::string_view text) {
+        std::multiset<char> found;
+        for (std::size_t i = 0; i + 2 < text.size(); ++i)
+            if (text[i] == '{' && text[i + 2] == '}') found.insert(text[i + 1]);
+        return found;
+    };
+    for (int i = 0; i < static_cast<int>(Text::Count); ++i) {
+        const auto id = static_cast<Text>(i);
+        const auto english = tr(id, Language::English), japanese = tr(id, Language::Japanese);
+        require(!english.empty() && !japanese.empty(), "a text is missing in a language");
+        require(placeholders(english) == placeholders(japanese), "a translation's placeholders differ");
+    }
+    set_language(Language::Japanese);
+    require(format(Text::DiscOtherGame, {"ULUS12345", "UCJS10060"}) ==
+                "\u5225\u306E PSP \u30B2\u30FC\u30E0\uFF08ULUS12345\uFF09\u3067\u3059\u3002"
+                "\u5BFE\u5FDC\u3057\u3066\u3044\u308B\u306E\u306F UCJS10060 \u3067\u3059\u3002",
+            "Japanese text not formatted");
+    require(tr(Text::Play) == "\u3042\u305D\u3076", "Japanese not selected");
+    set_language(Language::Auto);
+    require(language() == Language::English, "Auto must be resolved before it is set");
+    require(resolve_language(Language::Japanese) == Language::Japanese &&
+                resolve_language(Language::English) == Language::English,
+            "explicit language not kept");
+    set_language(Language::English);
+    require(format(Text::FoundIt, {"a.iso"}) == "Found it! a.iso is ready to play.", "English text not formatted");
+}
+
 void rows() {
     using namespace sarusaru::ui;
+    set_language(sarusaru::shell::Language::English);
     using sarusaru::shell::Settings;
     // The stepping rule: wraps at both ends, and an off-step value moves to
     // the nearest step in the direction pressed.
@@ -99,6 +135,20 @@ void rows() {
                 describe(SettingRow::GameFrameRate, settings).warning,
             "experimental rate clash not flagged");
 
+    settings.language = sarusaru::shell::Language::Auto;
+    step(SettingRow::Language, settings, 1);
+    require(settings.language == sarusaru::shell::Language::English &&
+                describe(SettingRow::Language, settings).value == "English",
+            "language row did not step");
+    step(SettingRow::Language, settings, 1);
+    require(describe(SettingRow::Language, settings).value == "\u65E5\u672C\u8A9E", "Japanese not named in Japanese");
+    step(SettingRow::Language, settings, 1);
+    require(settings.language == sarusaru::shell::Language::Auto &&
+                describe(SettingRow::Language, settings).value.starts_with("Automatic ("),
+            "language row did not wrap to automatic");
+    step(SettingRow::Language, settings, -1);
+    require(settings.language == sarusaru::shell::Language::Japanese, "language row did not step back");
+
     step(SettingRow::ConfirmButton, settings, -1);
     require(!settings.confirm_south, "confirm button did not toggle");
 
@@ -110,7 +160,7 @@ void rows() {
             const auto view = describe(row, settings);
             require(!view.label.empty() && !view.value.empty() && !view.description.empty(), "row without text");
         }
-    require(seen == 9, "settings rows missing from the tabs");
+    require(seen == 10, "settings rows missing from the tabs");
 }
 
 void files(const std::filesystem::path &directory) {
@@ -153,18 +203,16 @@ void discs(const std::filesystem::path &directory) {
 
     const auto good = write("good.iso", disc_image("TEST-00001|0001|", boot));
     const auto check = check_disc(good, identity);
-    require(check.supported() && check.disc_id == "TEST00001" && check.problem.empty(), "supported disc rejected");
+    require(check.supported() && check.disc_id == "TEST00001", "supported disc rejected");
 
-    require(check_disc(directory / "absent.iso", identity).result == DiscCheck::Result::Unreadable, "missing file accepted");
+    require(check_disc(directory / "absent.iso", identity).result == DiscCheck::Result::Missing, "missing file accepted");
     require(check_disc(write("text.iso", std::vector<std::uint8_t>(40000u, 'x')), identity).result ==
                 DiscCheck::Result::NotAnIso,
             "non-ISO accepted");
     require(check_disc(write("nopsp.iso", disc_image("not a umd", boot)), identity).result == DiscCheck::Result::NotPspGame,
             "non-PSP disc accepted");
     const auto other = check_disc(write("other.iso", disc_image("ULUS-12345|0001|", boot)), identity);
-    require(other.result == DiscCheck::Result::OtherGame && other.disc_id == "ULUS12345" &&
-                other.problem.find("ULUS12345") != std::string::npos,
-            "other game accepted or not named");
+    require(other.result == DiscCheck::Result::OtherGame && other.disc_id == "ULUS12345", "other game accepted or not named");
     auto changed = boot;
     changed[100] ^= 1u;
     require(check_disc(write("changed.iso", disc_image("TEST-00001|0001|", changed)), identity).result ==
@@ -185,6 +233,7 @@ int main() {
     const auto directory = std::filesystem::temp_directory_path() /
         ("sarusaru-launcher-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(directory);
+    texts();
     rows();
     files(directory);
     discs(directory);

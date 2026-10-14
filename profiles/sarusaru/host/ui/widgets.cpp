@@ -1,5 +1,6 @@
 #include "ui/widgets.hpp"
 
+#include "ui/text.hpp"
 #include "ui/theme.hpp"
 
 #include "imgui_internal.h"
@@ -366,7 +367,7 @@ bool back_button(const Layer &layer, ImVec2 position) {
     const float u = layer.unit();
     ImFont *font = fonts().strong;
     const float size = 18.0f * u;
-    constexpr std::string_view label = "Back";
+    const std::string_view label = tr(Text::Back);
     const ImVec2 extent = text_size(font, size, label);
     const ImVec2 box(extent.x + 52.0f * u, 40.0f * u);
     ImGui::SetCursorScreenPos(position);

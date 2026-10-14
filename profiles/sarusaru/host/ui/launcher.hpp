@@ -31,9 +31,9 @@ public:
     Launcher(const Launcher &) = delete;
     Launcher &operator=(const Launcher &) = delete;
 
-    // A problem to show over the main menu when the launcher next runs, such
-    // as why the game could not start.
-    void show_problem(std::string title, std::string message);
+    // Shows over the main menu, when the launcher next runs, that the game
+    // could not start, with `detail` (the runtime's own reason, in English).
+    void show_start_failure(std::string detail);
 
     // Runs the screens until the player chooses to play (with a supported disc
     // in settings.game_disc) or to quit. `script` drives them, when given.
@@ -55,8 +55,8 @@ private:
     std::string disc_message_;
     bool disc_message_good_{};
 
-    // A problem shown over everything until dismissed.
-    std::string problem_title_, problem_message_;
+    // Why the game could not start, shown over everything until dismissed.
+    std::string start_failure_;
 
     // The file browser.
     std::filesystem::path folder_;

@@ -11,8 +11,10 @@ namespace {
 constexpr SettingRow kGraphics[] = {SettingRow::InternalResolution, SettingRow::FrameInterpolation,
     SettingRow::FrameRateCap, SettingRow::Fov, SettingRow::GameFrameRate};
 constexpr SettingRow kWindow[] = {SettingRow::Fullscreen, SettingRow::WindowSize};
-constexpr SettingRow kControls[] = {SettingRow::ConfirmButton, SettingRow::DeadZone};
-constexpr SettingsTab kTabs[] = {{"Graphics", kGraphics}, {"Window", kWindow}, {"Controls", kControls}};
+constexpr SettingRow kControls[] = {SettingRow::DeadZone};
+constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::ConfirmButton};
+constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabWindow, kWindow},
+                                 {Text::TabControls, kControls}, {Text::TabInterface, kInterface}};
 
 constexpr double kGameRates[] = {0, 15, 20, 30, 60};
 constexpr double kFrameCaps[] = {0, 15, 20, 30, 60};
@@ -30,12 +32,12 @@ std::vector<double> dead_zone_steps() {
     return steps;
 }
 
-std::string format(const char *pattern, double value) {
+std::string number(const char *pattern, double value) {
     char text[64];
     std::snprintf(text, sizeof text, pattern, value);
     return text;
 }
-const char *on_off(bool value) { return value ? "On" : "Off"; }
+std::string on_off(bool value) { return std::string(tr(value ? Text::On : Text::Off)); }
 
 } // namespace
 
@@ -62,67 +64,73 @@ double step_value(std::span<const double> values, double current, int direction)
 
 RowView describe(SettingRow row, const shell::Settings &settings) {
     RowView view;
+    const auto text = [](Text id) { return std::string(tr(id)); };
     switch (row) {
     case SettingRow::InternalResolution: {
         const auto scale = settings.internal_resolution;
-        view.label = "Resolution";
-        view.value = std::to_string(scale) + "× (" + std::to_string(480u * scale) + "×" +
+        view.label = text(Text::RowResolution);
+        view.value = std::to_string(scale) + "\u00D7 (" + std::to_string(480u * scale) + "\u00D7" +
                      std::to_string(272u * scale) + ")";
-        view.description = "Draws the game at this many times the PSP's 480×272. Higher is sharper and "
-                           "needs a faster GPU.";
+        view.description = text(Text::DescResolution);
         break;
     }
     case SettingRow::FrameInterpolation:
-        view.label = "60 FPS motion";
+        view.label = text(Text::RowInterpolation);
         view.value = on_off(settings.frame_interpolation);
-        view.description = "Shows a blended picture between the game's own 30 FPS frames, at the original game "
-                           "speed. Adds about 17 ms of delay.";
+        view.description = text(Text::DescInterpolation);
         if (settings.frame_interpolation && settings.experimental_game_frame_rate != 0) {
             view.warning = true;
-            view.description = "Needs the game update rate at Native; it stays off until then.";
+            view.description = text(Text::WarnInterpolationRate);
         } else if (settings.frame_interpolation && settings.frame_rate != 0 && settings.frame_rate < 60) {
             view.warning = true;
-            view.description = "Has no effect while the frame rate cap is below 60.";
+            view.description = text(Text::WarnInterpolationCap);
         }
         break;
     case SettingRow::FrameRateCap:
-        view.label = "Frame rate cap";
-        view.value = settings.frame_rate == 0 ? "Off" : std::to_string(settings.frame_rate) + " FPS";
-        view.description = "Limits how often pictures are shown. The game itself keeps its speed.";
+        view.label = text(Text::RowFrameCap);
+        view.value = settings.frame_rate == 0 ? text(Text::Off) : ui::format(Text::ValueFps, {std::to_string(settings.frame_rate)});
+        view.description = text(Text::DescFrameCap);
         break;
     case SettingRow::Fov:
-        view.label = "Field of view";
-        view.value = settings.fov_degrees == 0.0f ? "Native (36.5°)" : format("%.0f°", settings.fov_degrees);
-        view.description = "Widens the camera in stages and the hub. Menus and cutscenes keep the original view.";
+        view.label = text(Text::RowFov);
+        view.value = settings.fov_degrees == 0.0f ? text(Text::ValueFovNative) : number("%.0f\u00B0", settings.fov_degrees);
+        view.description = text(Text::DescFov);
         break;
     case SettingRow::GameFrameRate:
-        view.label = "Game update rate";
+        view.label = text(Text::RowGameRate);
         view.value = settings.experimental_game_frame_rate == 0
-            ? "Native (30)" : std::to_string(settings.experimental_game_frame_rate) + " (experimental)";
-        view.description = "Experimental: changes how often the game updates. Movement and animation speed "
-                           "change with it. Use 60 FPS motion for smooth play at the right speed.";
+            ? text(Text::ValueGameRateNative)
+            : ui::format(Text::ValueExperimental, {std::to_string(settings.experimental_game_frame_rate)});
+        view.description = text(Text::DescGameRate);
         view.warning = settings.experimental_game_frame_rate != 0;
         break;
     case SettingRow::Fullscreen:
-        view.label = "Fullscreen";
+        view.label = text(Text::RowFullscreen);
         view.value = on_off(settings.fullscreen);
-        view.description = "Fills the screen at the desktop's resolution. Alt+Enter or F11 switches while playing.";
+        view.description = text(Text::DescFullscreen);
         break;
     case SettingRow::WindowSize:
-        view.label = "Window size";
-        view.value = std::to_string(settings.window_width) + "×" + std::to_string(settings.window_height);
-        view.description = "The window's size when the game starts. It can still be resized by dragging.";
+        view.label = text(Text::RowWindowSize);
+        view.value = std::to_string(settings.window_width) + "\u00D7" + std::to_string(settings.window_height);
+        view.description = text(Text::DescWindowSize);
         break;
     case SettingRow::DeadZone:
-        view.label = "Stick dead zone";
-        view.value = format("%.0f%%", settings.controls.dead_zone * 100.0);
-        view.description = "How far a stick must move before the game sees it. Raise it if a worn stick drifts.";
+        view.label = text(Text::RowDeadZone);
+        view.value = number("%.0f%%", settings.controls.dead_zone * 100.0);
+        view.description = text(Text::DescDeadZone);
+        break;
+    case SettingRow::Language:
+        view.label = text(Text::RowLanguage);
+        // Each language is named in itself, so it can be found in either.
+        view.value = settings.language == shell::Language::Auto
+            ? ui::format(Text::ValueAutomatic, {language_name(resolve_language(shell::Language::Auto))})
+            : std::string(language_name(settings.language));
+        view.description = text(Text::DescLanguage);
         break;
     case SettingRow::ConfirmButton:
-        view.label = "Confirm button";
-        view.value = settings.confirm_south ? "× South" : "○ East";
-        view.description = "The face button that confirms in these menus. The game itself confirms with "
-                           "○ (east), as in Japan.";
+        view.label = text(Text::RowConfirm);
+        view.value = text(settings.confirm_south ? Text::ValueSouth : Text::ValueEast);
+        view.description = text(Text::DescConfirm);
         break;
     }
     return view;
@@ -162,6 +170,12 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
     case SettingRow::DeadZone: {
         const auto steps = dead_zone_steps();
         settings.controls.dead_zone = static_cast<float>(step_value(steps, settings.controls.dead_zone, direction));
+        break;
+    }
+    case SettingRow::Language: {
+        constexpr shell::Language kOrder[] = {shell::Language::Auto, shell::Language::English, shell::Language::Japanese};
+        const auto index = static_cast<int>(settings.language) + (direction > 0 ? 1 : 2);
+        settings.language = kOrder[index % 3];
         break;
     }
     case SettingRow::ConfirmButton:

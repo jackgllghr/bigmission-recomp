@@ -103,6 +103,8 @@ needs document-picker integration, lifecycle handling and touch-accessible setup
       The game runs from the ISO alone; no Python preparation step.
 - [x] Settings screen backed by `settings.ini`, saved atomically on change.
 - [x] Scripted UI checks (`SARUSARU_UI_SCRIPT`) with a virtual gamepad.
+- [x] English and Japanese launcher text from one table, chosen by setting or
+      the system's language; translations checked for matching placeholders.
 - [ ] Binding capture, save management (import, export, backups), on-screen
       keyboard, in-game menu, progress/cancellation for long operations.
 - [ ] Android document picker, lifecycle handling and touch verification on

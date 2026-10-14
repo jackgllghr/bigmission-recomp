@@ -89,7 +89,7 @@ carry those notices.
 | --- | --- | --- | --- |
 | [Dear ImGui](https://github.com/ocornut/imgui) | 1.92.9b | MIT (`DearImGui-LICENSE.txt`) | launcher widgets, SDL3 and Vulkan backends |
 | [Luckiest Guy](https://github.com/google/fonts/tree/main/apache/luckiestguy) | google/fonts `e9678a5` | Apache-2.0 (`fonts/LuckiestGuy-LICENSE.txt`) | titles and big buttons |
-| [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS) Bold, ExtraBold | google/fonts `e9678a5` | SIL OFL 1.1 (`fonts/MPLUSRounded1c-OFL.txt`, from the M+ project at `eb60490`) | text, including Japanese |
+| [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS) Bold, ExtraBold, Black | google/fonts `e9678a5` | SIL OFL 1.1 (`fonts/MPLUSRounded1c-OFL.txt`, from the M+ project at `eb60490`) | text, and Japanese titles |
 
 The launcher's own code (`host/ui/`) is new. Yakumo's Dear ImGui layer was
 read as a reference for its device handling (see `YAKUMO_REUSE.md`), not copied.

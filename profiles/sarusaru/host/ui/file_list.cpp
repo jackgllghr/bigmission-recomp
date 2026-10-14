@@ -18,10 +18,10 @@ bool by_name(const FileEntry &a, const FileEntry &b) {
     return x != y ? x < y : a.name < b.name;
 }
 
-void add_if_folder(std::vector<Place> &out, std::string name, const std::filesystem::path &path) {
+void add_if_folder(std::vector<Place> &out, PlaceKind kind, const std::filesystem::path &path, std::string name = {}) {
     std::error_code error;
     if (!path.empty() && std::filesystem::is_directory(path, error))
-        out.push_back({std::move(name), path});
+        out.push_back({kind, std::move(name), path});
 }
 
 // Each folder within `parent` as a place (mounted drives).
@@ -30,7 +30,7 @@ void add_children(std::vector<Place> &out, const std::filesystem::path &parent) 
     std::vector<Place> found;
     for (std::filesystem::directory_iterator it(parent, error), end; !error && it != end; it.increment(error)) {
         std::error_code ignored;
-        if (it->is_directory(ignored)) found.push_back({utf8(it->path().filename()), it->path()});
+        if (it->is_directory(ignored)) found.push_back({PlaceKind::Drive, utf8(it->path().filename()), it->path()});
     }
     std::sort(found.begin(), found.end(), [](const Place &a, const Place &b) { return a.name < b.name; });
     out.insert(out.end(), found.begin(), found.end());
@@ -75,34 +75,34 @@ std::vector<Place> places() {
     if (const char *profile = std::getenv("USERPROFILE"); profile && *profile) {
         // getenv is in the ANSI code page, which path's narrow constructor expects.
         const std::filesystem::path home(profile);
-        add_if_folder(out, "Home", home);
-        add_if_folder(out, "Desktop", home / "Desktop");
-        add_if_folder(out, "Downloads", home / "Downloads");
-        add_if_folder(out, "Documents", home / "Documents");
+        add_if_folder(out, PlaceKind::Home, home);
+        add_if_folder(out, PlaceKind::Desktop, home / "Desktop");
+        add_if_folder(out, PlaceKind::Downloads, home / "Downloads");
+        add_if_folder(out, PlaceKind::Documents, home / "Documents");
     }
     for (char drive = 'A'; drive <= 'Z'; ++drive) {
         const std::string root = std::string(1, drive) + ":\\";
-        add_if_folder(out, root, root);
+        add_if_folder(out, PlaceKind::Drive, root, root);
     }
 #else
     if (const char *home = std::getenv("HOME"); home && *home) {
         const std::filesystem::path path(home);
-        add_if_folder(out, "Home", path);
-        add_if_folder(out, "Desktop", path / "Desktop");
-        add_if_folder(out, "Downloads", path / "Downloads");
-        add_if_folder(out, "Documents", path / "Documents");
+        add_if_folder(out, PlaceKind::Home, path);
+        add_if_folder(out, PlaceKind::Desktop, path / "Desktop");
+        add_if_folder(out, PlaceKind::Downloads, path / "Downloads");
+        add_if_folder(out, PlaceKind::Documents, path / "Documents");
     }
 #if defined(__APPLE__)
     add_children(out, "/Volumes");
 #elif defined(__ANDROID__)
-    add_if_folder(out, "Storage", "/storage/emulated/0");
+    add_if_folder(out, PlaceKind::Storage, "/storage/emulated/0");
 #else
     if (const char *user = std::getenv("USER"); user && *user) {
         add_children(out, std::filesystem::path("/run/media") / user);
         add_children(out, std::filesystem::path("/media") / user);
     }
     add_children(out, "/mnt");
-    add_if_folder(out, "Computer", "/");
+    add_if_folder(out, PlaceKind::Computer, "/");
 #endif
 #endif
     return out;

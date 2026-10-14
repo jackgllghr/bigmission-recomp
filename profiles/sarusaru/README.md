@@ -99,10 +99,10 @@ yellow and wears Pipo's red siren lamp.
   found with the launcher's own browser (folders, `.iso` files and common
   places such as home, downloads and mounted drives, all reachable with a
   gamepad), the system file picker, or by dropping the file on the window.
-- **Settings** has Graphics, Window and Controls tabs: resolution, 60 FPS
+- **Settings** has Graphics, Window, Controls and Interface tabs: resolution, 60 FPS
   motion, the frame rate cap, FOV, the experimental update rate (flagged in
   red, as is interpolation it switches off), fullscreen, window size, the
-  stick dead zone and the confirm button. Values step with left/right, the
+  stick dead zone, the language and the confirm button. Values step with left/right, the
   row's arrows, or by activating it; each is saved at once. Key and button
   bindings are still edited in `settings.ini`; the Controls tab opens its
   folder.
@@ -121,9 +121,19 @@ default; `[interface] confirm = east` makes it circle, as the game itself
 confirms in this Japanese release.
 Layout scales with the window from a 960x544 design.
 
+The launcher speaks **English and Japanese**. `[interface] language` is
+`auto` (Japanese when the system's preferred language is, English otherwise),
+`en` or `ja`, and the Interface tab switches it at once; each language is
+named in itself there. All text is in `host/ui/texts.inc`, one line per text
+with both languages, and the tests check both have every text with the same
+`{0}` placeholders. The disc check reports reasons, not sentences, so they
+are worded in the chosen language. Reasons the game itself gives for not
+starting are still English, inside a translated sentence. The game's own text
+is unchanged (Japanese).
+
 The launcher draws with [Dear ImGui](https://github.com/ocornut/imgui) on the
-shell's Vulkan context, in Luckiest Guy (titles) and M PLUS Rounded 1c (text,
-including Japanese file names); see [`THIRD_PARTY.md`](THIRD_PARTY.md). They
+shell's Vulkan context, in Luckiest Guy (titles, with M PLUS Rounded 1c Black
+for Japanese) and M PLUS Rounded 1c (text, including Japanese file names); see [`THIRD_PARTY.md`](THIRD_PARTY.md). They
 are downloaded at configure time, pinned and hash-checked, into
 `bin/resources/` beside the executable with their licences.
 

@@ -1,5 +1,6 @@
 #include "ui/launcher.hpp"
 
+#include "ui/text.hpp"
 #include "ui/theme.hpp"
 #include "ui/ui_script.hpp"
 #include "ui/widgets.hpp"
@@ -20,10 +21,35 @@ namespace {
 // Interface frames are paced to about 60 a second; the swapchain may not wait for vsync.
 constexpr std::uint64_t kFrameNs = 16'666'667u;
 
-constexpr std::string_view kDisclaimer =
-    "Unofficial fan project. Not affiliated with or endorsed by Sony Interactive Entertainment.";
 
 ImVec2 display() { return ImGui::GetIO().DisplaySize; }
+
+// What is wrong with a disc image, in the player's language.
+std::string disc_problem(const DiscCheck &check, std::string_view supported) {
+    switch (check.result) {
+    case DiscCheck::Result::Supported: return {};
+    case DiscCheck::Result::Missing: return std::string(tr(Text::DiscMissing));
+    case DiscCheck::Result::Unreadable: return std::string(tr(Text::DiscUnreadable));
+    case DiscCheck::Result::NotAnIso: return std::string(tr(Text::DiscNotIso));
+    case DiscCheck::Result::NotPspGame: return std::string(tr(Text::DiscNotPsp));
+    case DiscCheck::Result::OtherGame: return format(Text::DiscOtherGame, {check.disc_id, supported});
+    case DiscCheck::Result::OtherExecutable: return std::string(tr(Text::DiscOtherExecutable));
+    }
+    return {};
+}
+
+std::string place_name(const Place &place) {
+    switch (place.kind) {
+    case PlaceKind::Home: return std::string(tr(Text::PlaceHome));
+    case PlaceKind::Desktop: return std::string(tr(Text::PlaceDesktop));
+    case PlaceKind::Downloads: return std::string(tr(Text::PlaceDownloads));
+    case PlaceKind::Documents: return std::string(tr(Text::PlaceDocuments));
+    case PlaceKind::Storage: return std::string(tr(Text::PlaceStorage));
+    case PlaceKind::Computer: return std::string(tr(Text::PlaceComputer));
+    case PlaceKind::Drive: break;
+    }
+    return place.name;
+}
 
 // The panel most screens put their content in: centred, below the title,
 // above the hints. Returns its inner rectangle.
@@ -52,9 +78,8 @@ Launcher::Launcher(Layer &layer, shell::Settings &settings, std::filesystem::pat
 
 Launcher::~Launcher() = default;
 
-void Launcher::show_problem(std::string title, std::string message) {
-    problem_title_ = std::move(title);
-    problem_message_ = std::move(message);
+void Launcher::show_start_failure(std::string detail) {
+    start_failure_ = std::move(detail);
 }
 
 void Launcher::load_title_art() {
@@ -82,7 +107,7 @@ void Launcher::load_title_art() {
 Launcher::Outcome Launcher::run(UiScript *script) {
     outcome_.reset();
     screen_ = Screen::Home;
-    go(Screen::Home, problem_title_.empty() ? "play" : "problem_ok");
+    go(Screen::Home, start_failure_.empty() ? "play" : "problem_ok");
     layer_.set_frame_hook(script != nullptr ? std::function<void(Layer &)>([script](Layer &l) { script->tick(l); })
                                             : std::function<void(Layer &)>());
     while (!outcome_) {
@@ -124,12 +149,13 @@ void Launcher::save() {
         shell::save_settings(settings_path_, settings_);
         settings_error_.clear();
     } catch (const std::exception &error) {
-        settings_error_ = "Settings could not be saved: " + std::string(error.what());
+        settings_error_ = format(Text::SaveFailed, {error.what()});
         std::cerr << "sarusaru: " << settings_error_ << '\n';
     }
 }
 
 void Launcher::frame() {
+    set_language(resolve_language(settings_.language));
     draw_backdrop(layer_);
     if (const auto dropped = layer_.take_dropped_file()) choose_disc(*dropped);
     {
@@ -147,7 +173,7 @@ void Launcher::frame() {
     ImGui::Begin("##launcher", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBringToFrontOnFocus);
-    if (!problem_title_.empty()) {
+    if (!start_failure_.empty()) {
         problem();
     } else {
         switch (screen_) {
@@ -193,8 +219,8 @@ void Launcher::home() {
     {
         ImFont *font = fonts().strong;
         const float text_px = 16.0f * u;
-        const std::string status = ready ? "Game disc ready" : settings_.game_disc.empty()
-            ? "Choose your game disc to play" : "Your game disc needs attention";
+        const std::string_view status = tr(ready ? Text::StatusReady : settings_.game_disc.empty()
+            ? Text::StatusChoose : Text::StatusAttention);
         const ImVec2 extent = text_size(font, text_px, status);
         const ImVec2 min((size.x - extent.x) * 0.5f - 20.0f * u, y), max((size.x + extent.x) * 0.5f + 14.0f * u, y + status_height);
         draw->AddRectFilled(ImVec2(min.x - 3.0f * u, min.y - 3.0f * u), ImVec2(max.x + 3.0f * u, max.y + 3.0f * u),
@@ -202,39 +228,40 @@ void Launcher::home() {
         draw->AddRectFilled(min, max, colors::kWhite, 15.0f * u);
         status_dot(draw, ImVec2(min.x + 15.0f * u, (min.y + max.y) * 0.5f), 5.0f * u, ready ? colors::kGood : colors::kRed);
         draw->AddText(font, text_px, ImVec2(min.x + 28.0f * u, (min.y + max.y - extent.y) * 0.5f), colors::kInk,
-                      status.c_str());
+                      status.data(), status.data() + status.size());
         y += status_height + 14.0f * u;
     }
 
     const float x = (size.x - button.x) * 0.5f;
     const auto place = [&](int index) { ImGui::SetCursorScreenPos(ImVec2(x, y + static_cast<float>(index) * (button.y + gap))); };
     place(0);
-    if (menu_button(layer_, "play", "Play", button, true)) {
+    if (menu_button(layer_, "play", tr(Text::Play), button, true)) {
         if (ready) {
             outcome_ = Outcome::Play;
         } else {
-            disc_message_ = settings_.game_disc.empty() ? "Choose your game disc first." : "";
+            disc_message_ = settings_.game_disc.empty() ? std::string(tr(Text::ChooseDiscFirst)) : "";
             disc_message_good_ = false;
             go(Screen::Disc, "browse");
         }
     }
     place(1);
-    if (menu_button(layer_, "settings", "Settings", button)) go(Screen::Settings, "row0");
+    if (menu_button(layer_, "settings", tr(Text::Settings), button)) go(Screen::Settings, "row0");
     place(2);
-    if (menu_button(layer_, "disc", "Game disc", button)) go(Screen::Disc, "browse");
+    if (menu_button(layer_, "disc", tr(Text::GameDisc), button)) go(Screen::Disc, "browse");
     place(3);
-    if (menu_button(layer_, "quit", "Quit", button)) outcome_ = Outcome::Quit;
+    if (menu_button(layer_, "quit", tr(Text::Quit), button)) outcome_ = Outcome::Quit;
 
     // The disclaimer along the bottom left, on the swoosh.
     {
         ImFont *font = fonts().body;
         const float text_px = 12.0f * u;
-        const ImVec2 extent = text_size(font, text_px, kDisclaimer, size.x * 0.5f);
+        const std::string_view disclaimer = tr(Text::Disclaimer);
+        const ImVec2 extent = text_size(font, text_px, disclaimer, size.x * 0.5f);
         draw->AddText(font, text_px, ImVec2(14.0f * u, size.y - extent.y - 10.0f * u), colors::kBlueDeep,
-                      kDisclaimer.data(), kDisclaimer.data() + kDisclaimer.size(), size.x * 0.5f);
+                      disclaimer.data(), disclaimer.data() + disclaimer.size(), size.x * 0.5f);
     }
     if (layer_.back()) outcome_ = Outcome::Quit;
-    hints(layer_, {{Control::Confirm, "Select"}, {Control::Back, "Quit"}});
+    hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Back, tr(Text::HintQuit)}});
 }
 
 // --- The game disc ---------------------------------------------------------
@@ -246,11 +273,11 @@ void Launcher::choose_disc(const std::filesystem::path &path) {
         settings_.game_disc = path;
         disc_check_ = check;
         save();
-        disc_message_ = "Found it! " + name + " is ready to play.";
+        disc_message_ = format(Text::FoundIt, {name});
         disc_message_good_ = true;
         go(Screen::Disc, "play_now");
     } else {
-        disc_message_ = name + ": " + check.problem;
+        disc_message_ = format(Text::DiscProblemFor, {name, disc_problem(check, identity_.disc_id)});
         disc_message_good_ = false;
         browser_message_ = disc_message_;
         if (screen_ == Screen::Home) go(Screen::Disc, "browse");
@@ -260,7 +287,10 @@ void Launcher::choose_disc(const std::filesystem::path &path) {
 void Launcher::open_system_dialog() {
     if (dialog_open_) return;
     dialog_open_ = true;
-    static constexpr SDL_DialogFileFilter kFilters[] = {{"PSP disc image (.iso)", "iso;ISO"}};
+    // SDL keeps the filters until the dialog closes.
+    static std::string filter_name;
+    filter_name = tr(Text::PickerFilter);
+    static const SDL_DialogFileFilter kFilters[] = {{filter_name.c_str(), "iso;ISO"}};
     const std::string start = settings_.game_disc.empty() ? std::string() : utf8(settings_.game_disc.parent_path());
     SDL_ShowOpenFileDialog(
         [](void *user, const char *const *files, int) {
@@ -277,14 +307,13 @@ void Launcher::open_system_dialog() {
 
 void Launcher::disc() {
     const float u = layer_.unit();
-    const float top = screen_title(layer_, "Game Disc");
+    const float top = screen_title(layer_, tr(Text::DiscTitle));
     const ImRect inner = content_panel(layer_, top, 700.0f);
     const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
     ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, inner.Min.y + pad * 0.8f));
     begin_list("##disc", ImVec2(inner.GetWidth() - 2.0f * pad, inner.GetHeight() - 1.6f * pad));
     ImDrawList *draw = ImGui::GetWindowDrawList();
-    paragraph(layer_, "The game runs from your own copy: a disc image (.iso) of the Japanese UMD, " +
-              std::string(identity_.disc_id) + ".", width, colors::kInkDim);
+    paragraph(layer_, format(Text::DiscIntro, {identity_.disc_id}), width, colors::kInkDim);
     ImGui::Dummy(ImVec2(0, 4.0f * u));
 
     // The disc in use and what was found.
@@ -302,18 +331,19 @@ void Launcher::disc() {
         ImFont *strong = fonts().strong, *body = fonts().body;
         const float text_x = at.x + 70.0f * u;
         const ImVec4 clip(text_x, at.y, at.x + width - 12.0f * u, at.y + height);
-        const std::string name = settings_.game_disc.empty() ? "No disc image chosen yet" : utf8(settings_.game_disc.filename());
+        const std::string name = settings_.game_disc.empty() ? std::string(tr(Text::NoDiscChosen))
+                                                             : utf8(settings_.game_disc.filename());
         draw->AddText(strong, 19.0f * u, ImVec2(text_x, at.y + 10.0f * u), colors::kInk, name.c_str(), nullptr, 0.0f, &clip);
         std::string detail;
         ImU32 detail_color = colors::kInkDim;
         if (ready) {
-            detail = "Ready to play — " + utf8(settings_.game_disc.parent_path());
+            detail = format(Text::ReadyIn, {utf8(settings_.game_disc.parent_path())});
             detail_color = colors::kGood;
         } else if (disc_check_) {
-            detail = disc_check_->problem;
+            detail = disc_problem(*disc_check_, identity_.disc_id);
             detail_color = colors::kRed;
         } else {
-            detail = "Choose it below.";
+            detail = tr(Text::ChooseBelow);
         }
         draw->AddText(body, 15.0f * u, ImVec2(text_x, at.y + 40.0f * u), detail_color, detail.c_str(), nullptr, 0.0f, &clip);
         ImGui::Dummy(ImVec2(width, height));
@@ -325,8 +355,8 @@ void Launcher::disc() {
     }
 
     const bool ready = disc_check_ && disc_check_->supported();
-    if (ready && action_row(layer_, "play_now", "Play now", "", width)) outcome_ = Outcome::Play;
-    if (action_row(layer_, "browse", "Find the disc image", "works with a controller", width)) {
+    if (ready && action_row(layer_, "play_now", tr(Text::PlayNow), "", width)) outcome_ = Outcome::Play;
+    if (action_row(layer_, "browse", tr(Text::FindDisc), tr(Text::WorksWithController), width)) {
         browser_message_.clear();
         std::filesystem::path start;
         if (!settings_.game_disc.empty()) start = settings_.game_disc.parent_path();
@@ -337,17 +367,17 @@ void Launcher::disc() {
         open_folder(start);
         go(Screen::Browser, "entry0");
     }
-    if (action_row(layer_, "system_picker", dialog_open_ ? "Waiting for the file picker…" : "Use the system file picker", "",
+    if (action_row(layer_, "system_picker", tr(dialog_open_ ? Text::WaitingForPicker : Text::SystemPicker), "",
                    width, !dialog_open_))
         open_system_dialog();
     if (layer_.device() == Device::Mouse) {
         ImGui::Dummy(ImVec2(0, 4.0f * u));
-        paragraph(layer_, "You can also drop the .iso file onto this window.", width, colors::kInkDim);
+        paragraph(layer_, tr(Text::DropHint), width, colors::kInkDim);
     }
     end_list(layer_);
 
     if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Home, "disc");
-    hints(layer_, {{Control::Confirm, "Select"}, {Control::Back, "Back"}});
+    hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Back, tr(Text::HintBack)}});
 }
 
 // --- The file browser ------------------------------------------------------
@@ -360,13 +390,13 @@ void Launcher::open_folder(const std::filesystem::path &folder) {
         places_ = places();
         focus_control("entry0");
     } catch (const std::exception &) {
-        browser_message_ = "That folder cannot be opened.";
+        browser_message_ = tr(Text::FolderUnreadable);
     }
 }
 
 void Launcher::browser() {
     const float u = layer_.unit();
-    const float top = screen_title(layer_, "Find your disc");
+    const float top = screen_title(layer_, tr(Text::BrowserTitle));
     const ImRect inner = content_panel(layer_, top, 900.0f);
     const float pad = 16.0f * u;
     ImDrawList *draw = ImGui::GetWindowDrawList();
@@ -397,10 +427,10 @@ void Launcher::browser() {
     begin_list("##places", ImVec2(places_width, list_height));
     std::optional<std::filesystem::path> open;
     for (std::size_t i = 0; i < places_.size(); ++i)
-        if (list_row(layer_, "place" + std::to_string(i), ListIcon::Place, places_[i].name, "", places_width - 10.0f * u,
+        if (list_row(layer_, "place" + std::to_string(i), ListIcon::Place, place_name(places_[i]), "", places_width - 10.0f * u,
                      places_[i].path == folder_))
             open = places_[i].path;
-    if (list_row(layer_, "filter", ListIcon::Disc, all_files_ ? "Showing all files" : "Showing .iso only", "",
+    if (list_row(layer_, "filter", ListIcon::Disc, tr(all_files_ ? Text::ShowingAll : Text::ShowingIso), "",
                  places_width - 10.0f * u)) {
         all_files_ = !all_files_;
         open = folder_;
@@ -419,7 +449,7 @@ void Launcher::browser() {
     std::size_t index = 0;
     const float row_width = entries_width - 14.0f * u;
     if (folder_.has_parent_path() && folder_.parent_path() != folder_) {
-        if (list_row(layer_, "entry" + std::to_string(index++), ListIcon::Up, "Up a folder", "", row_width))
+        if (list_row(layer_, "entry" + std::to_string(index++), ListIcon::Up, tr(Text::UpFolder), "", row_width))
             open = folder_.parent_path();
     }
     std::optional<std::filesystem::path> chosen;
@@ -432,7 +462,7 @@ void Launcher::browser() {
     }
     if (entries_.empty()) {
         ImGui::Dummy(ImVec2(0, 8.0f * u));
-        paragraph(layer_, all_files_ ? "This folder is empty." : "No folders or disc images here.", row_width, colors::kInkDim);
+        paragraph(layer_, tr(all_files_ ? Text::FolderEmpty : Text::NothingHere), row_width, colors::kInkDim);
     }
     end_list(layer_);
 
@@ -447,17 +477,17 @@ void Launcher::browser() {
     if (chosen) choose_disc(*chosen);
 
     if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Disc, "browse");
-    hints(layer_, {{Control::Confirm, "Open"}, {Control::Back, "Back"}});
+    hints(layer_, {{Control::Confirm, tr(Text::HintOpen)}, {Control::Back, tr(Text::HintBack)}});
 }
 
 // --- Settings ----------------------------------------------------------------
 
 void Launcher::settings() {
     const float u = layer_.unit();
-    const float top = screen_title(layer_, "Settings");
+    const float top = screen_title(layer_, tr(Text::SettingsTitle));
     const auto tabs = settings_tabs();
     std::array<std::string_view, 8> titles{};
-    for (std::size_t i = 0; i < tabs.size() && i < titles.size(); ++i) titles[i] = tabs[i].title;
+    for (std::size_t i = 0; i < tabs.size() && i < titles.size(); ++i) titles[i] = tr(tabs[i].title);
     const int previous = tab_;
     tab_ = tab_bar(layer_, std::span(titles.data(), tabs.size()), tab_, top);
     if (tab_ != previous) focus_control("row0");
@@ -485,12 +515,12 @@ void Launcher::settings() {
         }
         if (ImGui::IsItemFocused()) description = describe(rows[i], settings_).description;
     }
-    if (tabs[static_cast<std::size_t>(tab_)].title == "Controls") {
+    if (tabs[static_cast<std::size_t>(tab_)].title == Text::TabControls) {
         const std::string folder = utf8(settings_path_.parent_path());
-        if (action_row(layer_, "open_folder", "Key and button bindings", "edit settings.ini", row_width))
+        if (action_row(layer_, "open_folder", tr(Text::Bindings), tr(Text::BindingsDetail), row_width))
             SDL_OpenURL(("file://" + folder).c_str());
         if (ImGui::IsItemFocused())
-            description = "Bindings are set in settings.ini for now; this opens its folder. A screen for them is coming.";
+            description = tr(Text::BindingsDescription);
     }
     end_list(layer_);
 
@@ -505,31 +535,32 @@ void Launcher::settings() {
         paragraph(layer_, description, inner.GetWidth() - 2.0f * pad - 16.0f * u, colors::kInkDim);
 
     if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Home, "settings");
-    hints(layer_, {{Control::Change, "Change"}, {Control::Tabs, "Tabs"}, {Control::Back, "Back"}});
+    hints(layer_, {{Control::Change, tr(Text::HintChange)}, {Control::Tabs, tr(Text::HintTabs)},
+                   {Control::Back, tr(Text::HintBack)}});
 }
 
 // --- A problem -----------------------------------------------------------------
 
 void Launcher::problem() {
     const float u = layer_.unit();
-    const float top = screen_title(layer_, problem_title_);
+    const float top = screen_title(layer_, tr(Text::CouldNotStart));
+    const std::string message = format(Text::CouldNotStartMessage, {start_failure_});
     const ImVec2 size = display();
     const float width = std::min(size.x - 48.0f * u, 620.0f * u);
     const float pad = 26.0f * u;
-    const float text_height = text_size(fonts().body, 18.0f * u, problem_message_, width - 2.0f * pad).y;
+    const float text_height = text_size(fonts().body, 18.0f * u, message, width - 2.0f * pad).y;
     const float height = text_height + 2.0f * pad + 80.0f * u;
     const ImVec2 min((size.x - width) * 0.5f, std::max(top + 10.0f * u, (size.y - height) * 0.5f));
     panel(layer_, min, ImVec2(min.x + width, min.y + height));
     ImGui::SetCursorScreenPos(ImVec2(min.x + pad, min.y + pad));
-    paragraph(layer_, problem_message_, width - 2.0f * pad);
+    paragraph(layer_, message, width - 2.0f * pad);
     const ImVec2 button(200.0f * u, 50.0f * u);
     ImGui::SetCursorScreenPos(ImVec2(min.x + (width - button.x) * 0.5f, min.y + height - pad - button.y + 6.0f * u));
-    if (menu_button(layer_, "problem_ok", "OK", button) || layer_.back()) {
-        problem_title_.clear();
-        problem_message_.clear();
+    if (menu_button(layer_, "problem_ok", tr(Text::Ok), button) || layer_.back()) {
+        start_failure_.clear();
         go(screen_, screen_ == Screen::Home ? "play" : "");
     }
-    hints(layer_, {{Control::Confirm, "OK"}});
+    hints(layer_, {{Control::Confirm, tr(Text::HintOk)}});
 }
 
 } // namespace sarusaru::ui

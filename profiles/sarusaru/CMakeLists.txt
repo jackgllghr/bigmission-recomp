@@ -23,7 +23,7 @@ if(SARUSARU_HAS_RENDERER)
     # The launcher and the port's screens: their logic (tested without a
     # window), then the screens themselves on Dear ImGui.
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Ui.cmake")
-    add_library(sarusaru_ui_logic STATIC host/ui/settings_rows.cpp host/ui/file_list.cpp)
+    add_library(sarusaru_ui_logic STATIC host/ui/settings_rows.cpp host/ui/file_list.cpp host/ui/text.cpp)
     target_include_directories(sarusaru_ui_logic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_ui_logic PUBLIC sarusaru_controls)
     add_library(sarusaru_ui STATIC host/ui/layer.cpp host/ui/ui_renderer.cpp host/ui/theme.cpp host/ui/widgets.cpp

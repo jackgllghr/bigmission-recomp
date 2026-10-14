@@ -39,7 +39,7 @@ inline constexpr ImU32 kPsSquare = IM_COL32(230, 110, 190, 255);
 // The faces, loaded once. Sizes are chosen per draw (Dear ImGui 1.92 renders
 // glyphs on demand at any size).
 struct Fonts {
-    ImFont *display{};  // Luckiest Guy: titles and big buttons, Latin only
+    ImFont *display{};  // Luckiest Guy: titles and big buttons, with M PLUS Rounded 1c Black for Japanese
     ImFont *body{};     // M PLUS Rounded 1c Bold: everything else, with Japanese
     ImFont *strong{};   // M PLUS Rounded 1c ExtraBold
 };

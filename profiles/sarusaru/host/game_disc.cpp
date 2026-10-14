@@ -35,7 +35,7 @@ DiscCheck check_disc(const std::filesystem::path &iso, const DiscIdentity &ident
     DiscCheck check;
     std::error_code error;
     if (!std::filesystem::is_regular_file(iso, error)) {
-        check.problem = "The file cannot be found.";
+        check.result = DiscCheck::Result::Missing;
         return check;
     }
     try {
@@ -43,28 +43,22 @@ DiscCheck check_disc(const std::filesystem::path &iso, const DiscIdentity &ident
         const auto id = umd_disc_id(disc);
         if (!id) {
             check.result = DiscCheck::Result::NotPspGame;
-            check.problem = "This disc image is not a PSP game.";
             return check;
         }
         check.disc_id = *id;
         if (*id != identity.disc_id) {
             check.result = DiscCheck::Result::OtherGame;
-            check.problem = "This is a different PSP game (" + *id + "); the supported disc is " +
-                            std::string(identity.disc_id) + ".";
             return check;
         }
         if (read_executable(disc, identity).empty()) {
             check.result = DiscCheck::Result::OtherExecutable;
-            check.problem = "This disc's game program is not the supported version 1.00, or the image is damaged.";
             return check;
         }
         check.result = DiscCheck::Result::Supported;
     } catch (const psprecomp::Error &) {
         check.result = DiscCheck::Result::NotAnIso;
-        check.problem = "This file is not a disc image (.iso) that can be read.";
     } catch (const std::exception &) {
         check.result = DiscCheck::Result::Unreadable;
-        check.problem = "The file cannot be read.";
     }
     return check;
 }
