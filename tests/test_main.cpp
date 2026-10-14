@@ -812,6 +812,18 @@ int main() {
         mem.store16(0x08800010u, 0xA55Au);
         require(mem.load16(0x08800010u) == 0xA55Au, "Halfword memory access failed");
 
+        // Scratchpad RAM: 16 KiB at 0x00010000, reachable through the
+        // uncached alias and the AOT slow paths, and bounded on both sides.
+        mem.store32(0x00010004u, 0xCAFEF00Du);
+        require(mem.load32(0x40010004u) == 0xCAFEF00Du && mem.aot_load32(0x00010004u) == 0xCAFEF00Du,
+                "Scratchpad load failed");
+        mem.aot_store16(0x00013FFEu, 0x1234u);
+        require(mem.load16(0x00013FFEu) == 0x1234u && mem.raw_pointer(0x00013FFCu, 4u) != nullptr,
+                "Scratchpad top store failed");
+        require(mem.contains(0x00010000u, 0x4000u) && !mem.contains(0x00013FFEu, 4u) &&
+                    !mem.contains(0x0000FFFCu, 4u) && !mem.contains(0x00014000u),
+                "Scratchpad bounds incorrect");
+
         {
             psprecomp::Runtime redispatch_runtime;
             same_pc_redispatch_count = 0;

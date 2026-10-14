@@ -4,6 +4,8 @@
 #include "psprecomp/common.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <iostream>
 #include <limits>
 #include <optional>
 
@@ -99,6 +101,13 @@ EarlyKernel::ThreadInfo *EarlyKernel::best_ready_thread() noexcept {
 }
 
 void EarlyKernel::switch_to(psprecomp::AllegrexContext &context, ThreadUid uid, ThreadInfo &thread) {
+    // SARUSARU_TRACE_SCHED=1 logs every switch to stderr for diagnosis.
+    static const bool trace = std::getenv("SARUSARU_TRACE_SCHED") != nullptr;
+    if (trace) {
+        std::cerr << "[sched " << now_us_ << "us] -> " << thread.name << " (" << uid << ") pc="
+                  << psprecomp::hex32(thread.context.pc) << " gp=" << psprecomp::hex32(thread.context.gpr[28])
+                  << " sp=" << psprecomp::hex32(thread.context.gpr[29]) << '\n';
+    }
     thread.state = ThreadState::Running;
     current_uid_ = uid;
     context = thread.context;

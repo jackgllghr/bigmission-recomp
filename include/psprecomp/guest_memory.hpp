@@ -27,6 +27,9 @@ public:
     static constexpr std::uint32_t kVramMirrorCount = 4u;
     static constexpr std::uint32_t kVramAddressSpan = kVramSize * kVramMirrorCount;
     static constexpr std::uint32_t kPhysicalBase = 0x08000000u;
+    // 16 KiB on-chip scratchpad RAM. Games use it as fast work memory.
+    static constexpr std::uint32_t kScratchpadBase = 0x00010000u;
+    static constexpr std::uint32_t kScratchpadSize = 16u * 1024u;
 
     explicit GuestMemory(std::uint32_t size_bytes = 32u * 1024u * 1024u);
 
@@ -151,7 +154,7 @@ public:
     // out-of-line accessor turned every guest load and store into a real call,
     // and roughly a third of the translated instructions are memory accesses.
     // The inline body covers only main RAM, which is where the overwhelming
-    // majority of guest traffic goes.  EDRAM, out-of-range and write-watched
+    // majority of guest traffic goes.  EDRAM, scratchpad, out-of-range and write-watched
     // accesses fall through to the out-of-line helpers, which keep exactly the
     // behavior these functions had when they lived entirely in the .cpp.
     [[nodiscard]] PSPRECOMP_MEMORY_FAST_PATH std::uint8_t aot_load8(std::uint32_t address) const {
@@ -246,7 +249,7 @@ public:
     [[nodiscard]] const std::vector<std::uint8_t> &vram_bytes() const noexcept;
 
 private:
-    enum class Region { Vram, Ram };
+    enum class Region { Vram, Ram, Scratchpad };
     struct ResolvedAddress {
         Region region;
         std::size_t offset;
@@ -254,6 +257,7 @@ private:
 
     [[nodiscard]] ResolvedAddress resolve(std::uint32_t address, std::size_t length) const;
     [[nodiscard]] bool is_vram_window(std::uint32_t canonical_address) const noexcept;
+    [[nodiscard]] static bool is_scratchpad(std::uint32_t canonical_address) noexcept;
     [[nodiscard]] std::size_t vram_offset(std::uint32_t canonical_address) const noexcept;
     [[nodiscard]] const std::vector<std::uint8_t> &region_bytes(Region region) const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> &region_bytes(Region region) noexcept;
@@ -303,6 +307,8 @@ private:
 
     std::vector<std::uint8_t> vram_;
     std::vector<std::uint8_t> bytes_;
+    // Reached only through the checked slow paths; the inline fast paths cover main RAM.
+    std::vector<std::uint8_t> scratchpad_;
     // Cached view of bytes_ for the inline fast paths.  Neither region is ever
     // resized after construction, so these stay valid for the object's life.
     //

@@ -118,7 +118,7 @@ networking (`sceNet*`, 21 in total).
 4. [x] Interrupt delivery: guest handlers run in interrupt context (a
        priority-0 pseudo-thread that cannot block); `InterruptManager`
        sub-interrupt registration; vblank handlers on the virtual clock.
-5. [ ] Headless GE (pulled forward: startup reaches it here): EDRAM, display
+5. [x] Headless GE (pulled forward: startup reaches it here): EDRAM, display
        list queue, control-flow walker (jump/call/return, stall, finish,
        signal), sync waits and finish/signal callbacks as GE interrupts.
        Drawing commands are recorded, not rendered.
@@ -170,4 +170,6 @@ Twelve CTest suites pass,
 including 17 input/preparation cases and seven generated-native-code cases.
 Repeat generation rewrites zero source units. Three game-neutral generator
 defects discovered during this work were reproduced with synthetic fixtures,
-fixed, and covered by native execution regression tests.
+fixed, and covered by native execution regression tests. The runtime's guest
+memory also lacked the PSP's 16 KiB scratchpad RAM, which this game uses; it is
+now mapped and covered by a framework test.

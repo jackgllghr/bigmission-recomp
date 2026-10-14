@@ -89,13 +89,14 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   stack reservation have been verified; they resolve the earlier guest fault.
   Interrupt-mask state, thread sleep/wakeup (`0x9ACE131E`/`0xD59EAD2F`, per
   the public PSPSDK stubs) and UMD callback registration are modeled. Startup
-  passes `sceUmdUser` drive activation, `sceCtrl` configuration and its first
-  blocking controller read (one virtual vblank), display setup and its thread
-  and synchronization setup, then stops at `sceGe_user::sceGeEdramGetAddr`.
+  passes `sceUmdUser` drive activation, controller, display, thread and
+  synchronization setup, starts five game threads, submits its first GE display
+  lists, then stops at `IoFileMgrForUser::sceIoOpenAsync` (`0x89AA9906`).
+  `SARUSARU_TRACE_SCHED=1` logs every thread switch to stderr.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All twelve CTest suites pass, including 17 ISO/preparation cases and seven
+- All thirteen CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -162,6 +163,17 @@ The pinned upstream is recorded in `config/supported_game.json`.
   interrupts are enabled), before threads released by that vblank. If only
   vblanks remain, 600 consecutive idle vblanks without a runnable thread
   stop execution.
+- Added a headless GE (`ge/ge.cpp`): EDRAM address, callback registration,
+  list enqueue (tail and head), stall-address updates, list and draw sync.
+  Lists run in zero guest time; jump/call/return with BASE, OFFSET_ADDR and
+  ORIGIN addressing are followed exactly; FINISH and SIGNAL (handler suspend
+  and continue) raise GE interrupts, and a suspending signal pauses the list
+  until its handler returns. Every other command's latest value is kept as GE
+  state. Nothing is rasterised; bounding-box tests count as visible. Other
+  signal behaviours, a bare END and runaway lists stop execution.
+- Mapped the PSP's 16 KiB scratchpad RAM (`0x00010000`) in the framework's
+  `GuestMemory`, which previously faulted on it. Accesses use the checked
+  slow paths; the main-RAM fast path is unchanged.
 - Recorded `sceKernelSetGPO`, and bound the data-cache writeback calls as
   no-ops: host memory is coherent and nothing yet reads guest memory behind
   the CPU's back.

@@ -2,6 +2,7 @@
 #include "startup_hle.hpp"
 #include "ctrl/controller.hpp"
 #include "display/display.hpp"
+#include "ge/ge.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
 #include "kernel/sync.hpp"
@@ -107,6 +108,8 @@ int main(int argc, char **argv) {
         sarusaru::ctrl::register_ctrl(controller, early_kernel, runtime);
         sarusaru::display::Display display;
         sarusaru::display::register_display(display, early_kernel, runtime);
+        sarusaru::ge::Ge ge(early_kernel);
+        sarusaru::ge::register_ge(ge, early_kernel, runtime);
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.
@@ -138,7 +141,9 @@ int main(int argc, char **argv) {
         runtime.run(entry, 100'000u);
         std::cout << "Stopped at " << psprecomp::hex32(cpu.pc) << ": "
                    << runtime.stop_reason() << '\n'
-                   << "Guest time: " << early_kernel.now_us() << " us (virtual)\n"
+                   << "Guest time: " << early_kernel.now_us() << " us (virtual); GE: "
+                   << ge.stats().lists_completed << " lists, " << ge.stats().commands << " commands, "
+                   << ge.stats().primitives << " primitives\n"
                    << "Stop arguments: a0=" << psprecomp::hex32(cpu.gpr[4])
                    << " a1=" << psprecomp::hex32(cpu.gpr[5])
                    << " a2=" << psprecomp::hex32(cpu.gpr[6])
