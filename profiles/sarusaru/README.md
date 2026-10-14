@@ -94,7 +94,7 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
   initialises its sound system (audio channels and SAS) and enters its main
   loop: 100,000 dispatches reach 4.2 s of guest time and 127 GE display
-  lists without an unmodeled import. `SARUSARU_TRACE_SCHED=1` logs
+  lists without an unmodeled import. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
@@ -183,7 +183,9 @@ The pinned upstream is recorded in `config/supported_game.json`.
   directory listing with `.` and `..`, `sce_lbn0x<sector>_size0x<bytes>`
   extents, and the async open/read/close with wait/poll. Async operations
   complete when issued; a failed async open still returns a descriptor
-  carrying the error. Writes to stdout/stderr go to the host log. Write
+  carrying the error. Writes to stdout/stderr go to the host log.
+  `sceIoDevctl` reports a memory stick inserted (`ms0:`/`fatms0:` command
+  `0x02425823`); other devctl commands stop execution. Write
   access to the disc is refused; other devices and relative paths stop
   execution. Disc timestamps are not yet reported. The ISO9660 file ioctls
   for start sector (`0x01020006`) and size (`0x01020007`) are modeled; other

@@ -54,6 +54,11 @@ public:
     [[nodiscard]] std::int32_t ioctl(std::int32_t fd, std::uint32_t command, std::uint32_t out_address,
                                      std::uint32_t out_length);
 
+    // Device controls. A memory stick is reported inserted (`ms0:`/`fatms0:`
+    // 0x02425823); other devices and commands stop execution until modeled.
+    [[nodiscard]] std::int32_t devctl(const std::string &device, std::uint32_t command, std::uint32_t out_address,
+                                      std::uint32_t out_length);
+
     [[nodiscard]] std::int32_t open_async(const std::string &path, std::uint32_t flags);
     [[nodiscard]] std::int32_t read_async(std::int32_t fd, std::uint32_t address, std::uint32_t size);
     [[nodiscard]] std::int32_t close_async(std::int32_t fd);

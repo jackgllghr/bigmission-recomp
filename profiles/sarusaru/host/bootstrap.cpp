@@ -153,7 +153,11 @@ int main(int argc, char **argv) {
         std::cout << "SaruSaru diagnostic AOT bootstrap (not playable)\n"
                   << "Module: " << module->name << "; entry: " << psprecomp::hex32(entry)
                   << "; registered entries: " << runtime.function_count() << '\n' << std::flush;
-        runtime.run(entry, 100'000u);
+        // SARUSARU_DISPATCH_LIMIT raises the diagnostic budget for longer runs.
+        std::uint64_t dispatch_limit = 100'000u;
+        if (const char *limit = std::getenv("SARUSARU_DISPATCH_LIMIT"); limit != nullptr && *limit != '\0')
+            dispatch_limit = std::strtoull(limit, nullptr, 10);
+        runtime.run(entry, dispatch_limit);
         std::cout << "Stopped at " << psprecomp::hex32(cpu.pc) << ": "
                    << runtime.stop_reason() << '\n'
                    << "Guest time: " << early_kernel.now_us() << " us (virtual); GE: "

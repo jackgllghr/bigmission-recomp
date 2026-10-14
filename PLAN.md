@@ -176,8 +176,9 @@ and `disc0:` file I/O. Controller, display, headless GE, RTC, utility-module,
 
 Startup now runs five game threads, draws its first display lists, reads its
 first data file, initialises its sound system (printing progress to stdout),
-and enters its main loop: a 100,000-dispatch diagnostic run reaches 4.2 s of
-guest time and 127 GE display lists without meeting an unmodeled import.
+and enters its main loop. A longer run loads title-screen data, a minigame
+archive and the save-dialog assets over 8.8 s of guest time (266 GE display
+lists), then stops at `sceUtilitySavedataInitStart`.
 
 Nineteen CTest suites pass. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:

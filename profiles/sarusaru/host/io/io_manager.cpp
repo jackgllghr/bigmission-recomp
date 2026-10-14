@@ -241,6 +241,19 @@ std::int32_t IoManager::ioctl(std::int32_t fd, std::uint32_t command, std::uint3
     }
 }
 
+std::int32_t IoManager::devctl(const std::string &device, std::uint32_t command, std::uint32_t out_address,
+                                std::uint32_t out_length) {
+    const std::string name = lower(device);
+    if ((name == "ms0:" || name == "fatms0:") && command == 0x02425823u) {  // Is a medium inserted?
+        if (out_length < 4u || !runtime_->memory().contains(out_address, 4u)) return static_cast<std::int32_t>(kInvalidArgument);
+        runtime_->memory().store32(out_address, 1u);
+        trace("devctl " + device + " medium inserted");
+        return 0;
+    }
+    runtime_->stop("sceIoDevctl " + device + " command " + psprecomp::hex32(command) + " is not modeled yet");
+    return static_cast<std::int32_t>(kNoDevice);
+}
+
 std::int32_t IoManager::open_async(const std::string &path, std::uint32_t flags) {
     const auto result = open(path, flags);
     if (runtime_->stopped()) return result;
@@ -355,6 +368,12 @@ void register_io(IoManager &io, psprecomp::Runtime &runtime) {
         [&io](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
             ctx.set_gpr(2u, static_cast<std::uint32_t>(io.ioctl(static_cast<std::int32_t>(ctx.gpr[4]), ctx.gpr[5],
                                                                 ctx.gpr[8], ctx.gpr[9])));
+        });
+    runtime.register_hle("IoFileMgrForUser", 0x54F5FB11u,  // sceIoDevctl(dev, cmd, in, inlen, out in t0, outlen in t1)
+        [&io, path_at](psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx) {
+            const auto device = path_at(rt, ctx.gpr[4]);
+            ctx.set_gpr(2u, device ? static_cast<std::uint32_t>(io.devctl(*device, ctx.gpr[5], ctx.gpr[8], ctx.gpr[9]))
+                                   : kInvalidArgument);
         });
     // Operations complete when issued, so waiting and polling both collect at once.
     const auto collect = [&io](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {

@@ -99,6 +99,9 @@ int main() {
         runtime.invoke_import("IoFileMgrForUser", 0x42EC03ACu, cpu);
         require(cpu.gpr[2] == 3u, "stdout write");
 
+        require(io.devctl("ms0:", 0x02425823u, kResult, 4u) == 0 && memory.load32(kResult) == 1u &&
+                    io.devctl("ms0:", 0x02425823u, kResult, 2u) == static_cast<std::int32_t>(kInvalidArgument),
+                "memory stick presence");
         require(io.open("ms0:/PSP/SAVEDATA/x", kOpenRead) == static_cast<std::int32_t>(kNoDevice) && runtime.stopped(),
                 "unmodeled device not reported");
     }
