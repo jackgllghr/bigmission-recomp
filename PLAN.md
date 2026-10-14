@@ -102,9 +102,11 @@ Monster Hunter's formats apply. Infrastructure is not a completed translation.
 Investigation and English-first delivery plan:
 [`profiles/sarusaru/docs/translation-investigation.md`](profiles/sarusaru/docs/translation-investigation.md).
 
-First implementation slice: optional English title/main-menu texture pack,
+First implementation slice: optional English pack for the intro, title/main menu,
+name entry, save/load and Options screens, using image regions, bounded read-only
+dialog strings and prepared glyph-line replacement;
 documented in [`profiles/sarusaru/docs/english-main-menu.md`](profiles/sarusaru/docs/english-main-menu.md).
-String/font hooks and full-game translation remain unimplemented.
+Larger string allocation, general font/layout support and full-game translation remain unimplemented.
 
 ### 7. Distribution and verification
 

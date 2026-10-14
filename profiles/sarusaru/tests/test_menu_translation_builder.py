@@ -8,7 +8,7 @@ import unittest
 
 PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
-from build_menu_translation import build, render_labels
+from build_menu_translation import ASSETS, build, render_labels
 
 
 class OutputSafetyTests(unittest.TestCase):
@@ -23,8 +23,7 @@ class MenuCatalogTests(unittest.TestCase):
     def setUp(self):
         from PIL import Image
         self.catalog = json.loads((PROFILE / 'resources/translations/english-menu.json').read_text())
-        self.images = {'b_but_b0.lzs': Image.new('RGBA', (256, 96)),
-                       'e_nabi_a0.lzs': Image.new('RGBA', (256, 16))}
+        self.images = {asset: Image.new('RGBA', size) for asset, (_, size, _) in ASSETS.items()}
 
     def test_default_catalog_renders_all_labels_within_original_slots(self):
         render_labels(self.catalog, self.images)
@@ -34,7 +33,7 @@ class MenuCatalogTests(unittest.TestCase):
 
     def test_rejects_missing_labels_overlap_overflow_and_uncovered_glyphs(self):
         variants = []
-        missing = copy.deepcopy(self.catalog); missing['labels'].pop(); variants.append(missing)
+        missing = copy.deepcopy(self.catalog); missing['labels'].pop(1); variants.append(missing)
         duplicate = copy.deepcopy(self.catalog); duplicate['labels'].append(duplicate['labels'][0]); variants.append(duplicate)
         overlap = copy.deepcopy(self.catalog); overlap['labels'][2]['rect'] = [0, 0, 256, 24]; variants.append(overlap)
         overflow = copy.deepcopy(self.catalog); overflow['labels'][1]['text'] = 'A' * 100; variants.append(overflow)

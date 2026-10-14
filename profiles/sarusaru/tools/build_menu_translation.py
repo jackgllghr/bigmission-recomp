@@ -24,6 +24,7 @@ ASSETS = {
     'i_g_titl_l.lzs': ('title.logo', (352, 144), (512, 256, 352)),
     'b_but_b0.lzs': ('menu.labels', (256, 96), (256, 128, 256)),
     'e_nabi_a0.lzs': ('title.press_start', (256, 16), (256, 16, 256)),
+    'e_but_0.lzs': ('menu.shortcuts', (128, 120), (128, 128, 128)),
     'e_but_1.lzs': ('dialog.buttons', (128, 240), (128, 256, 128)),
     'e_tit_0.lzs': ('screen.titles', (224, 480), (256, 512, 224)),
     'b_but_d0.lzs': ('dialog.yes_no', (96, 32), (128, 32, 96)),
@@ -82,7 +83,11 @@ def render_labels(catalog, images, require_title=True):
         tw, th = bounds[2] - bounds[0], bounds[3] - bounds[1]
         if tw > layer.width - 2 * scale or th > layer.height - 2 * scale:
             raise ValueError(f'{key}: text exceeds pixel budget; shorten it or reduce font_size')
-        draw.text(((layer.width - tw) / 2 - bounds[0], (layer.height - th) / 2 - bounds[1]),
+        alignment = label.get('align', 'center')
+        if alignment not in ('left', 'center'):
+            raise ValueError('Label alignment must be left or center')
+        text_x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
+        draw.text((text_x, (layer.height - th) / 2 - bounds[1]),
                   text, font=font, fill=(255, 224, 32, 255), stroke_width=stroke,
                   stroke_fill=(220, 55, 8, 255))
         image.alpha_composite(layer.resize((width, height), Image.Resampling.LANCZOS), (x, y))

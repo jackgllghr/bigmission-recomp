@@ -12,9 +12,9 @@ full translation are still to come. Native game cadence overrides are available 
 an explicit experiment.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
-An optional English title/main-menu texture pack is available as a prototype.
-It uses the supplied English logo and translated menu labels; other screens
-retain Japanese. See [`docs/english-main-menu.md`](docs/english-main-menu.md)
+An optional English menu-screen pack uses the supplied English logo and covers
+the intro, main menu, name entry, save/load dialogs and Options screen.
+Gameplay and other screens retain Japanese. See [`docs/english-main-menu.md`](docs/english-main-menu.md)
 for building the pack and selecting it with `--translation-pack FILE` or settings.
 
 ## Requirements

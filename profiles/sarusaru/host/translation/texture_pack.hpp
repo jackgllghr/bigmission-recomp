@@ -15,7 +15,7 @@
 
 namespace sarusaru::translation {
 
-// A startup-selected, immutable pack of exact logical-image replacements.
+// A startup-selected pack with immutable content and transient glyph-run state.
 // No guest addresses or renderer cache keys are persisted in a pack.
 class TexturePack {
 public:
@@ -64,7 +64,7 @@ private:
     std::vector<GlyphRun> runs_;
     std::vector<gpu::DrawCall> pending_;
     std::string pending_font_;
-    std::unordered_map<std::uint64_t, std::string> fonts_;
+    std::unordered_map<std::string, std::string> fonts_;
 };
 
 } // namespace sarusaru::translation

@@ -32,12 +32,27 @@ void TexturePack::translate_draw(const psprecomp::GuestMemory &memory, const gpu
         const auto &first = pending_.front();
         const auto &previous = pending_.back();
         if (call.target.color_address != first.target.color_address || call.texture.address != first.texture.address ||
+            call.texture.clut_address != first.texture.clut_address || call.texture.clut_format != first.texture.clut_format ||
+            call.texture.clut_shift != first.texture.clut_shift || call.texture.clut_mask != first.texture.clut_mask ||
+            call.texture.clut_offset != first.texture.clut_offset || call.texture.function != first.texture.function ||
+            call.texture.alpha_from_texture != first.texture.alpha_from_texture ||
+            call.vertices[1].color != first.vertices[1].color ||
+            call.viewport.scissor_x1 != first.viewport.scissor_x1 || call.viewport.scissor_x2 != first.viewport.scissor_x2 ||
+            call.viewport.scissor_y1 != first.viewport.scissor_y1 || call.viewport.scissor_y2 != first.viewport.scissor_y2 ||
             call.vertices[0].position[1] != first.vertices[0].position[1] ||
             call.vertices[0].position[0] != previous.vertices[0].position[0] + 16 || pending_.size() == 64)
             flush_draws(emit);
     }
     if (pending_.empty()) {
-        const auto key = gpu::texture_key(memory, call.texture);
+        gpu::TextureSnapshot snapshot;
+        if (!gpu::snapshot_texture(memory, call.texture, snapshot)) { emit(call); return; }
+        const auto &t = call.texture;
+        // A sampled renderer key cannot validate a font: a single changed glyph
+        // must invalidate identification, even if its address remains unchanged.
+        const auto key = psprecomp::sha256(snapshot.texels) + psprecomp::sha256(snapshot.clut) + ":" +
+            std::to_string(static_cast<unsigned>(t.format)) + ":" + std::to_string(t.swizzled) + ":" +
+            std::to_string(t.clut_format) + ":" + std::to_string(t.clut_shift) + ":" +
+            std::to_string(t.clut_mask) + ":" + std::to_string(t.clut_offset);
         auto found = fonts_.find(key);
         if (found == fonts_.end()) {
             std::vector<std::uint32_t> pixels;
