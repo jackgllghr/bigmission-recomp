@@ -7,6 +7,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(PSPRECOMP_BUILD_TESTS "Build reusable PSPRecomp tests" ON)
+# A profile may set defaults for the options below in profiles/<name>/options.cmake.
+if(NOT PSPRECOMP_PROFILE STREQUAL "" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/profiles/${PSPRECOMP_PROFILE}/options.cmake")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/profiles/${PSPRECOMP_PROFILE}/options.cmake")
+endif()
+option(PSPRECOMP_SHARED_RUNTIME
+    "Also build the runtime as a shared library (psprecomp_runtime), for hosts that load generated code at run time" OFF)
 option(PSPRECOMP_BUILD_PROFILE_TESTS "Build tests supplied by the selected profile" ON)
 set(PSPRECOMP_PROFILE "" CACHE STRING "Profile to build from profiles/<name>; empty builds only the framework")
 
@@ -91,6 +97,22 @@ if(MSVC)
         $<$<CONFIG:Release>:/Ob3> $<$<CONFIG:RelWithDebInfo>:/Ob3>)
 else()
     target_compile_options(psprecomp_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+endif()
+
+# The same runtime as a shared library. A host links it instead of
+# psprecomp_core when its generated code is a separate module, loaded at run
+# time, that must share the host's one runtime. It sits in bin/ (Windows) or
+# bin/lib/ beside the host executables.
+if(PSPRECOMP_SHARED_RUNTIME)
+    get_target_property(_psprecomp_runtime_sources psprecomp_core SOURCES)
+    add_library(psprecomp_runtime SHARED ${_psprecomp_runtime_sources})
+    target_include_directories(psprecomp_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_definitions(psprecomp_runtime PUBLIC PSPRECOMP_SHARED_RUNTIME
+        PRIVATE PSPRECOMP_BUILDING_RUNTIME $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>)
+    get_target_property(_psprecomp_runtime_options psprecomp_core COMPILE_OPTIONS)
+    target_compile_options(psprecomp_runtime PRIVATE ${_psprecomp_runtime_options})
+    set_target_properties(psprecomp_runtime PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/lib")
 endif()
 
 add_executable(psp_analyze tools/analyzer_main.cpp)

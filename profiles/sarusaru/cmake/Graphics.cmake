@@ -55,10 +55,20 @@ set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(sarusaru_glslang URL "${SARUSARU_GLSLANG_URL}" URL_HASH SHA256=${SARUSARU_GLSLANG_SHA256}
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 
-FetchContent_MakeAvailable(sarusaru_sdl3 sarusaru_vulkan_headers sarusaru_glslang)
+if(CMAKE_CROSSCOMPILING)
+    # The shaders compile on the build machine: a glslang built for the target
+    # (Windows, when cross-compiling from Linux) cannot run here.
+    find_program(SARUSARU_GLSLANG_EXECUTABLE NAMES glslang glslangValidator REQUIRED)
+    add_executable(sarusaru_host_glslang IMPORTED)
+    set_target_properties(sarusaru_host_glslang PROPERTIES IMPORTED_LOCATION "${SARUSARU_GLSLANG_EXECUTABLE}")
+    FetchContent_MakeAvailable(sarusaru_sdl3 sarusaru_vulkan_headers)
+    set(SARUSARU_GLSLANG sarusaru_host_glslang)
+else()
+    FetchContent_MakeAvailable(sarusaru_sdl3 sarusaru_vulkan_headers sarusaru_glslang)
+    set(SARUSARU_GLSLANG glslang-standalone)
+endif()
 set_target_properties(SDL3-shared PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/lib" RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-set(SARUSARU_GLSLANG glslang-standalone)
 
 if(APPLE)
     FetchContent_Declare(sarusaru_moltenvk URL "${SARUSARU_MOLTENVK_URL}" URL_HASH SHA256=${SARUSARU_MOLTENVK_SHA256}

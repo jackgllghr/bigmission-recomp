@@ -58,7 +58,8 @@ GameSession::GameSession(const std::filesystem::path &iso, const SessionOptions 
 
 GameSession::GameSession(const std::filesystem::path &executable, const std::filesystem::path &iso,
                          const SessionOptions &options)
-    : elf(executable.empty() ? executable_from_disc(iso, kIdentity) : load_executable(executable)), disc(iso), chaining_configured(configure_chaining(options.count_every_dispatch)),
+    : game_module(options.game_module.empty() ? GameModule() : GameModule(options.game_module)),
+      elf(executable.empty() ? executable_from_disc(iso, kIdentity) : load_executable(executable)), disc(iso), chaining_configured(configure_chaining(options.count_every_dispatch)),
       frame_rate(options.experimental_game_frame_rate),
       savedata(options.memory_stick, [this] { return startup_hle.compiled_sdk_version(); }) {
     verify_disc(disc, kIdentity);
@@ -69,7 +70,7 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
     if (!module || module->name != "SARU-P2") throw psprecomp::Error("Expected SARU-P2 module metadata");
     module_name_ = module->name;
     entry_ = elf.runtime_entry(load_base);
-    psprecomp::register_generated_functions(runtime);
+    game_module.register_functions(runtime);
 
     startup_hle.install(runtime);
     kernel::register_early_threadman(kernel, runtime);

@@ -13,21 +13,29 @@
 #include <unordered_map>
 #include <vector>
 
+// Data the runtime exports to generated code. When the runtime is a Windows
+// DLL (PSPRECOMP_SHARED_RUNTIME), everything outside it must import it.
+#if defined(_WIN32) && defined(PSPRECOMP_SHARED_RUNTIME) && !defined(PSPRECOMP_BUILDING_RUNTIME)
+#define PSPRECOMP_RUNTIME_DATA __declspec(dllimport)
+#else
+#define PSPRECOMP_RUNTIME_DATA
+#endif
+
 namespace psprecomp {
 
 // generated direct-unit chaining stays on a zero-observer fast path.
 // Diagnostics flip this once for the process and transparently fall back to the
 // fully instrumented runtime lookup. Keeping this as a plain process-global bool
 // makes the common branch one predictable load instead of a hook/table walk.
-extern bool g_runtime_chain_observers_active;
+extern PSPRECOMP_RUNTIME_DATA bool g_runtime_chain_observers_active;
 // Fast-path copy of the scheduler cadence. It is configured before guest
 // execution and lets compile-time direct AOT chains charge ordinary work
 // without calling an out-of-line helper on every cross-unit edge.
-extern std::uint64_t g_runtime_starvation_interval_fast;
+extern PSPRECOMP_RUNTIME_DATA std::uint64_t g_runtime_starvation_interval_fast;
 // Same idea for the thread-switch generation used by every compile-time direct
 // chain. Keeping it as a public fast-path scalar avoids two out-of-line accessor
 // calls per chain when the compiler cannot see through a giant generated unit.
-extern std::uint64_t g_runtime_thread_switch_generation_fast;
+extern PSPRECOMP_RUNTIME_DATA std::uint64_t g_runtime_thread_switch_generation_fast;
 
 #if defined(_MSC_VER)
 #define PSPRECOMP_RUNTIME_FORCEINLINE __forceinline

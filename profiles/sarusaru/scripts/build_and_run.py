@@ -1,38 +1,28 @@
 #!/usr/bin/env python3
-"""Build and launch the windowed SaruSaru game on Apple Silicon."""
+"""Build and launch the windowed SaruSaru game on macOS arm64, Linux or Windows."""
 
 import argparse
-import fcntl
 import json
 import os
-import platform
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 
-from bootstrap_macos import BUILD, PROFILE, ROOT, run
+from bootstrap import BUILD, PROFILE, check_toolchain, configure_command, exclusive_lock, executable, run
 
 
 def build(iso, jobs):
-    if platform.system() != "Darwin" or platform.machine() != "arm64":
-        raise ValueError("This script requires macOS arm64")
-    for tool in ("cmake", "ninja", "clang++"):
-        if shutil.which(tool) is None:
-            raise ValueError(f"Missing {tool}; install Xcode command-line tools and brew install cmake ninja")
+    check_toolchain()
     run(sys.executable, PROFILE / "tools/prepare_game.py", iso)
 
     def configure(enabled):
-        run("cmake", "-S", ROOT, "-B", BUILD, "-G", "Ninja",
-            "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_OSX_ARCHITECTURES=arm64",
-            "-DPSPRECOMP_PROFILE=sarusaru", f"-DSARUSARU_BUILD_BOOTSTRAP={enabled}",
-            "-DSARUSARU_RENDERER=ON")
+        run(*configure_command(enabled, "-DSARUSARU_RENDERER=ON"))
 
     if not (PROFILE / "generated/generated_registry.cpp").is_file():
         configure("OFF")
         run("cmake", "--build", BUILD, "--parallel", jobs, "--target", "psp_recomp")
         supported = json.loads((PROFILE / "config/supported_game.json").read_text())
-        run(BUILD / "psp_recomp", PROFILE / "game/BOOT.elf", "--auto",
+        run(executable(BUILD / "bin/psp_recomp"), PROFILE / "game/BOOT.elf", "--auto",
             PROFILE / "generated", supported["load_base"], supported["unit_span"])
     configure("ON")
     run("cmake", "--build", BUILD, "--parallel", jobs, "--target", "sarusaru")
@@ -64,11 +54,7 @@ def main():
         progress = PROFILE / "progress"
         progress.mkdir(exist_ok=True)
         # Share the bootstrap lock: both scripts modify the same build and corpus.
-        with (progress / "bootstrap.lock").open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise ValueError("Another SaruSaru build is already running") from exc
+        with exclusive_lock(progress / "bootstrap.lock", "Another SaruSaru build is already running"):
             build(iso, args.jobs)
         # Keep the caller's working directory so relative --settings paths work.
         if "--settings" in game_args:
@@ -77,10 +63,10 @@ def main():
                 print(f"Launching with settings: {Path(game_args[index + 1]).resolve()}", flush=True)
         elif os.environ.get("SARUSARU_SETTINGS"):
             print(f"Launching with settings: {Path(os.environ['SARUSARU_SETTINGS']).resolve()}", flush=True)
-        return subprocess.call([str(BUILD / "bin/sarusaru"), *game_args,
+        return subprocess.call([str(executable(BUILD / "bin/sarusaru")), *game_args,
                                 str(PROFILE / "game/BOOT.elf"), str(iso)])
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
-        parser.exit(1, f"build_and_run_macos: {exc}\n")
+        parser.exit(1, f"build_and_run: {exc}\n")
     except KeyboardInterrupt:
         return 130
 

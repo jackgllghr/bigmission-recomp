@@ -3,6 +3,7 @@
 #include "utility/savedata_dialog.hpp"
 
 #include "save_data/savedata_store.hpp"
+#include "platform/paths.hpp"
 #include "psprecomp/common.hpp"
 
 #include <algorithm>
@@ -289,7 +290,12 @@ struct Request {
 
     // ScePspDateTime: year, month, day, hour, minute, second (16-bit), microsecond.
     void write_date_time(std::uint32_t at, std::filesystem::file_time_type written) const {
+#if defined(_MSC_VER)
+        // MSVC's file_clock converts through UTC only (no to_sys).
+        const auto system = std::chrono::clock_cast<std::chrono::system_clock>(written);
+#else
         const auto system = std::chrono::file_clock::to_sys(written);
+#endif
         const std::time_t seconds = std::chrono::system_clock::to_time_t(
             std::chrono::time_point_cast<std::chrono::system_clock::duration>(system));
         std::tm local{};
@@ -324,17 +330,7 @@ struct Request {
 std::filesystem::path default_memory_stick() {
     if (const char *override_path = std::getenv("SARUSARU_MEMSTICK"); override_path != nullptr && *override_path != '\0')
         return override_path;
-#if defined(_WIN32)
-    if (const char *appdata = std::getenv("APPDATA")) return std::filesystem::path(appdata) / "SaruSaruRecomp" / "memstick";
-#elif defined(__APPLE__)
-    if (const char *home = std::getenv("HOME"))
-        return std::filesystem::path(home) / "Library" / "Application Support" / "SaruSaruRecomp" / "memstick";
-#else
-    if (const char *data = std::getenv("XDG_DATA_HOME"); data != nullptr && *data != '\0')
-        return std::filesystem::path(data) / "SaruSaruRecomp" / "memstick";
-    if (const char *home = std::getenv("HOME"))
-        return std::filesystem::path(home) / ".local" / "share" / "SaruSaruRecomp" / "memstick";
-#endif
+    if (auto data = platform::user_data_directory()) return *data / "memstick";
     throw psprecomp::Error("Cannot determine a per-user data directory; set SARUSARU_MEMSTICK");
 }
 

@@ -94,6 +94,19 @@ carry those notices.
 The launcher's own code (`host/ui/`) is new. Yakumo's Dear ImGui layer was
 read as a reference for its device handling (see `YAKUMO_REUSE.md`), not copied.
 
+## llvm-mingw (Windows; downloaded, not in the repository)
+
+[llvm-mingw](https://github.com/mstorsjo/llvm-mingw) 20260922 (ucrt), pinned
+and hash-checked in `cmake/LlvmMingw.cmake`, builds the Windows release, and a
+player's launcher downloads the same release once to build the game module
+(`host/install/`). Its C++ runtime, `libc++.dll` and `libunwind.dll`, ships
+unmodified beside `sarusaru.exe` with `llvm-mingw-LICENSE.txt` (Apache-2.0
+with LLVM exceptions; the toolchain's other parts are under their own
+licences in that file).
+
+The game module itself is never distributed: each player's launcher builds it
+from their own disc on their own machine.
+
 ## tiny-AES-c (Unlicense)
 
 `third_party/tiny_aes/aes.c` and `aes.h` are unmodified copies of

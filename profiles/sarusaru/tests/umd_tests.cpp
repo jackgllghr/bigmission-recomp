@@ -94,8 +94,11 @@ int main() {
     bool threw = false;
     {
         const auto bad_path = write_image(bad, "sarusaru_umd_bad_extent.iso");
-        DiscImage disc(bad_path);
-        try { (void)disc.find("UMD_DATA.BIN"); } catch (const psprecomp::Error &) { threw = true; }
+        {
+            DiscImage disc(bad_path);
+            try { (void)disc.find("UMD_DATA.BIN"); } catch (const psprecomp::Error &) { threw = true; }
+        }
+        // Closed first: Windows cannot remove a file that is still open.
         std::filesystem::remove(bad_path);
     }
     require(threw, "extent outside volume accepted");

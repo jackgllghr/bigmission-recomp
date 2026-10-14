@@ -7,8 +7,9 @@
 
 namespace sarusaru::text {
 
-// Converts `text`; bytes that are not valid Shift-JIS (and every non-ASCII
-// byte where the host has no converter) become \xNN escapes.
+// Converts `text` with iconv, or code page 932 on Windows; bytes that are not
+// valid Shift-JIS (and every non-ASCII byte where the host has no converter)
+// become \xNN escapes.
 [[nodiscard]] std::string shift_jis_to_utf8(std::string_view text);
 
 } // namespace sarusaru::text

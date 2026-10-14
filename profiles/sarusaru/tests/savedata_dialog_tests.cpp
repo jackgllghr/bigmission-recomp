@@ -3,6 +3,7 @@
 #include "save_data/param_sfo.hpp"
 
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -65,7 +66,7 @@ std::uint32_t run(psprecomp::Runtime &runtime, std::uint32_t mode, bool prepared
 }
 }
 
-int main() {
+int run_tests() {
     const auto stick = std::filesystem::temp_directory_path() / "sarusaru_savedata_dialog_tests";
     std::filesystem::remove_all(stick);
     psprecomp::Runtime runtime;
@@ -131,4 +132,14 @@ int main() {
     require(runtime.cpu().gpr[2] == kErrorInvalidStatus, "ShutdownStart without a dialog");
     std::filesystem::remove_all(stick);
     return 0;
+}
+
+// An exception names what went wrong instead of aborting the test silently.
+int main() {
+    try {
+        return run_tests();
+    } catch (const std::exception &error) {
+        std::cerr << "FAIL: exception: " << error.what() << '\n';
+        return 1;
+    }
 }

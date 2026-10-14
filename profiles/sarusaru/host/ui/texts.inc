@@ -157,6 +157,35 @@ X(ActionAnalogDown, "Analog stick \u2193", "アナログパッド \u2193")
 X(ActionFastForward, "Fast forward (hold)", "早送り（押している間）")
 X(ActionQuit, "Quit the game", "ゲームを終了")
 
+// Installing the game from the disc
+X(InstallTitle, "Install the Game", "ゲームのインストール")
+X(InstallIntro,
+  "Before the first game, the launcher builds the game for this computer from your disc. It takes a few minutes and is needed again only after an update. Nothing from your disc leaves this computer.",
+  "はじめてあそぶ前に、ランチャーがお手持ちのディスクからこのコンピューター用にゲームを作ります。数分かかりますが、次に必要になるのはアップデートのあとだけです。ディスクの内容がこのコンピューターの外に送られることはありません。")
+X(InstallStart, "Install", "インストールする")
+X(InstallDownloadNote, "First the compiler is downloaded ({0} MB).", "まずコンパイラーをダウンロードします（{0} MB）。")
+X(InstallNeedXcode, "This needs Apple's Command Line Tools, which macOS can install for you.",
+  "AppleのCommand Line Toolsが必要です。macOSがインストールできます。")
+X(InstallGetXcode, "Install the Command Line Tools", "Command Line Toolsをインストールする")
+X(InstallXcodeWaiting, "Finish the installation in the window macOS opened, then check again.",
+  "macOSが開いたウィンドウでインストールを終えてから、もう一度確認してください。")
+X(InstallNeedCompiler,
+  "This needs a C++ compiler. Install g++ from your distribution (for example: sudo apt install g++), then check again.",
+  "C++コンパイラーが必要です。お使いのディストリビューションからg++をインストールしてから（例：sudo apt install g++）、もう一度確認してください。")
+X(InstallUnsupported, "This build of the port cannot install the game.", "このビルドではゲームをインストールできません。")
+X(InstallCheckAgain, "Check again", "もう一度確認する")
+X(InstallStepStarting, "Getting ready…", "準備しています…")
+X(InstallStepPreparing, "Preparing the compiler…", "コンパイラーを準備しています…")
+X(InstallStepDownloading, "Downloading the compiler: {0} of {1} MB", "コンパイラーをダウンロード中：{0} / {1} MB")
+X(InstallStepExtracting, "Reading your disc…", "ディスクを読み込んでいます…")
+X(InstallStepGenerating, "Translating the game's code…", "ゲームのコードを変換しています…")
+X(InstallStepCompiling, "Building the game: {0} of {1}", "ゲームを作っています：{0} / {1}")
+X(InstallStepLinking, "Putting it together…", "仕上げています…")
+X(InstallCancel, "Cancel", "キャンセル")
+X(InstallFailed, "The installation did not finish: {0}", "インストールが完了しませんでした：{0}")
+X(InstallTryAgain, "Try again", "もう一度ためす")
+X(HintCancel, "Cancel", "キャンセル")
+
 // Problems
 X(CouldNotStart, "Could not start", "起動できませんでした")
 X(CouldNotStartMessage, "The game could not start: {0}", "ゲームを起動できませんでした：{0}")
