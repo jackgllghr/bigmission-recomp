@@ -365,12 +365,14 @@ bands before textures are applied. It defaults to Off, preserves texture detail
 and alpha, and applies to interpolated frames too. Screen-space HUD, menus and
 framebuffer clears retain their original shading. It
 offers **Banded** (`cel_shading = 1`) and **Outlined** (`cel_shading = 2`).
-Outlined adds black silhouettes with an expanded back-face pass on opaque
-animated meshes with normals. Width stays at one native pixel (two at 2×
-resolution), with depth-tested occlusion. Static scenery, transparent effects
-and texture cutouts are excluded; rigid unskinned character accessories may
-retain their original edges. The outline pass preserves framebuffer alpha and
-depth and also runs on interpolated frames.
+Outlined adds black silhouettes around characters and the world. Characters
+use expanded back faces; world geometry uses narrow contours along boundaries,
+silhouettes and sharp creases, without diagonal wireframe edges on planar
+surfaces. This also supports scenery without normals and single-sided meshes.
+Width stays at one native pixel (two at 2× resolution), with depth-tested
+occlusion. Additive effects, screen-space HUD and menus, and texture cutouts
+are excluded. The outline pass preserves framebuffer alpha and depth and also
+runs on interpolated frames.
 
 `fov_degrees` sets the vertical FOV of the gameplay camera (0 for native, about
 36.5 degrees, or 30-120). It applies only while a player-following gameplay

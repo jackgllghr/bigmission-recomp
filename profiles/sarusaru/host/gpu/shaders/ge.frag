@@ -66,7 +66,10 @@ vec3 cel_shade(vec3 shade) {
 
 void main() {
     if ((int(push.viewport.w + 0.5) & 8) != 0) {
-        out_color = vec4(0.0, 0.0, 0.0, 1.0);
+        float alpha = frag_color.a;
+        if (push.texture_params.x > 0.5 && int(push.texture_params.y + 0.5) < 8)
+            alpha *= texture(guest_texture, frag_texcoord).a;
+        out_color = vec4(0.0, 0.0, 0.0, alpha);
         return;
     }
     vec4 color = frag_color;
