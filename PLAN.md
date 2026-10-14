@@ -88,8 +88,8 @@ needs document-picker integration, lifecycle handling and touch-accessible setup
 - [ ] Verify interpolation in stages, cutscenes and dialogs; higher simulation
       rates remain uncompensated; the presentation cap does not change simulation speed.
 - [~] Expose settings and binding capture in the launcher's in-game screen.
-      The launcher's Settings screen edits graphics, window and dead-zone
-      settings; binding capture and an in-game menu are still to come.
+      The launcher edits every setting, including bindings with capture;
+      an in-game menu is still to come.
 
 ### Launcher chunk (milestone 5)
 
@@ -105,8 +105,11 @@ needs document-picker integration, lifecycle handling and touch-accessible setup
 - [x] Scripted UI checks (`SARUSARU_UI_SCRIPT`) with a virtual gamepad.
 - [x] English and Japanese launcher text from one table, chosen by setting or
       the system's language; translations checked for matching placeholders.
-- [ ] Binding capture, save management (import, export, backups), on-screen
-      keyboard, in-game menu, progress/cancellation for long operations.
+- [x] Binding capture: a Controls screen per PSP control and device, capture
+      of keys, buttons, sticks and triggers (hold back to cancel), add, clear
+      and reset, shared inputs pointed out.
+- [ ] Save management (import, export, backups), on-screen keyboard, in-game
+      menu, progress/cancellation for long operations, chorded bindings.
 - [ ] Android document picker, lifecycle handling and touch verification on
       a device.
 

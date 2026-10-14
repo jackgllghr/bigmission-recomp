@@ -103,9 +103,18 @@ yellow and wears Pipo's red siren lamp.
   motion, the frame rate cap, FOV, the experimental update rate (flagged in
   red, as is interpolation it switches off), fullscreen, window size, the
   stick dead zone, the language and the confirm button. Values step with left/right, the
-  row's arrows, or by activating it; each is saved at once. Key and button
-  bindings are still edited in `settings.ini`; the Controls tab opens its
-  folder.
+  row's arrows, or by activating it; each is saved at once.
+- **Controls** (from Settings' Controls tab) lists every PSP control with
+  its keyboard and gamepad inputs, drawn as keycaps and the pad's own glyphs.
+  On a focused cell, confirm (or a click or tap) sets a new input, the north
+  button or `+` adds another, and the west button or Backspace clears it
+  (the mouse and touch get small + and x buttons in the cell). The next input
+  is captured: a key, where Esc cancels (Esc itself is set in
+  `settings.ini`); or a gamepad button, bound on release so even the back
+  button can be bound, with a 1-second hold of it, or 6 seconds without a
+  press, cancelling; or a stick or trigger in the direction pushed. A click
+  or tap cancels either. An input shared with another action is pointed out
+  (it is allowed), and each device can be reset to its defaults.
 - **Play** starts the game in the same window. A game that cannot start (a
   moved image) returns to the launcher with the reason.
 
@@ -141,7 +150,8 @@ are downloaded at configure time, pinned and hash-checked, into
 each device: keys through SDL, buttons through an SDL virtual gamepad (which
 can claim to be a PlayStation, Xbox or Switch pad), mouse and touch input
 straight to Dear ImGui, file drops, and `capture FILE` to save a BMP of the
-next frame. The commands are listed in `host/ui/ui_script.hpp`, e.g.:
+next frame; `padhold` and `axis` hold buttons and push sticks for binding
+capture. The commands are listed in `host/ui/ui_script.hpp`, e.g.:
 
 ```sh
 SARUSARU_UI_SCRIPT='wait 1; pad dpdown; pad east; wait 0.5; capture /tmp/settings.bmp; quit' \
@@ -211,8 +221,7 @@ directions inverts an axis. Triggers can bind any action. Buttons activate
 above half travel; stick axes have a rescaled dead zone, while triggers use
 their unipolar range. Connected controllers contribute together, and normal
 hot-plugging remains supported. One source may intentionally trigger several
-actions. The launcher edits the graphics, window and dead-zone settings;
-bindings have no screen yet.
+actions. The launcher edits all of these, bindings included.
 
 `frame_rate` is a **presentation cap**, from 1 to 60; 0 presents at every native
 PSP vblank (about 59.94 Hz). It leaves guest vblank timing, input sampling,
@@ -583,8 +592,8 @@ These are game-neutral fixes; game identity and bootstrap choices stay here.
 
 The acceptance run with real input (new game, a level, save and reload),
 then writing GPU results back to guest memory, the GE registers GeState does
-not model yet, the rest of the launcher (binding capture, save management, an
-in-game menu, Android document picking) and translation. See
+not model yet, the rest of the launcher (save management, an in-game menu, Android
+document picking) and translation. See
 [`../../PLAN.md`](../../PLAN.md) and [`YAKUMO_REUSE.md`](YAKUMO_REUSE.md).
 
 The desired prebuilt release model still requires review of distribution of

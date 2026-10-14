@@ -2,6 +2,7 @@
 
 #include "imgui.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <sstream>
 #include <stdexcept>
@@ -44,7 +45,7 @@ std::optional<std::string> UiScript::from_environment() {
 
 UiScript::UiScript(std::string_view text) {
     constexpr std::pair<std::string_view, std::size_t> kVerbs[] = {
-        {"wait", 1}, {"key", 1}, {"pad", 1}, {"padtype", 1}, {"move", 2}, {"click", 2}, {"tap", 2},
+        {"wait", 1}, {"key", 1}, {"pad", 1}, {"padhold", 2}, {"axis", 2}, {"padtype", 1}, {"move", 2}, {"click", 2}, {"tap", 2},
         {"drag", 4}, {"wheel", 1}, {"drop", 1}, {"capture", 1}, {"quit", 0}};
     while (!text.empty()) {
         const auto end = text.find(';');
@@ -75,8 +76,9 @@ UiScript::UiScript(std::string_view text) {
         if (!known) throw std::runtime_error("SARUSARU_UI_SCRIPT: unknown command " + command.verb);
         for (const auto &argument : command.arguments)
             if (command.verb != "key" && command.verb != "pad" && command.verb != "padtype" && command.verb != "drop" &&
-                command.verb != "capture")
+                command.verb != "capture" && command.verb != "padhold" && command.verb != "axis")
                 (void)number(argument);
+        if (command.verb == "padhold" || command.verb == "axis") (void)number(command.arguments[1]);
         commands_.push_back(std::move(command));
     }
 }
@@ -88,6 +90,9 @@ UiScript::~UiScript() {
 
 void UiScript::open_pad() {
     if (pad_ != nullptr) return;
+    // A scripted run may not have the window's focus, and SDL otherwise
+    // drops gamepad input then.
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_VirtualJoystickDesc desc;
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
@@ -126,16 +131,28 @@ void UiScript::start(const Command &command, Layer &layer) {
         pending_.push_back([scancode](Layer &l) { push_key(l.window(), scancode, false); });
     } else if (command.verb == "padtype") {
         pad_type_ = a[0];
-    } else if (command.verb == "pad") {
+    } else if (command.verb == "axis") {
+        const SDL_GamepadAxis axis = SDL_GetGamepadAxisFromString(a[0].c_str());
+        if (axis == SDL_GAMEPAD_AXIS_INVALID) throw std::runtime_error("SARUSARU_UI_SCRIPT: unknown axis " + a[0]);
+        open_pad();
+        const float value = std::clamp(number(a[1]), -1.0f, 1.0f);
+        SDL_SetJoystickVirtualAxis(pad_, axis, static_cast<Sint16>(value * 32767.0f));
+    } else if (command.verb == "pad" || command.verb == "padhold") {
         // Face buttons by position as well as by SDL's names (a, b, x, y).
         const std::string name = a[0] == "south" ? "a" : a[0] == "east" ? "b" : a[0] == "west" ? "x" : a[0] == "north" ? "y" : a[0];
         const SDL_GamepadButton button = SDL_GetGamepadButtonFromString(name.c_str());
         if (button == SDL_GAMEPAD_BUTTON_INVALID) throw std::runtime_error("SARUSARU_UI_SCRIPT: unknown button " + a[0]);
         open_pad();
         SDL_SetJoystickVirtualButton(pad_, button, true);
-        // Held for a few frames, as a real press is.
-        pending_.push_back([](Layer &) {});
-        pending_.push_back([this, button](Layer &) { SDL_SetJoystickVirtualButton(pad_, button, false); });
+        if (command.verb == "padhold") {
+            // Released by the next command, after the hold.
+            wait_until_ = layer.time() + number(a[1]);
+            release_ = button;
+        } else {
+            // Held for a few frames, as a real press is.
+            pending_.push_back([](Layer &) {});
+            pending_.push_back([this, button](Layer &) { SDL_SetJoystickVirtualButton(pad_, button, false); });
+        }
     } else if (command.verb == "move" || command.verb == "click" || command.verb == "tap") {
         touch_ = command.verb == "tap";
         pointer_ = at(0);
@@ -198,6 +215,11 @@ void UiScript::tick(Layer &layer) {
         return;
     }
     if (layer.time() < wait_until_) return;
+    if (release_ != SDL_GAMEPAD_BUTTON_INVALID) {
+        SDL_SetJoystickVirtualButton(pad_, release_, false);
+        release_ = SDL_GAMEPAD_BUTTON_INVALID;
+        return;
+    }
     if (next_ < commands_.size()) start(commands_[next_++], layer);
 }
 

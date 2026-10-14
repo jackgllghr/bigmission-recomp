@@ -4,6 +4,7 @@
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
+#include "imgui_internal.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,6 +18,23 @@ namespace {
 constexpr int kStickActivity = 16000;
 // Mouse movement of fewer points is jitter, not a switch to the mouse.
 constexpr float kMouseActivity = 3.0f;
+
+// Anything on any of `pads` held: a button, or a stick or trigger pushed.
+bool pad_input_held(const std::vector<SDL_Gamepad *> &pads) {
+    for (SDL_Gamepad *pad : pads) {
+        for (int button = 0; button < SDL_GAMEPAD_BUTTON_COUNT; ++button)
+            if (SDL_GetGamepadButton(pad, static_cast<SDL_GamepadButton>(button))) return true;
+        for (int axis = 0; axis < SDL_GAMEPAD_AXIS_COUNT; ++axis)
+            if (std::abs(static_cast<int>(SDL_GetGamepadAxis(pad, static_cast<SDL_GamepadAxis>(axis)))) > 9000) return true;
+    }
+    return false;
+}
+
+void open_pad(std::vector<SDL_Gamepad *> &pads, SDL_JoystickID id) {
+    for (SDL_Gamepad *pad : pads)
+        if (SDL_GetGamepadID(pad) == id) return;
+    if (SDL_Gamepad *pad = SDL_OpenGamepad(id)) pads.push_back(pad);
+}
 
 } // namespace
 
@@ -37,6 +55,9 @@ bool Layer::create(std::string &error) {
     io.ConfigNavCursorVisibleAlways = true;
     io.ConfigNavEscapeClearFocusItem = false;
     io.ConfigNavEscapeClearFocusWindow = false;
+    // The west face button clears a binding; held, it would otherwise open
+    // Dear ImGui's window switcher.
+    GImGui->ConfigNavWindowingWithGamepad = false;
     if (!ImGui_ImplSDL3_InitForVulkan(window_)) {
         error = "cannot attach the interface to the window";
         return false;
@@ -52,12 +73,15 @@ bool Layer::create(std::string &error) {
             device_ = Device::Gamepad;
             pad_type_ = SDL_GetGamepadTypeForID(pads[0]);
         }
+        for (int i = 0; i < count; ++i) open_pad(pads_, pads[i]);
         SDL_free(pads);
     }
     return true;
 }
 
 void Layer::destroy() {
+    for (SDL_Gamepad *pad : pads_) SDL_CloseGamepad(pad);
+    pads_.clear();
     vulkan_.destroy_buffer(capture_buffer_);
     renderer_.destroy();
     if (sdl_backend_) ImGui_ImplSDL3_Shutdown();
@@ -99,6 +123,17 @@ void Layer::handle(const SDL_Event &event) {
             pad_type_ = SDL_GetGamepadTypeForID(event.gaxis.which);
         }
         break;
+    case SDL_EVENT_GAMEPAD_ADDED:
+        open_pad(pads_, event.gdevice.which);
+        break;
+    case SDL_EVENT_GAMEPAD_REMOVED:
+        for (auto it = pads_.begin(); it != pads_.end(); ++it)
+            if (SDL_GetGamepadID(*it) == event.gdevice.which) {
+                SDL_CloseGamepad(*it);
+                pads_.erase(it);
+                break;
+            }
+        break;
     case SDL_EVENT_DROP_FILE:
         if (event.drop.data != nullptr) {
             const std::string utf8 = event.drop.data;
@@ -108,7 +143,30 @@ void Layer::handle(const SDL_Event &event) {
     default:
         break;
     }
+    if (event_filter_ && event_filter_(event)) return;
     ImGui_ImplSDL3_ProcessEvent(&event);
+}
+
+void Layer::block_pads(bool blocked) {
+    if (blocked == pads_blocked_) return;
+    pads_blocked_ = blocked;
+    if (blocked) {
+        ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_Manual, nullptr, 0);
+        // Nothing held as the block started stays held in the interface.
+        ImGui::GetIO().ClearInputKeys();
+    } else {
+        pads_quiet_ = true;  // begin_frame() lets them back once let go of
+    }
+}
+
+std::array<float, SDL_GAMEPAD_AXIS_COUNT> Layer::pad_axes() const {
+    std::array<float, SDL_GAMEPAD_AXIS_COUNT> axes{};
+    for (SDL_Gamepad *pad : pads_)
+        for (int axis = 0; axis < SDL_GAMEPAD_AXIS_COUNT; ++axis) {
+            const float value = static_cast<float>(SDL_GetGamepadAxis(pad, static_cast<SDL_GamepadAxis>(axis))) / 32767.0f;
+            if (std::abs(value) > std::abs(axes[static_cast<std::size_t>(axis)])) axes[static_cast<std::size_t>(axis)] = value;
+        }
+    return axes;
 }
 
 std::optional<std::filesystem::path> Layer::take_dropped_file() {
@@ -120,6 +178,10 @@ std::optional<std::filesystem::path> Layer::take_dropped_file() {
 void Layer::begin_frame(bool confirm_south) {
     confirm_south_ = confirm_south;
     time_ = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
+    if (pads_quiet_ && !pads_blocked_ && !pad_input_held(pads_)) {
+        pads_quiet_ = false;
+        ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_AutoAll);
+    }
     ImGui_ImplSDL3_NewFrame();
     if (frame_hook_) frame_hook_(*this);
     ImGuiIO &io = ImGui::GetIO();
@@ -140,6 +202,9 @@ void Layer::begin_frame(bool confirm_south) {
         ? io.ConfigFlags | ImGuiConfigFlags_NoMouseCursorChange : io.ConfigFlags & ~ImGuiConfigFlags_NoMouseCursorChange;
     if (device_ == Device::Gamepad || device_ == Device::Keyboard) SDL_HideCursor(); else SDL_ShowCursor();
     ImGui::NewFrame();
+    // The west face button clears a binding. Owned here, Dear ImGui does not
+    // also take a tap of it as "switch to the menu layer", which drops the focus.
+    ImGui::SetKeyOwner(ImGuiKey_GamepadFaceLeft, ImHashStr("sarusaru-west"));
     const ImGuiKey pad_back = confirm_south ? ImGuiKey_GamepadFaceRight : ImGuiKey_GamepadFaceDown;
     back_ = ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_AppBack, false) ||
             ImGui::IsKeyPressed(pad_back, false) || ImGui::IsMouseClicked(3, false);

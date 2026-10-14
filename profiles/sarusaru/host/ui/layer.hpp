@@ -11,12 +11,14 @@
 
 #include <SDL3/SDL.h>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace sarusaru::ui {
 
@@ -46,6 +48,15 @@ public:
     // read and before Dear ImGui sees it: where ui/ui_script.hpp adds its own.
     void set_frame_hook(std::function<void(Layer &)> hook) { frame_hook_ = std::move(hook); }
     void set_device(Device device) noexcept { device_ = device; }
+    // Sees every window event before Dear ImGui does; returning true keeps it
+    // from the interface (binding capture takes the next input this way).
+    void set_event_filter(std::function<bool(const SDL_Event &)> filter) { event_filter_ = std::move(filter); }
+    // While blocked, no gamepad reaches the interface, and afterwards only
+    // once nothing on any pad is held, so the input just captured for a
+    // binding does nothing in the menus.
+    void block_pads(bool blocked);
+    // Each axis's value (-1..1) on the pad pushing it furthest.
+    [[nodiscard]] std::array<float, SDL_GAMEPAD_AXIS_COUNT> pad_axes() const;
 
     // One layout unit in points: 1 in the default 960x544 window, scaling
     // with the smaller of its two dimensions.
@@ -82,6 +93,12 @@ private:
     std::optional<std::filesystem::path> dropped_;
     std::optional<std::filesystem::path> capture_;
     std::function<void(Layer &)> frame_hook_;
+    std::function<bool(const SDL_Event &)> event_filter_;
+    // The layer's own handles: Dear ImGui's backend closes its own while
+    // pads are blocked, and SDL sends no events for a pad nobody has open.
+    std::vector<SDL_Gamepad *> pads_;
+    bool pads_blocked_{};
+    bool pads_quiet_{};
     shell::Buffer capture_buffer_;
 };
 

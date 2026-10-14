@@ -7,6 +7,7 @@
 // finger shows the highlight only while it presses.
 //
 // Sizes are in layout units (Layer::unit()), so everything scales with the window.
+#include "ui/bindings.hpp"
 #include "ui/layer.hpp"
 #include "ui/settings_rows.hpp"
 #include "ui/theme.hpp"
@@ -42,7 +43,8 @@ void gradient_rect(ImDrawList *draw, ImVec2 min, ImVec2 max, ImU32 top, ImU32 bo
 float screen_title(const Layer &layer, std::string_view title);
 
 // A white panel with the blue outline, behind content at `min`..`max`.
-void panel(const Layer &layer, ImVec2 min, ImVec2 max);
+// Drawn in the current window, or into `draw` (e.g. over everything).
+void panel(const Layer &layer, ImVec2 min, ImVec2 max, ImDrawList *draw = nullptr);
 
 // --- Focus ---------------------------------------------------------------
 
@@ -78,12 +80,23 @@ int tab_bar(const Layer &layer, std::span<const std::string_view> tabs, int sele
 void begin_list(std::string_view id, ImVec2 size);
 void end_list(const Layer &layer);
 
+// A cell of the bindings screen: the inputs bound, as glyphs. Activating it
+// sets a new input; the north button or + adds one; the west button or
+// Backspace clears it. With the mouse or touch, small + and x buttons in the
+// focused cell do the same.
+enum class CellAction { None, Set, Add, Clear };
+CellAction binding_cell(const Layer &layer, std::string_view id, std::span<const Glyph> glyphs, ImVec2 size);
+
+// Draws an input's glyph at `cursor` (its left, vertically centred) and
+// moves the cursor past it; with a null `draw` it only measures.
+void draw_glyph(ImDrawList *draw, ImVec2 &cursor, float unit, SDL_GamepadType type, const Glyph &glyph);
+
 // Wrapped body text at the cursor.
 void paragraph(const Layer &layer, std::string_view text, float width, ImU32 color = colors::kInk);
 
 // --- Button hints ----------------------------------------------------------
 
-enum class Control { Confirm, Back, Change, Tabs, Browse };
+enum class Control { Confirm, Back, Change, Tabs, Add, Clear };
 struct Hint {
     Control control;
     std::string_view text;

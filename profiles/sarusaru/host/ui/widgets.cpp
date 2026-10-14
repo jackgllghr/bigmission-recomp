@@ -300,9 +300,9 @@ float screen_title(const Layer &layer, std::string_view title) {
     return position.y + extent.y + 10.0f * u;
 }
 
-void panel(const Layer &layer, ImVec2 min, ImVec2 max) {
+void panel(const Layer &layer, ImVec2 min, ImVec2 max, ImDrawList *draw) {
     const float u = layer.unit(), rounding = 22.0f * u, edge = 5.0f * u;
-    ImDrawList *draw = ImGui::GetWindowDrawList();
+    if (draw == nullptr) draw = ImGui::GetWindowDrawList();
     draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge + 6.0f * u), ImVec2(max.x + edge, max.y + edge + 6.0f * u),
                         colors::kShadow, rounding + edge);
     draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge), ImVec2(max.x + edge, max.y + edge), colors::kBlue, rounding + edge);
@@ -577,6 +577,85 @@ void end_list(const Layer &layer) {
     ImGui::EndChild();
 }
 
+void draw_glyph(ImDrawList *draw, ImVec2 &cursor, float unit, SDL_GamepadType type, const Glyph &glyph) {
+    switch (glyph.kind) {
+    case Glyph::Kind::Key: keycap(draw, cursor, unit, glyph.label); break;
+    case Glyph::Kind::Face: face_button(draw, cursor, unit, type, glyph.button); break;
+    case Glyph::Kind::Pill: pad_pill(draw, cursor, unit, glyph.label); break;
+    }
+}
+
+CellAction binding_cell(const Layer &layer, std::string_view id, std::span<const Glyph> glyphs, ImVec2 size) {
+    const float u = layer.unit();
+    const ImVec2 position = ImGui::GetCursorScreenPos();
+    const ImRect bb(position, ImVec2(position.x + size.x, position.y + size.y));
+    const Interaction item = interact(layer, id, bb);
+    if (!item.visible) return CellAction::None;
+    const float focus = animate(item.id, item.focused ? 1.0f : 0.0f);
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    const float rounding = 10.0f * u;
+    draw->AddRectFilled(bb.Min, bb.Max, IM_COL32(222, 232, 248, 255), rounding);
+    if (focus > 0.01f) {
+        draw->AddRectFilled(bb.Min, bb.Max, with_alpha(colors::kBlue, focus), rounding);
+        gradient_rect(draw, ImVec2(bb.Min.x + 3.0f * u, bb.Min.y + 3.0f * u), ImVec2(bb.Max.x - 3.0f * u, bb.Max.y - 3.0f * u),
+                      with_alpha(colors::kYellowPale, focus), with_alpha(colors::kYellow, focus), rounding - 3.0f * u);
+    }
+
+    // With the mouse or touch, the focused cell has its own add and clear buttons.
+    const bool pointer = layer.device() == Device::Mouse || layer.device() == Device::Touch;
+    const bool tools = pointer && (GImGui->NavId == item.id || item.hovered);
+    const float tool = 26.0f * u;
+    const ImVec2 clear_center(bb.Max.x - 8.0f * u - tool * 0.5f, bb.GetCenter().y);
+    const ImVec2 add_center(clear_center.x - tool - 6.0f * u, clear_center.y);
+    const float glyph_limit = tools ? add_center.x - tool * 0.5f - 4.0f * u : bb.Max.x - 8.0f * u;
+
+    draw->PushClipRect(bb.Min, ImVec2(glyph_limit, bb.Max.y), true);
+    ImVec2 cursor(bb.Min.x + 10.0f * u, bb.GetCenter().y);
+    if (glyphs.empty()) {
+        ImFont *font = fonts().body;
+        const std::string_view none = tr(Text::Unbound);
+        const ImVec2 extent = text_size(font, 16.0f * u, none);
+        draw->AddText(font, 16.0f * u, ImVec2(cursor.x, cursor.y - extent.y * 0.5f), colors::kInkDim, none.data(),
+                      none.data() + none.size());
+    }
+    for (const Glyph &g : glyphs) draw_glyph(draw, cursor, u, layer.pad_type(), g);
+    draw->PopClipRect();
+
+    if (tools) {
+        for (const auto &[center, plus] : {std::pair{add_center, true}, std::pair{clear_center, false}}) {
+            draw->AddCircleFilled(center, tool * 0.5f, colors::kBlue);
+            draw->AddCircleFilled(center, tool * 0.5f - 2.0f * u, colors::kWhite);
+            const float a = tool * 0.22f;
+            if (plus) {
+                draw->AddLine(ImVec2(center.x - a, center.y), ImVec2(center.x + a, center.y), colors::kBlue, 3.0f * u);
+                draw->AddLine(ImVec2(center.x, center.y - a), ImVec2(center.x, center.y + a), colors::kBlue, 3.0f * u);
+            } else {
+                draw->AddLine(ImVec2(center.x - a, center.y - a), ImVec2(center.x + a, center.y + a), colors::kRed, 3.0f * u);
+                draw->AddLine(ImVec2(center.x - a, center.y + a), ImVec2(center.x + a, center.y - a), colors::kRed, 3.0f * u);
+            }
+        }
+    }
+
+    if (item.pressed) {
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const auto within = [&](ImVec2 center) {
+            return std::abs(mouse.x - center.x) <= tool * 0.6f && std::abs(mouse.y - center.y) <= tool * 0.6f;
+        };
+        if (tools && within(add_center)) return CellAction::Add;
+        if (tools && within(clear_center)) return CellAction::Clear;
+        return CellAction::Set;
+    }
+    if (GImGui->NavId == item.id && !pointer) {
+        if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false) || ImGui::IsKeyPressed(ImGuiKey_Equal, false) ||
+            ImGui::IsKeyPressed(ImGuiKey_KeypadAdd, false))
+            return CellAction::Add;
+        if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false) ||
+            ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+            return CellAction::Clear;
+    }
+    return CellAction::None;
+}
+
 void paragraph(const Layer &layer, std::string_view text, float width, ImU32 color) {
     ImFont *font = fonts().body;
     const float size = 18.0f * layer.unit();
@@ -620,8 +699,12 @@ void hints(const Layer &layer, std::initializer_list<Hint> list) {
                 keycap(target, cursor, u, "W");
             }
             break;
-        case Control::Browse:
-            if (pad) face_button(target, cursor, u, layer.pad_type(), SDL_GAMEPAD_BUTTON_NORTH); else keycap(target, cursor, u, "Tab");
+        case Control::Add:
+            if (pad) face_button(target, cursor, u, layer.pad_type(), SDL_GAMEPAD_BUTTON_NORTH); else keycap(target, cursor, u, "+");
+            break;
+        case Control::Clear:
+            if (pad) face_button(target, cursor, u, layer.pad_type(), SDL_GAMEPAD_BUTTON_WEST);
+            else keycap(target, cursor, u, "Backspace");
             break;
         }
     };

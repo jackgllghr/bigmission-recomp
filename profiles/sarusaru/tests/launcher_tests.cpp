@@ -5,6 +5,7 @@
 #include "psprecomp/common.hpp"
 #include "psprecomp/sha256.hpp"
 #include "synthetic_iso.hpp"
+#include "ui/bindings.hpp"
 #include "ui/file_list.hpp"
 #include "ui/settings_rows.hpp"
 #include "ui/text.hpp"
@@ -163,6 +164,119 @@ void rows() {
     require(seen == 10, "settings rows missing from the tabs");
 }
 
+void bindings() {
+    using namespace sarusaru::ui;
+    using sarusaru::shell::Action;
+    using sarusaru::shell::Binding;
+    const Binding key_z{Binding::Kind::Key, SDL_SCANCODE_Z};
+    const Binding key_c{Binding::Kind::Key, SDL_SCANCODE_C};
+    const Binding east{Binding::Kind::Button, SDL_GAMEPAD_BUTTON_EAST};
+
+    // Editing one cell leaves everything else alone.
+    auto controls = sarusaru::shell::default_settings().controls;
+    const auto defaults = controls;
+    set_binding(controls, BindingDevice::Keyboard, Action::Cross, key_c);
+    require(bindings_of(controls, BindingDevice::Keyboard, Action::Cross) == std::vector{key_c}, "set did not replace");
+    add_binding(controls, BindingDevice::Keyboard, Action::Cross, key_z);
+    add_binding(controls, BindingDevice::Keyboard, Action::Cross, key_z);
+    require(bindings_of(controls, BindingDevice::Keyboard, Action::Cross) == std::vector{key_c, key_z},
+            "add did not append once");
+    require(sharing(controls, BindingDevice::Keyboard, Action::Cross, key_z) == std::vector{Action::Circle},
+            "shared input not found (Z is circle's by default)");
+    clear_bindings(controls, BindingDevice::Gamepad, Action::Circle);
+    require(bindings_of(controls, BindingDevice::Gamepad, Action::Circle).empty(), "clear left inputs");
+    controls.dead_zone = 0.4f;
+    reset_bindings(controls, BindingDevice::Keyboard);
+    require(controls.keyboard == defaults.keyboard && controls.gamepad != defaults.gamepad && controls.dead_zone == 0.4f,
+            "reset touched the other device or the dead zone");
+
+    // Glyphs: keys by short name, face buttons by position, the rest named
+    // as each pad family names them.
+    require(glyph({Binding::Kind::Key, SDL_SCANCODE_RETURN}, SDL_GAMEPAD_TYPE_STANDARD).label == "Enter",
+            "key name not shortened");
+    const auto face = glyph(east, SDL_GAMEPAD_TYPE_PS5);
+    require(face.kind == Glyph::Kind::Face && face.button == SDL_GAMEPAD_BUTTON_EAST, "face button not drawn by position");
+    const Binding shoulder{Binding::Kind::Button, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER};
+    require(glyph(shoulder, SDL_GAMEPAD_TYPE_PS4).label == "L1" && glyph(shoulder, SDL_GAMEPAD_TYPE_XBOXONE).label == "LB",
+            "shoulder not named per family");
+    require(glyph({Binding::Kind::Axis, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 1}, SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO).label == "ZL",
+            "trigger not named per family");
+    require(glyph({Binding::Kind::Axis, SDL_GAMEPAD_AXIS_LEFTX, -1}, SDL_GAMEPAD_TYPE_PS5).label == "LS\u2190",
+            "stick direction not named");
+
+    // Keyboard capture: the next key, repeats ignored, Esc cancels.
+    BindingCapture capture;
+    capture.start(BindingDevice::Keyboard, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.key(SDL_SCANCODE_RETURN, true);
+    require(capture.active(), "key repeat captured");
+    capture.key(SDL_SCANCODE_C, false);
+    require(capture.outcome() == BindingCapture::Outcome::Bound && capture.take() == key_c && !capture.active(),
+            "key not captured");
+    capture.start(BindingDevice::Keyboard, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.key(SDL_SCANCODE_ESCAPE, false);
+    require(capture.outcome() == BindingCapture::Outcome::Cancelled && !capture.take(), "Esc did not cancel");
+    capture.start(BindingDevice::Keyboard, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.update(100.0);
+    require(capture.active(), "keyboard capture timed out");
+    capture.pointer();
+    require(capture.outcome() == BindingCapture::Outcome::Cancelled, "a click did not cancel");
+    (void)capture.take();
+
+    // Gamepad: binds on release, so the back button binds with a short press.
+    capture.start(BindingDevice::Gamepad, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.button(SDL_GAMEPAD_BUTTON_SOUTH, false, 0.1);  // the press that opened it, let go
+    require(capture.active(), "release of the opening press captured");
+    capture.key(SDL_SCANCODE_Z, false);
+    require(capture.active(), "a key captured for a gamepad");
+    capture.button(SDL_GAMEPAD_BUTTON_EAST, true, 0.2);
+    capture.update(0.5);
+    capture.button(SDL_GAMEPAD_BUTTON_EAST, false, 0.6);
+    require(capture.take() == east, "short press of the back button not bound");
+    // ...and holding it cancels.
+    capture.start(BindingDevice::Gamepad, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.button(SDL_GAMEPAD_BUTTON_EAST, true, 1.0);
+    require(capture.cancel_progress(1.5) > 0.49f && capture.cancel_progress(1.5) < 0.51f, "hold progress wrong");
+    capture.update(2.05);
+    require(capture.outcome() == BindingCapture::Outcome::Cancelled, "holding back did not cancel");
+    (void)capture.take();
+    // A long hold of another button still binds it.
+    capture.start(BindingDevice::Gamepad, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.button(SDL_GAMEPAD_BUTTON_NORTH, true, 0.5);
+    capture.update(9.0);
+    require(capture.active() && capture.pressing(), "timed out while a button was held");
+    capture.button(SDL_GAMEPAD_BUTTON_NORTH, false, 9.5);
+    require(capture.take() == Binding{Binding::Kind::Button, SDL_GAMEPAD_BUTTON_NORTH}, "long hold not bound");
+    // Nothing pressed: it gives up.
+    capture.start(BindingDevice::Gamepad, 10.0, SDL_GAMEPAD_BUTTON_EAST);
+    require(capture.seconds_left(12.2) == 4, "countdown wrong");
+    capture.update(16.1);
+    require(capture.outcome() == BindingCapture::Outcome::Cancelled, "no timeout");
+    (void)capture.take();
+    capture.start(BindingDevice::Gamepad, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.key(SDL_SCANCODE_ESCAPE, false);
+    require(capture.outcome() == BindingCapture::Outcome::Cancelled, "Esc did not cancel a gamepad capture");
+    (void)capture.take();
+
+    // Axes bind by direction once let go; one pushed at the start must
+    // return first.
+    float axes[SDL_GAMEPAD_AXIS_COUNT]{};
+    axes[SDL_GAMEPAD_AXIS_LEFTX] = 0.9f;
+    capture.start(BindingDevice::Gamepad, 0.0, SDL_GAMEPAD_BUTTON_EAST, axes);
+    capture.axis(SDL_GAMEPAD_AXIS_LEFTX, 0.95f);
+    capture.axis(SDL_GAMEPAD_AXIS_LEFTX, 0.1f);
+    require(capture.active() && !capture.pressing(), "an axis pushed at the start was captured");
+    capture.axis(SDL_GAMEPAD_AXIS_LEFTX, -0.8f);
+    require(capture.active() && capture.pressing(), "axis bound before release");
+    capture.axis(SDL_GAMEPAD_AXIS_LEFTX, -0.1f);
+    require(capture.take() == Binding{Binding::Kind::Axis, SDL_GAMEPAD_AXIS_LEFTX, -1}, "stick direction not bound");
+    capture.start(BindingDevice::Gamepad, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 0.4f);
+    require(!capture.pressing(), "a light trigger touch counted");
+    capture.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 0.7f);
+    capture.axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 0.0f);
+    require(capture.take() == Binding{Binding::Kind::Axis, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 1}, "trigger not bound");
+}
+
 void files(const std::filesystem::path &directory) {
     using namespace sarusaru::ui;
     const auto folder = directory / "browse";
@@ -235,8 +349,9 @@ int main() {
     std::filesystem::create_directories(directory);
     texts();
     rows();
+    bindings();
     files(directory);
     discs(directory);
     std::filesystem::remove_all(directory);
-    std::cout << "Launcher rows, file listing and disc recognition tests passed\n";
+    std::cout << "Launcher texts, rows, bindings, file listing and disc recognition tests passed\n";
 }

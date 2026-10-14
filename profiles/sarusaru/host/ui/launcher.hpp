@@ -3,9 +3,10 @@
 // The launcher: what the game shows before it starts. The main menu (Play,
 // Settings, Game disc, Quit), choosing the player's disc image (with the
 // launcher's own browser, the system's file picker, or by dropping it on the
-// window) and the settings. Every screen works with a gamepad, a keyboard, a
+// window), the settings, and the keyboard and gamepad bindings. Every screen works with a gamepad, a keyboard, a
 // mouse or a touch screen alone.
 #include "game_disc.hpp"
+#include "ui/bindings.hpp"
 #include "shell/settings.hpp"
 #include "ui/file_list.hpp"
 #include "ui/layer.hpp"
@@ -40,7 +41,7 @@ public:
     Outcome run(UiScript *script = nullptr);
 
 private:
-    enum class Screen { Home, Disc, Browser, Settings };
+    enum class Screen { Home, Disc, Browser, Settings, Bindings };
 
     Layer &layer_;
     shell::Settings &settings_;
@@ -74,6 +75,12 @@ private:
     std::optional<std::filesystem::path> dialog_choice_;
     std::atomic<bool> dialog_open_{};
 
+    // The bindings screen: the capture under way, for which action and
+    // device, and whether it adds to the inputs there or replaces them.
+    BindingCapture capture_;
+    shell::Action capture_action_{};
+    bool capture_add_{};
+
     ImTextureID title_art_{};
     ImVec2 title_size_{};
 
@@ -83,6 +90,9 @@ private:
     void browser();
     void settings();
     void problem();
+    void bindings();
+    void capture_overlay();
+    bool capture_event(const SDL_Event &event);
 
     void go(Screen screen, std::string_view focus);
     void choose_disc(const std::filesystem::path &path);

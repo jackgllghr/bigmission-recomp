@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <tuple>
 
 namespace sarusaru::ui {
 namespace {
@@ -110,6 +111,7 @@ Launcher::Outcome Launcher::run(UiScript *script) {
     go(Screen::Home, start_failure_.empty() ? "play" : "problem_ok");
     layer_.set_frame_hook(script != nullptr ? std::function<void(Layer &)>([script](Layer &l) { script->tick(l); })
                                             : std::function<void(Layer &)>());
+    layer_.set_event_filter([this](const SDL_Event &event) { return capture_event(event); });
     while (!outcome_) {
         const std::uint64_t start = SDL_GetTicksNS();
         SDL_Event event;
@@ -136,6 +138,8 @@ Launcher::Outcome Launcher::run(UiScript *script) {
         if (spent < kFrameNs) SDL_DelayPrecise(kFrameNs - spent);
     }
     layer_.set_frame_hook({});
+    layer_.set_event_filter({});
+    layer_.block_pads(false);
     return *outcome_;
 }
 
@@ -181,6 +185,7 @@ void Launcher::frame() {
         case Screen::Disc: disc(); break;
         case Screen::Browser: browser(); break;
         case Screen::Settings: settings(); break;
+        case Screen::Bindings: bindings(); break;
         }
     }
     ImGui::End();
@@ -516,9 +521,8 @@ void Launcher::settings() {
         if (ImGui::IsItemFocused()) description = describe(rows[i], settings_).description;
     }
     if (tabs[static_cast<std::size_t>(tab_)].title == Text::TabControls) {
-        const std::string folder = utf8(settings_path_.parent_path());
-        if (action_row(layer_, "open_folder", tr(Text::Bindings), tr(Text::BindingsDetail), row_width))
-            SDL_OpenURL(("file://" + folder).c_str());
+        if (action_row(layer_, "bindings", tr(Text::Bindings), tr(Text::BindingsDetail), row_width))
+            go(Screen::Bindings, "kb0");
         if (ImGui::IsItemFocused())
             description = tr(Text::BindingsDescription);
     }
@@ -561,6 +565,221 @@ void Launcher::problem() {
         go(screen_, screen_ == Screen::Home ? "play" : "");
     }
     hints(layer_, {{Control::Confirm, tr(Text::HintOk)}});
+}
+
+// --- Bindings ------------------------------------------------------------------
+
+namespace {
+double seconds_now() { return static_cast<double>(SDL_GetTicksNS()) * 1e-9; }
+std::string cell_id(BindingDevice device, std::size_t action) {
+    return (device == BindingDevice::Keyboard ? "kb" : "pad") + std::to_string(action);
+}
+} // namespace
+
+bool Launcher::capture_event(const SDL_Event &event) {
+    if (!capture_.active()) return false;
+    switch (event.type) {
+    case SDL_EVENT_KEY_DOWN: capture_.key(event.key.scancode, event.key.repeat); return true;
+    case SDL_EVENT_KEY_UP: return true;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP:
+        capture_.button(static_cast<SDL_GamepadButton>(event.gbutton.button), event.gbutton.down, seconds_now());
+        return true;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+        capture_.axis(static_cast<SDL_GamepadAxis>(event.gaxis.axis), static_cast<float>(event.gaxis.value) / 32767.0f);
+        return true;
+    // A click or tap cancels; its release then presses nothing.
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_FINGER_DOWN: capture_.pointer(); return true;
+    default: return false;
+    }
+}
+
+void Launcher::bindings() {
+    const float u = layer_.unit();
+    const float top = screen_title(layer_, tr(Text::BindingsTitle));
+    const ImRect inner = content_panel(layer_, top, 900.0f);
+    const float pad = 18.0f * u;
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+
+    // Whatever the capture made of the last input.
+    capture_.update(seconds_now());
+    if (capture_.outcome() == BindingCapture::Outcome::Bound || capture_.outcome() == BindingCapture::Outcome::Cancelled) {
+        const BindingDevice device = capture_.device();
+        if (const auto binding = capture_.take()) {
+            if (capture_add_)
+                add_binding(settings_.controls, device, capture_action_, *binding);
+            else
+                set_binding(settings_.controls, device, capture_action_, *binding);
+            save();
+        }
+        layer_.block_pads(false);
+        focus_control(cell_id(device, static_cast<std::size_t>(capture_action_)));
+    }
+    const bool capturing = capture_.active();
+
+    // Column headings, then a row per PSP control.
+    const float width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
+    const float label_width = std::min(240.0f * u, width * 0.34f);
+    const float gap = 10.0f * u;
+    const float cell_width = (width - label_width - gap) * 0.5f - gap * 0.5f;
+    const float keyboard_x = inner.Min.x + pad + label_width + gap, gamepad_x = keyboard_x + cell_width + gap;
+    {
+        ImFont *font = fonts().strong;
+        const float size = 16.0f * u, y = inner.Min.y + 12.0f * u;
+        draw->AddText(font, size, ImVec2(keyboard_x + 10.0f * u, y), colors::kInkDim, tr(Text::ColumnKeyboard).data(),
+                      tr(Text::ColumnKeyboard).data() + tr(Text::ColumnKeyboard).size());
+        draw->AddText(font, size, ImVec2(gamepad_x + 10.0f * u, y), colors::kInkDim, tr(Text::ColumnGamepad).data(),
+                      tr(Text::ColumnGamepad).data() + tr(Text::ColumnGamepad).size());
+    }
+    const float list_top = inner.Min.y + 38.0f * u;
+    const float description_height = 52.0f * u;
+    ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, list_top));
+    ImGui::BeginDisabled(capturing);
+    begin_list("##bindings", ImVec2(inner.GetWidth() - 2.0f * pad, inner.Max.y - pad - description_height - list_top));
+    std::string description;
+    const float row_height = 40.0f * u;
+    for (std::size_t i = 0; i < shell::kActionCount; ++i) {
+        const auto action = static_cast<shell::Action>(i);
+        const float y = ImGui::GetCursorScreenPos().y;
+        const std::string_view name = tr(action_text(action));
+        ImFont *font = fonts().body;
+        const ImVec2 extent = text_size(font, 17.0f * u, name);
+        ImGui::GetWindowDrawList()->AddText(font, 17.0f * u, ImVec2(inner.Min.x + pad + 10.0f * u, y + (row_height - extent.y) * 0.5f),
+                                            colors::kInk, name.data(), name.data() + name.size());
+        for (const BindingDevice device : {BindingDevice::Keyboard, BindingDevice::Gamepad}) {
+            const auto &bound = bindings_of(settings_.controls, device, action);
+            std::vector<Glyph> glyphs;
+            for (const auto &binding : bound) glyphs.push_back(glyph(binding, layer_.pad_type()));
+            ImGui::SetCursorScreenPos(ImVec2(device == BindingDevice::Keyboard ? keyboard_x : gamepad_x, y));
+            const CellAction act = binding_cell(layer_, cell_id(device, i), glyphs, ImVec2(cell_width, row_height));
+            if (ImGui::IsItemFocused() && !capturing) {
+                std::string shared;
+                for (const auto &binding : bound)
+                    for (const auto other : sharing(settings_.controls, device, action, binding)) {
+                        if (!shared.empty()) shared += ", ";
+                        shared += tr(action_text(other));
+                    }
+                description = bound.empty() ? std::string(tr(Text::NotBound))
+                            : shared.empty() ? std::string(tr(Text::DescBindingCell))
+                                             : format(Text::AlsoUsedFor, {shared});
+            }
+            switch (act) {
+            case CellAction::None: break;
+            case CellAction::Clear:
+                clear_bindings(settings_.controls, device, action);
+                save();
+                break;
+            case CellAction::Set:
+            case CellAction::Add: {
+                capture_action_ = action;
+                capture_add_ = act == CellAction::Add;
+                const auto axes = layer_.pad_axes();
+                const SDL_GamepadButton back = settings_.confirm_south ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
+                capture_.start(device, seconds_now(), back, axes);
+                if (device == BindingDevice::Gamepad) layer_.block_pads(true);
+                break;
+            }
+            }
+        }
+    }
+    ImGui::Dummy(ImVec2(0, 4.0f * u));
+    for (const auto &[id, text, device] : {std::tuple{"reset_kb", Text::ResetKeyboard, BindingDevice::Keyboard},
+                                           std::tuple{"reset_pad", Text::ResetGamepad, BindingDevice::Gamepad}}) {
+        if (action_row(layer_, id, tr(text), "", width)) {
+            reset_bindings(settings_.controls, device);
+            save();
+        }
+        if (ImGui::IsItemFocused()) description = tr(Text::DescReset);
+    }
+    end_list(layer_);
+    ImGui::EndDisabled();
+
+    // What the focused cell is bound to, or what went wrong saving.
+    const ImVec2 at(inner.Min.x + pad, inner.Max.y - pad - description_height);
+    draw->AddLine(at, ImVec2(inner.Max.x - pad, at.y), IM_COL32(180, 196, 226, 255), 2.0f * u);
+    ImGui::SetCursorScreenPos(ImVec2(at.x + 8.0f * u, at.y + 10.0f * u));
+    paragraph(layer_, settings_error_.empty() ? description : settings_error_, inner.GetWidth() - 2.0f * pad - 16.0f * u,
+              settings_error_.empty() ? colors::kInkDim : colors::kRed);
+
+    if (capturing) {
+        capture_overlay();
+        return;
+    }
+    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Settings, "bindings");
+    hints(layer_, {{Control::Confirm, tr(Text::HintSet)}, {Control::Add, tr(Text::HintAdd)},
+                   {Control::Clear, tr(Text::HintClear)}, {Control::Back, tr(Text::HintBack)}});
+}
+
+void Launcher::capture_overlay() {
+    const float u = layer_.unit();
+    const double now = seconds_now();
+    const ImVec2 size = display();
+    ImDrawList *draw = ImGui::GetForegroundDrawList();
+    draw->AddRectFilled(ImVec2(0, 0), size, IM_COL32(8, 26, 102, 150));
+
+    const bool keyboard = capture_.device() == BindingDevice::Keyboard;
+    const float width = std::min(size.x - 48.0f * u, 600.0f * u), pad = 26.0f * u;
+    const float text_width = width - 2.0f * pad;
+    const std::string title = format(keyboard ? Text::CaptureKey : Text::CapturePad, {tr(action_text(capture_action_))});
+    ImFont *strong = fonts().strong, *body = fonts().body;
+    const float title_size = 22.0f * u, body_size = 17.0f * u;
+    const ImVec2 title_extent = text_size(strong, title_size, title, text_width);
+    const float height = pad + 30.0f * u + title_extent.y + 10.0f * u + 24.0f * u + 70.0f * u + 30.0f * u + pad;
+    const ImVec2 min((size.x - width) * 0.5f, (size.y - height) * 0.5f), max(min.x + width, min.y + height);
+    panel(layer_, min, max, draw);
+
+    float y = min.y + pad;
+    siren_lamp(draw, ImVec2(size.x * 0.5f, y + 10.0f * u), 11.0f * u, layer_.time());
+    y += 30.0f * u;
+    const auto centred = [&](ImFont *font, float px, std::string_view text, ImU32 color) {
+        const ImVec2 extent = text_size(font, px, text, text_width);
+        // Wrapped lines start at the left edge of the text block.
+        const float x = extent.x < text_width ? (size.x - extent.x) * 0.5f : min.x + pad;
+        draw->AddText(font, px, ImVec2(x, y), color, text.data(), text.data() + text.size(), text_width);
+        y += extent.y;
+    };
+    centred(strong, title_size, title, colors::kInk);
+    y += 6.0f * u;
+    centred(body, body_size, tr(capture_add_ ? Text::CaptureAdding : Text::CaptureReplacing), colors::kInkDim);
+    y += 14.0f * u;
+
+    // How to cancel: Esc, or holding the back button (with its progress),
+    // and the time left.
+    const float row_center = y + 28.0f * u;
+    if (keyboard) {
+        const Glyph esc{Glyph::Kind::Key, "Esc"};
+        ImVec2 cursor(0.0f, 0.0f);
+        draw_glyph(nullptr, cursor, u, layer_.pad_type(), esc);
+        cursor = ImVec2((size.x - cursor.x) * 0.5f, row_center);
+        draw_glyph(draw, cursor, u, layer_.pad_type(), esc);
+        y = row_center + 22.0f * u;
+        centred(body, body_size, tr(Text::CaptureKeyCancel), colors::kInkDim);
+    } else {
+        const Glyph back{Glyph::Kind::Face, "", settings_.confirm_south ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH};
+        const std::string_view hold = tr(Text::CaptureHoldCancel);
+        const ImVec2 hold_extent = text_size(strong, body_size, hold);
+        ImVec2 cursor(0.0f, 0.0f);
+        draw_glyph(nullptr, cursor, u, layer_.pad_type(), back);
+        const float total = cursor.x + 8.0f * u + hold_extent.x;
+        cursor = ImVec2((size.x - total) * 0.5f, row_center);
+        const ImVec2 ring(cursor.x + 13.0f * u, row_center);
+        draw_glyph(draw, cursor, u, layer_.pad_type(), back);
+        if (const float progress = capture_.cancel_progress(now); progress > 0.0f) {
+            draw->PathArcTo(ring, 18.0f * u, -1.5708f, -1.5708f + progress * 6.2832f, 32);
+            draw->PathStroke(colors::kRed, 4.0f * u);
+        }
+        draw->AddText(strong, body_size, ImVec2(cursor.x + 8.0f * u, row_center - hold_extent.y * 0.5f), colors::kInk,
+                      hold.data(), hold.data() + hold.size());
+        y = row_center + 22.0f * u;
+        if (!capture_.pressing())
+            centred(body, body_size, format(Text::CaptureSeconds, {std::to_string(capture_.seconds_left(now))}),
+                    colors::kInkDim);
+        else
+            y += body_size;
+    }
+    y += 6.0f * u;
+    centred(body, 15.0f * u, tr(Text::CapturePointerCancel), colors::kInkDim);
 }
 
 } // namespace sarusaru::ui
