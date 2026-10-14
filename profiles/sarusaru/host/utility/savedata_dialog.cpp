@@ -289,7 +289,12 @@ struct Request {
 
     // ScePspDateTime: year, month, day, hour, minute, second (16-bit), microsecond.
     void write_date_time(std::uint32_t at, std::filesystem::file_time_type written) const {
+#if defined(_MSC_VER)
+        // MSVC's file_clock converts through UTC only (no to_sys).
+        const auto system = std::chrono::clock_cast<std::chrono::system_clock>(written);
+#else
         const auto system = std::chrono::file_clock::to_sys(written);
+#endif
         const std::time_t seconds = std::chrono::system_clock::to_time_t(
             std::chrono::time_point_cast<std::chrono::system_clock::duration>(system));
         std::tm local{};
