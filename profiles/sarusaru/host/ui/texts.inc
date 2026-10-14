@@ -107,10 +107,10 @@ X(RowDeadZone, "Stick dead zone", "スティックのデッドゾーン")
 X(DescDeadZone, "How far a stick must move before the game sees it. Raise it if a worn stick drifts.",
   "スティックをどれだけ倒すと反応するかを決めます。スティックが勝手に動く場合は上げてください。")
 X(RowConfirm, "Confirm button", "決定ボタン")
-X(ValueSouth, "× South", "× 下")
-X(ValueEast, "○ East", "○ 右")
-X(DescConfirm, "The face button that confirms in these menus. The game itself confirms with ○ (east), as in Japan.",
-  "このメニューで決定に使うボタンです。ゲーム本編では日本版と同じく ○（右）で決定します。")
+X(ValueSouth, "South", "下")
+X(ValueEast, "East", "右")
+X(DescConfirm, "The face button that confirms in these menus. The game itself confirms with the east button (○ on PlayStation), as in Japan.",
+  "このメニューで決定に使うボタンです。ゲーム本編では日本版と同じく右のボタン（PlayStationの○）で決定します。")
 X(RowLanguage, "Language", "言語 (Language)")
 X(ValueAutomatic, "Automatic ({0})", "自動（{0}）")
 X(DescLanguage, "The language of these menus. Automatic follows the system's language. Game text sets the game's own.",

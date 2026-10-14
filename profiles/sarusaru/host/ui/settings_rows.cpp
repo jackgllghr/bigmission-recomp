@@ -135,6 +135,7 @@ RowView describe(SettingRow row, const shell::Settings &settings) {
     case SettingRow::ConfirmButton:
         view.label = text(Text::RowConfirm);
         view.value = text(settings.confirm_south ? Text::ValueSouth : Text::ValueEast);
+        view.face = settings.confirm_south ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
         view.description = text(Text::DescConfirm);
         break;
     }

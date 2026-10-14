@@ -33,6 +33,8 @@ struct RowView {
     std::string description;
     // The value clashes with another setting (description says how).
     bool warning{};
+    // A gamepad face button drawn before the value, as the player's pad labels it.
+    SDL_GamepadButton face{SDL_GAMEPAD_BUTTON_INVALID};
 };
 [[nodiscard]] RowView describe(SettingRow row, const shell::Settings &settings);
 

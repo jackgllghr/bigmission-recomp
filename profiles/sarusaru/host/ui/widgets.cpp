@@ -408,8 +408,17 @@ int setting_row(const Layer &layer, std::string_view id, const RowView &row, flo
     const ImU32 arrow_color = mix(colors::kBlueLight, colors::kBlue, focus);
     triangle(draw, ImVec2(value.Min.x + arrow * 0.5f, value.GetCenter().y), 9.0f * u, -1, arrow_color);
     triangle(draw, ImVec2(value.Max.x - arrow * 0.5f, value.GetCenter().y), 9.0f * u, 1, arrow_color);
+    // A face button, when the row has one, leads the value and is centred with it.
+    const bool face = row.face != SDL_GAMEPAD_BUTTON_INVALID;
+    ImVec2 glyph(0.0f, value.GetCenter().y);
+    if (face) face_button(nullptr, glyph, u, layer.pad_type(), row.face);
     const ImVec2 value_size = text_size(strong, size, row.value);
-    draw->AddText(strong, size, ImVec2(value.GetCenter().x - value_size.x * 0.5f, value.GetCenter().y - value_size.y * 0.5f),
+    const float left = value.GetCenter().x - (glyph.x + value_size.x) * 0.5f;
+    if (face) {
+        ImVec2 at(left, value.GetCenter().y);
+        face_button(draw, at, u, layer.pad_type(), row.face);
+    }
+    draw->AddText(strong, size, ImVec2(left + glyph.x, value.GetCenter().y - value_size.y * 0.5f),
                   row.warning ? colors::kRed : colors::kInk, row.value.c_str());
 
     int change = 0;

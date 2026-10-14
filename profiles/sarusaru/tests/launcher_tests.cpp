@@ -136,6 +136,15 @@ void rows() {
                 describe(SettingRow::GameFrameRate, settings).warning,
             "experimental rate clash not flagged");
 
+    settings.confirm_south = true;
+    require(describe(SettingRow::ConfirmButton, settings).face == SDL_GAMEPAD_BUTTON_SOUTH &&
+                describe(SettingRow::ConfirmButton, settings).value == "South",
+            "confirm row does not show the south button");
+    step(SettingRow::ConfirmButton, settings, 1);
+    require(describe(SettingRow::ConfirmButton, settings).face == SDL_GAMEPAD_BUTTON_EAST, "confirm row glyph did not follow");
+    require(describe(SettingRow::Language, settings).face == SDL_GAMEPAD_BUTTON_INVALID, "a row without a button shows one");
+    settings.confirm_south = true;
+
     require(describe(SettingRow::GameText, settings).value == "Japanese (original)", "game text not Japanese by default");
     step(SettingRow::GameText, settings, 1);
     require(settings.translation_language == "en" && describe(SettingRow::GameText, settings).value == "English (unofficial)",
