@@ -95,8 +95,10 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   initialises its sound system, auto-loads its save (none on a fresh memory
   stick), streams its first ATRAC3plus music track and draws for 57 s of
   guest time (1,719 GE lists), loads its media modules and loops its
-  title-screen movie, waiting for a button press the neutral pad never
-  gives. `PSPRECOMP_HLE_HISTOGRAM=1` lists the most-called imports;
+  title-screen movie. With `SARUSARU_INPUT` presses it loads stage 1-1 and
+  runs there for hours of guest time without an unmodeled import.
+  `SARUSARU_INPUT="65:START;65.2:-;66:CIRCLE;66.2:-"` scripts the pad
+  (seconds of guest time, buttons joined with `+`, `-` releases). `PSPRECOMP_HLE_HISTOGRAM=1` lists the most-called imports;
   `SARUSARU_TRACE_MOVIE=1` traces the movie player. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
@@ -227,6 +229,10 @@ The pinned upstream is recorded in `config/supported_game.json`.
   Pictures are assumed to leave the decoder in presentation order at
   29.97 Hz; only start position 0 is modeled. Demuxing and H.264 decoding
   come from Yakumo (see `THIRD_PARTY.md`).
+- Added scripted controller input for unattended runs: timed pad states
+  that controller samples follow at their own virtual timestamps.
+- `sceKernelUnloadModule` returns the module ID on success, as on the PSP;
+  the game treats 0 as failure and retried forever when it returned 0.
 - Added `sceKernelPowerTick` (counted; there are no idle timers to reset).
 - Added `ModuleMgrForUser` (`modules/module_manager.cpp`): `psmf.prx` and
   `libpsmfplayer.prx`, Sony's media libraries whose exports the game imports

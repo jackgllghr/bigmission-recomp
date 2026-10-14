@@ -28,6 +28,7 @@ public:
     [[nodiscard]] std::int32_t load(psprecomp::Runtime &runtime, const std::string &path);
     [[nodiscard]] std::int32_t start(std::int32_t uid);
     [[nodiscard]] std::int32_t stop(std::int32_t uid);
+    // Returns the module ID on success, as the PSP does.
     [[nodiscard]] std::int32_t unload(std::int32_t uid);
     [[nodiscard]] std::int32_t main_module() const noexcept { return main_uid_; }
 

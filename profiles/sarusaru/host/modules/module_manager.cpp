@@ -46,7 +46,7 @@ std::int32_t ModuleManager::unload(std::int32_t uid) {
     const auto found = modules_.find(uid);
     if (found == modules_.end() || uid == main_uid_) return static_cast<std::int32_t>(kUnknownModule);
     modules_.erase(found);
-    return 0;
+    return uid;  // Success returns the module ID; the game treats <= 0 as failure.
 }
 
 void register_module_manager(ModuleManager &modules, psprecomp::Runtime &runtime) {

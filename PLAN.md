@@ -191,8 +191,12 @@ auto-loads its save (none on a fresh memory stick), streams its first music
 track through ATRAC3plus decoding, and draws for 57 s of guest time (1,719 GE
 display lists, over a million primitives), loads its media modules and plays
 its title-screen movie (`d01.pmf`, 54 s, looped) with real decoded pictures
-and audio. It then waits on the title screen for a button press, which the
-neutral pad never gives.
+and audio. With a scripted pad (`SARUSARU_INPUT`, alternating Start and
+Circle) it leaves the title, loads stage 1-1 with its sound banks and music,
+and keeps running there: a 400-million-dispatch run reaches 8,191 s of guest
+time (245,504 GE display lists, 14.5 million primitives) without meeting an
+unmodeled import. Nothing is drawn or heard yet: the next milestone is the
+host shell and GE renderer (chunks 10 and 11).
 
 Twenty-four CTest suites pass. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:

@@ -4,6 +4,9 @@
 #include "psprecomp/runtime.hpp"
 
 #include <cstdint>
+#include <optional>
+#include <string_view>
+#include <vector>
 
 namespace sarusaru::ctrl {
 
@@ -17,7 +20,8 @@ inline constexpr std::uint32_t kSampleSize = 16u;
 // sceCtrl state on the kernel's virtual clock. The pad is sampled at each
 // vblank (sampling cycle 0) or every `cycle` microseconds. A read returns the
 // samples taken since the previous read, and blocks until the next sample if
-// there are none. Until host input exists the pad stays neutral.
+// there are none. Until host input exists the pad is neutral, or follows a
+// script of timed pad states (see parse_input_script).
 class Controller {
 public:
     struct Pad {
@@ -26,6 +30,10 @@ public:
         std::uint8_t ly{0x80u};
     };
     void set_pad(const Pad &pad) noexcept { pad_ = pad; }
+    // From each event's time (virtual microseconds) the pad holds its state.
+    struct ScriptEvent { std::uint64_t time_us{}; Pad pad; };
+    void set_script(std::vector<ScriptEvent> script) { script_ = std::move(script); }
+    [[nodiscard]] Pad pad_at(std::uint64_t time_us) const noexcept;
 
     // Sample index taken at or before time_us, and when sample `index` is taken.
     [[nodiscard]] std::uint64_t sample_index(std::uint64_t time_us) const noexcept;
@@ -49,8 +57,19 @@ private:
     std::int32_t idle_reset_{-1};
     std::int32_t idle_back_{-1};
     Pad pad_;
+    std::vector<ScriptEvent> script_;
     std::uint64_t last_read_sample_{};
 };
+
+// PSP button bits.
+inline constexpr std::uint32_t kButtonSelect = 0x0001u, kButtonStart = 0x0008u, kButtonUp = 0x0010u,
+                               kButtonRight = 0x0020u, kButtonDown = 0x0040u, kButtonLeft = 0x0080u,
+                               kButtonL = 0x0100u, kButtonR = 0x0200u, kButtonTriangle = 0x1000u,
+                               kButtonCircle = 0x2000u, kButtonCross = 0x4000u, kButtonSquare = 0x8000u;
+
+// Parses "SECONDS:BUTTONS;..." (buttons joined with '+', '-' for none), e.g.
+// "60:START;60.2:-;65:CROSS+UP". Times must increase. nullopt if malformed.
+[[nodiscard]] std::optional<std::vector<Controller::ScriptEvent>> parse_input_script(std::string_view text);
 
 void register_ctrl(Controller &controller, kernel::EarlyKernel &kernel, psprecomp::Runtime &runtime);
 

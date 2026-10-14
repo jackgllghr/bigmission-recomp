@@ -33,7 +33,8 @@ int main() {
     runtime.invoke_import("ModuleMgrForUser", 0x50F0C1ECu, cpu);
     require(cpu.gpr[2] == uid && runtime.memory().load32(status) == 0u, "start");
     require(static_cast<std::uint32_t>(modules.start(static_cast<std::int32_t>(uid))) == kModuleAlreadyStarted, "double start");
-    require(modules.stop(static_cast<std::int32_t>(uid)) == 0 && modules.unload(static_cast<std::int32_t>(uid)) == 0 &&
+    require(modules.stop(static_cast<std::int32_t>(uid)) == 0 &&
+                modules.unload(static_cast<std::int32_t>(uid)) == static_cast<std::int32_t>(uid) &&
                 static_cast<std::uint32_t>(modules.unload(static_cast<std::int32_t>(uid))) == kUnknownModule,
             "stop and unload");
     runtime.invoke_import("ModuleMgrForUser", 0xF0A26395u, cpu);

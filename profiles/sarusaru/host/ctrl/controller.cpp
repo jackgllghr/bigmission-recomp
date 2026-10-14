@@ -3,6 +3,8 @@
 #include "kernel/guest_clock.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <string>
 
 namespace sarusaru::ctrl {
 
@@ -37,6 +39,55 @@ std::uint64_t Controller::sample_time_us(std::uint64_t index) const noexcept {
     return cycle_ == 0u ? kernel::vblank_time_us(index) : index * cycle_;
 }
 
+Controller::Pad Controller::pad_at(std::uint64_t time_us) const noexcept {
+    Pad pad = pad_;
+    for (const auto &event : script_) {
+        if (event.time_us > time_us) break;
+        pad = event.pad;
+    }
+    return pad;
+}
+
+std::optional<std::vector<Controller::ScriptEvent>> parse_input_script(std::string_view text) {
+    static constexpr std::pair<std::string_view, std::uint32_t> kNames[] = {
+        {"SELECT", kButtonSelect}, {"START", kButtonStart}, {"UP", kButtonUp}, {"RIGHT", kButtonRight},
+        {"DOWN", kButtonDown}, {"LEFT", kButtonLeft}, {"L", kButtonL}, {"R", kButtonR},
+        {"TRIANGLE", kButtonTriangle}, {"CIRCLE", kButtonCircle}, {"CROSS", kButtonCross}, {"SQUARE", kButtonSquare},
+    };
+    std::vector<Controller::ScriptEvent> events;
+    while (!text.empty()) {
+        const auto end = text.find(';');
+        const std::string_view entry = text.substr(0u, end);
+        text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1u);
+        const auto colon = entry.find(':');
+        if (colon == std::string_view::npos) return std::nullopt;
+        double seconds = 0.0;
+        try {
+            std::size_t used = 0u;
+            const std::string time_text(entry.substr(0u, colon));
+            seconds = std::stod(time_text, &used);
+            if (used != time_text.size() || !(seconds >= 0.0)) return std::nullopt;
+        } catch (const std::exception &) {
+            return std::nullopt;
+        }
+        Controller::ScriptEvent event{static_cast<std::uint64_t>(std::llround(seconds * 1e6)), {}};
+        std::string_view buttons = entry.substr(colon + 1u);
+        if (buttons != "-") {
+            while (!buttons.empty()) {
+                const auto plus = buttons.find('+');
+                const std::string_view name = buttons.substr(0u, plus);
+                buttons = plus == std::string_view::npos ? std::string_view{} : buttons.substr(plus + 1u);
+                const auto found = std::ranges::find_if(kNames, [name](const auto &known) { return known.first == name; });
+                if (found == std::end(kNames)) return std::nullopt;
+                event.pad.buttons |= found->second;
+            }
+        }
+        if (!events.empty() && event.time_us <= events.back().time_us) return std::nullopt;
+        events.push_back(event);
+    }
+    return events;
+}
+
 std::uint32_t Controller::write_samples(psprecomp::GuestMemory &memory, std::uint32_t address,
                                         std::uint32_t count, std::uint64_t now_us) {
     const std::uint64_t latest = sample_index(now_us);
@@ -47,10 +98,11 @@ std::uint32_t Controller::write_samples(psprecomp::GuestMemory &memory, std::uin
         const std::uint64_t index = latest - written + 1u + i;
         const std::uint32_t sample = address + i * kSampleSize;
         memory.store32(sample, static_cast<std::uint32_t>(sample_time_us(index)));
-        memory.store32(sample + 4u, pad_.buttons);
+        const Pad pad = pad_at(sample_time_us(index));
+        memory.store32(sample + 4u, pad.buttons);
         // Digital mode reports the analog stick centred.
-        memory.store8(sample + 8u, mode_ == 1u ? pad_.lx : 0x80u);
-        memory.store8(sample + 9u, mode_ == 1u ? pad_.ly : 0x80u);
+        memory.store8(sample + 8u, mode_ == 1u ? pad.lx : 0x80u);
+        memory.store8(sample + 9u, mode_ == 1u ? pad.ly : 0x80u);
         for (std::uint32_t reserved = 10u; reserved < kSampleSize; ++reserved) memory.store8(sample + reserved, 0u);
     }
     last_read_sample_ = latest;

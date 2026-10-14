@@ -81,5 +81,18 @@ int main() {
     cpu.set_gpr(4u, 0u); cpu.set_gpr(5u, 1u);
     runtime.invoke_import("sceCtrl", 0x1F803938u, cpu);
     require(cpu.gpr[2] == kInvalidPointer, "invalid buffer accepted");
+
+    // Scripts: parsing, and samples following the script at their own times.
+    require(!parse_input_script("1:JUMP") && !parse_input_script("2:START;1:-") && !parse_input_script("x:START"),
+            "malformed scripts rejected");
+    const auto script = parse_input_script("0.05:START+CROSS;0.1:-");
+    require(script && script->size() == 2u && (*script)[0].time_us == 50000u &&
+                (*script)[0].pad.buttons == (kButtonStart | kButtonCross) && (*script)[1].pad.buttons == 0u,
+            "script parsed");
+    controller.set_pad({});
+    controller.set_script(*script);
+    require(controller.pad_at(49999u).buttons == 0u && controller.pad_at(50000u).buttons == 0x4008u &&
+                controller.pad_at(100000u).buttons == 0u,
+            "pad follows the script");
     return 0;
 }

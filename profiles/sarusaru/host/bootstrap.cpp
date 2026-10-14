@@ -117,6 +117,12 @@ int main(int argc, char **argv) {
         sarusaru::io::register_io(io, runtime);
         sarusaru::ctrl::Controller controller;
         sarusaru::ctrl::register_ctrl(controller, early_kernel, runtime);
+        // SARUSARU_INPUT scripts the pad for unattended runs, e.g. "60:START;60.2:-".
+        if (const char *input = std::getenv("SARUSARU_INPUT"); input != nullptr && *input != '\0') {
+            auto script = sarusaru::ctrl::parse_input_script(input);
+            if (!script) throw psprecomp::Error("Malformed SARUSARU_INPUT script");
+            controller.set_script(std::move(*script));
+        }
         sarusaru::display::Display display;
         sarusaru::display::register_display(display, early_kernel, runtime);
         sarusaru::ge::Ge ge(early_kernel);
