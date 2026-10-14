@@ -10,24 +10,29 @@
 #include "shell/audio_output.hpp"
 #include "shell/ge_renderer.hpp"
 #include "shell/input.hpp"
+#include "shell/presentation_clock.hpp"
 #include "shell/vulkan_context.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <cstdint>
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace {
 
 constexpr const char *kUsage =
-    "Usage: sarusaru [--scale N] <prepared BOOT.elf> <game ISO>\n"
-    "  --scale N  internal resolution as a multiple of the PSP's 480x272 (1-8, default 2)\n"
-    "Keys: arrows d-pad, Z circle, X cross, A square, S triangle, Q/W L/R, Enter start,\n"
+    "Usage: sarusaru [--settings FILE] [--scale N] <prepared BOOT.elf> <game ISO>\n"
+    "  --settings FILE  settings and bindings (default: per-user settings.ini)\n"
+    "  --scale N  override the file's internal resolution (1-8 times 480x272)\n"
+    "  --print-default-settings  print the settings file template and exit\n"
+    "Default keys: arrows d-pad, Z circle, X cross, A square, S triangle, Q/W L/R, Enter start,\n"
     "      Backspace select, I/J/K/L analog stick, Tab (held) fast forward, Escape quit.\n"
     "Environment: SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
     "  seconds of game time (default 5) as BMP files; SARUSARU_INPUT scripts the pad.\n";
@@ -54,7 +59,8 @@ void set_window_icon(SDL_Window *window) {
 } // namespace
 
 int main(int argc, char **argv) {
-    std::uint32_t scale = 2u;
+    std::optional<std::uint32_t> scale;
+    std::filesystem::path settings_path;
     std::vector<std::string_view> paths;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -62,13 +68,28 @@ int main(int argc, char **argv) {
             std::cout << kUsage;
             return 0;
         }
+        if (arg == "--print-default-settings") {
+            std::cout << sarusaru::shell::serialize_settings(sarusaru::shell::default_settings());
+            return 0;
+        }
+        if (arg == "--settings" && i + 1 < argc) {
+            settings_path = argv[++i];
+            continue;
+        }
         if (arg == "--scale" && i + 1 < argc) {
-            scale = static_cast<std::uint32_t>(std::strtoul(argv[++i], nullptr, 10));
-            if (scale < 1u || scale > 8u) {
+            const std::string_view value = argv[++i];
+            std::uint32_t parsed{};
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+            if (error != std::errc{} || end != value.data() + value.size() || parsed < 1u || parsed > 8u) {
                 std::cerr << "sarusaru: --scale takes 1 to 8\n";
                 return 2;
             }
+            scale = parsed;
             continue;
+        }
+        if (arg.starts_with("--")) {
+            std::cerr << "sarusaru: unknown option or missing value: " << arg << '\n';
+            return 2;
         }
         paths.push_back(arg);
     }
@@ -77,6 +98,18 @@ int main(int argc, char **argv) {
         return 2;
     }
 
+    sarusaru::shell::Settings settings;
+    try {
+        if (settings_path.empty()) settings_path = sarusaru::shell::default_settings_path();
+        settings = sarusaru::shell::load_settings(settings_path);
+        if (scale) settings.internal_resolution = *scale;
+        std::cout << "Settings: " << settings_path.string() << '\n';
+        if (settings.fov_degrees != 0.0f)
+            std::cerr << "sarusaru: FOV preference saved, but camera overrides are not implemented; using native FOV\n";
+    } catch (const std::exception &error) {
+        std::cerr << "sarusaru: " << error.what() << '\n';
+        return 2;
+    }
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         std::cerr << "sarusaru: SDL_Init failed: " << SDL_GetError() << '\n';
         return 1;
@@ -92,9 +125,10 @@ int main(int argc, char **argv) {
         }
         SDL_Window *window = SDL_CreateWindow("Saru! Get You! SaruSaru Daisakusen", 960, 544,
                                               SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-        sarusaru::shell::GeRenderer renderer(vulkan, scale);
+        sarusaru::shell::GeRenderer renderer(vulkan, settings.internal_resolution);
         sarusaru::shell::AudioOutput audio;
-        sarusaru::shell::Input input;
+        sarusaru::shell::Input input(settings.controls);
+        sarusaru::shell::PresentationClock presentation(settings.frame_rate);
         sarusaru::shell::Buffer capture;
         try {
             if (window == nullptr) throw psprecomp::Error(std::string("cannot create the window: ") + SDL_GetError());
@@ -144,12 +178,12 @@ int main(int argc, char **argv) {
                 if (quit) return;
                 SDL_Event event;
                 while (SDL_PollEvent(&event)) {
-                    if (event.type == SDL_EVENT_QUIT ||
-                        (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE))
-                        quit = true;
+                    if (event.type == SDL_EVENT_QUIT) quit = true;
                     input.handle(event);
                 }
-                if (!scripted) game.controller.set_pad(input.pad());
+                const auto controls = input.sample();
+                quit = quit || controls.quit;
+                if (!scripted) game.controller.set_pad(controls.pad);
 
                 std::uint32_t width = 0u, height = 0u;
                 const auto framebuffer = game.display.framebuffer(1u, game.kernel.now_us());
@@ -162,7 +196,7 @@ int main(int argc, char **argv) {
                     vulkan.copy_to_buffer(*image, width, height, capture);
                     next_capture_us = game.kernel.now_us() + capture_every_us;
                 }
-                vulkan.end_frame(image, width, height);
+                vulkan.end_frame(image, width, height, presentation.due(game.kernel.now_us()));
                 renderer.begin_frame(vulkan.begin_frame());
                 if (game.kernel.now_us() >= trace_at_us) {
                     std::fprintf(stderr, "frame at %llu us\n", static_cast<unsigned long long>(game.kernel.now_us()));
@@ -186,7 +220,7 @@ int main(int argc, char **argv) {
                 const std::uint64_t guest_ns = (game.kernel.now_us() - guest_origin_us) * 1000u;
                 const std::uint64_t target_ns = real_origin_ns + guest_ns;
                 const std::uint64_t now_ns = SDL_GetTicksNS();
-                const bool fast = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB];
+                const bool fast = controls.fast_forward;
                 if (fast || now_ns > target_ns + kMaxLagNs) {
                     real_origin_ns = now_ns;
                     guest_origin_us = game.kernel.now_us();

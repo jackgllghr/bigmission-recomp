@@ -71,7 +71,8 @@ public:
     VkCommandBuffer begin_frame();
     // Ends the frame: copies `source` (in TRANSFER_SRC layout, or nothing when
     // null) letterboxed into the swapchain image and presents it.
-    void end_frame(const Image *source, std::uint32_t source_width, std::uint32_t source_height);
+    // With present=false, still submits all GE/capture work without acquiring a swapchain image.
+    void end_frame(const Image *source, std::uint32_t source_width, std::uint32_t source_height, bool present = true);
     // Submits the commands recorded so far and waits, then reopens the
     // command buffer: for when per-frame resources run out mid-frame.
     VkCommandBuffer flush();

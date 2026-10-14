@@ -4,17 +4,19 @@
 #include <cmath>
 
 namespace sarusaru::shell {
-
 Input::~Input() {
     for (auto *gamepad : gamepads_) SDL_CloseGamepad(gamepad);
 }
-
 void Input::handle(const SDL_Event &event) {
     if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
-        if (SDL_Gamepad *gamepad = SDL_OpenGamepad(event.gdevice.which)) gamepads_.push_back(gamepad);
+        const auto found = std::find_if(gamepads_.begin(), gamepads_.end(), [&](SDL_Gamepad *pad) {
+            return SDL_GetGamepadID(pad) == event.gdevice.which;
+        });
+        if (found == gamepads_.end())
+            if (auto *pad = SDL_OpenGamepad(event.gdevice.which)) gamepads_.push_back(pad);
     } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
-        const auto gone = std::find_if(gamepads_.begin(), gamepads_.end(), [&](SDL_Gamepad *gamepad) {
-            return SDL_GetGamepadID(gamepad) == event.gdevice.which;
+        const auto gone = std::find_if(gamepads_.begin(), gamepads_.end(), [&](SDL_Gamepad *pad) {
+            return SDL_GetGamepadID(pad) == event.gdevice.which;
         });
         if (gone != gamepads_.end()) {
             SDL_CloseGamepad(*gone);
@@ -22,52 +24,54 @@ void Input::handle(const SDL_Event &event) {
         }
     }
 }
-
-ctrl::Controller::Pad Input::pad() const {
-    using namespace ctrl;
-    ctrl::Controller::Pad pad;
-    const bool *keys = SDL_GetKeyboardState(nullptr);
-    const struct { SDL_Scancode key; std::uint32_t button; } keyboard[] = {
-        {SDL_SCANCODE_UP, kButtonUp}, {SDL_SCANCODE_DOWN, kButtonDown}, {SDL_SCANCODE_LEFT, kButtonLeft},
-        {SDL_SCANCODE_RIGHT, kButtonRight}, {SDL_SCANCODE_Z, kButtonCircle}, {SDL_SCANCODE_X, kButtonCross},
-        {SDL_SCANCODE_A, kButtonSquare}, {SDL_SCANCODE_S, kButtonTriangle}, {SDL_SCANCODE_Q, kButtonL},
-        {SDL_SCANCODE_W, kButtonR}, {SDL_SCANCODE_RETURN, kButtonStart}, {SDL_SCANCODE_BACKSPACE, kButtonSelect},
-    };
-    for (const auto &[key, button] : keyboard)
-        if (keys[key]) pad.buttons |= button;
-    float x = 0.0f, y = 0.0f;
-    if (keys[SDL_SCANCODE_J]) x -= 1.0f;
-    if (keys[SDL_SCANCODE_L]) x += 1.0f;
-    if (keys[SDL_SCANCODE_I]) y -= 1.0f;
-    if (keys[SDL_SCANCODE_K]) y += 1.0f;
-
-    const struct { SDL_GamepadButton from; std::uint32_t button; } buttons[] = {
-        {SDL_GAMEPAD_BUTTON_DPAD_UP, kButtonUp}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, kButtonDown},
-        {SDL_GAMEPAD_BUTTON_DPAD_LEFT, kButtonLeft}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, kButtonRight},
-        {SDL_GAMEPAD_BUTTON_EAST, kButtonCircle}, {SDL_GAMEPAD_BUTTON_SOUTH, kButtonCross},
-        {SDL_GAMEPAD_BUTTON_WEST, kButtonSquare}, {SDL_GAMEPAD_BUTTON_NORTH, kButtonTriangle},
-        {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, kButtonL}, {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, kButtonR},
-        {SDL_GAMEPAD_BUTTON_START, kButtonStart}, {SDL_GAMEPAD_BUTTON_BACK, kButtonSelect},
-    };
-    for (auto *gamepad : gamepads_) {
-        for (const auto &[from, button] : buttons)
-            if (SDL_GetGamepadButton(gamepad, from)) pad.buttons |= button;
-        // The triggers double as the shoulders.
-        if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000) pad.buttons |= kButtonL;
-        if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000) pad.buttons |= kButtonR;
-        const float stick_x = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0f;
-        const float stick_y = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY) / 32767.0f;
-        if (std::hypot(stick_x, stick_y) > 0.2f) {
-            x = stick_x;
-            y = stick_y;
+InputState map_input(const ControlSettings &settings, std::span<const bool> keys,
+                     std::span<const GamepadState> gamepads) {
+    std::array<float, kActionCount> values{};
+    for (std::size_t i = 0; i < kActionCount; ++i) {
+        for (const auto &binding : settings.keyboard[i])
+            if (binding.code >= 0 && static_cast<std::size_t>(binding.code) < keys.size() && keys[binding.code])
+                values[i] = 1.0f;
+        for (const auto &pad : gamepads) {
+            for (const auto &binding : settings.gamepad[i]) {
+                float value = 0.0f;
+                if (binding.kind == Binding::Kind::Button) value = pad.buttons[binding.code] ? 1.0f : 0.0f;
+                else {
+                    const auto raw = pad.axes[binding.code];
+                    value = static_cast<float>(raw) / (raw < 0 ? 32768.0f : 32767.0f);
+                    value *= static_cast<float>(binding.direction);
+                    // Triggers already have a unipolar range; stick axes use a rescaled dead zone.
+                    if (binding.code < SDL_GAMEPAD_AXIS_LEFT_TRIGGER)
+                        value = (value - settings.dead_zone) / (1.0f - settings.dead_zone);
+                }
+                values[i] = std::max(values[i], std::clamp(value, 0.0f, 1.0f));
+            }
         }
     }
+    InputState result;
+    using namespace ctrl;
+    constexpr std::uint32_t buttons[] = {kButtonUp, kButtonDown, kButtonLeft, kButtonRight,
+        kButtonCircle, kButtonCross, kButtonSquare, kButtonTriangle, kButtonL, kButtonR, kButtonStart, kButtonSelect};
+    for (std::size_t i = 0; i < std::size(buttons); ++i) if (values[i] > 0.5f) result.pad.buttons |= buttons[i];
+    const auto value = [&](Action action) { return values[static_cast<std::size_t>(action)]; };
     const auto axis = [](float value) {
         return static_cast<std::uint8_t>(std::clamp(std::lround(128.0f + value * 127.5f), 0l, 255l));
     };
-    pad.lx = axis(x);
-    pad.ly = axis(y);
-    return pad;
+    result.pad.lx = axis(value(Action::AnalogRight) - value(Action::AnalogLeft));
+    result.pad.ly = axis(value(Action::AnalogDown) - value(Action::AnalogUp));
+    result.fast_forward = value(Action::FastForward) > 0.5f;
+    result.quit = value(Action::Quit) > 0.5f;
+    return result;
 }
-
+InputState Input::sample() const {
+    int key_count = 0;
+    const bool *keys = SDL_GetKeyboardState(&key_count);
+    std::vector<GamepadState> pads(gamepads_.size());
+    for (std::size_t i = 0; i < gamepads_.size(); ++i) {
+        for (int button = 0; button < SDL_GAMEPAD_BUTTON_COUNT; ++button)
+            pads[i].buttons[button] = SDL_GetGamepadButton(gamepads_[i], static_cast<SDL_GamepadButton>(button));
+        for (int axis = 0; axis < SDL_GAMEPAD_AXIS_COUNT; ++axis)
+            pads[i].axes[axis] = SDL_GetGamepadAxis(gamepads_[i], static_cast<SDL_GamepadAxis>(axis));
+    }
+    return map_input(settings_, {keys, static_cast<std::size_t>(key_count)}, pads);
+}
 } // namespace sarusaru::shell

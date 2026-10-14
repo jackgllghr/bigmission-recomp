@@ -4,6 +4,9 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FFmpeg.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Graphics.cmake")
 if(SARUSARU_HAS_RENDERER)
+    add_library(sarusaru_controls STATIC host/shell/settings.cpp host/shell/input.cpp)
+    target_include_directories(sarusaru_controls PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_controls PUBLIC SDL3::SDL3 psprecomp_core)
     add_library(sarusaru_shell STATIC host/shell/vulkan_loader.cpp)
     target_include_directories(sarusaru_shell PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_shell PUBLIC SDL3::SDL3 Vulkan::Headers)
@@ -45,6 +48,13 @@ target_link_libraries(sarusaru_savedata PUBLIC psprecomp_core)
 
 if(PSPRECOMP_BUILD_PROFILE_TESTS)
     enable_testing()
+    if(SARUSARU_HAS_RENDERER)
+        add_executable(sarusaru_settings_tests tests/settings_tests.cpp)
+        target_link_libraries(sarusaru_settings_tests PRIVATE sarusaru_controls)
+        set_target_properties(sarusaru_settings_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+        add_test(NAME sarusaru_settings_tests COMMAND sarusaru_settings_tests)
+    endif()
     add_test(NAME sarusaru_prepare_tests
             COMMAND "${Python3_EXECUTABLE}" -m unittest discover
             -s "${CMAKE_CURRENT_SOURCE_DIR}/tests" -v)
@@ -214,13 +224,13 @@ if(SARUSARU_BUILD_BOOTSTRAP)
                 OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/sarusaru.ico")
         endif()
         add_executable(sarusaru host/shell/main.cpp host/shell/vulkan_context.cpp host/shell/ge_renderer.cpp
-            host/shell/audio_output.cpp host/shell/input.cpp "${_sarusaru_shaders}" "${_sarusaru_icon}"
+            host/shell/audio_output.cpp "${_sarusaru_shaders}" "${_sarusaru_icon}"
             ${_sarusaru_resources})
         if(WIN32)
             target_include_directories(sarusaru PRIVATE
                 "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/resources>")
         endif()
-        target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_shell)
+        target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_shell sarusaru_controls)
         sarusaru_use_ffmpeg(sarusaru)
         set_target_properties(sarusaru PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")

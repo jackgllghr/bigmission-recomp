@@ -69,6 +69,22 @@ management, file browser and on-screen keyboard. Every screen supports gamepad,
 keyboard and mouse, including gamepad-only installation. Android additionally
 needs document-picker integration, lifecycle handling and touch-accessible setup.
 
+### Settings chunk (milestones 4 and 5)
+
+- [x] Per-user settings file: internal resolution, presentation frame-rate cap,
+      and a reserved FOV preference; explicit path override and validation.
+- [x] Rebindable keyboard/gamepad buttons and axes in that file, including
+      dead zone, axis direction, quit and fast-forward.
+- [x] Measure the current game frame-wait path and observed perspective matrices.
+      The sampled frame-wait interval is two PSP vblanks (about 29.97 Hz).
+- [ ] Implement and verify gameplay FOV, distinguishing menu and cutscene cameras.
+      The stored FOV preference currently warns and has no effect.
+- [ ] Verify higher simulation rates/interpolation against movement, animation,
+      audio and cutscenes; the presentation cap does not change simulation speed.
+- [ ] Expose settings and binding capture in the launcher's in-game screen.
+
+Implementation and investigation notes: `profiles/sarusaru/docs/settings-investigation.md`.
+
 ### 6. Translation infrastructure
 
 Investigate this game's archives, text encoding, fonts and draw paths. Build
@@ -148,8 +164,8 @@ networking (`sceNet*`, 21 in total).
        through SDL. A window with a Vulkan swapchain, the game paced to real
        time at each vblank of the virtual clock (Tab fast-forwards),
        keyboard and gamepad input into `sceCtrl`, and `sceAudio` output
-       through SDL audio streams. Fixed bindings for now; rebinding and
-       settings come with milestone 4.
+       through SDL audio streams. File-based settings and keyboard/gamepad
+       rebinding are available; the in-game settings screen comes with the launcher.
 11. [~] GE rendering: Yakumo's GeState now decodes every draw (vertices,
         textures, blend, depth, lighting, fog, matrices) behind the headless
         GE, and GE block transfers are carried out in guest memory. A Vulkan

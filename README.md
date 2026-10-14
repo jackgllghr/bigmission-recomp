@@ -11,6 +11,23 @@ The project currently includes a macOS arm64 diagnostic bootstrap and is
 **not playable yet**. See the
 [project plan](PLAN.md) and [profile instructions](profiles/sarusaru/README.md).
 
+## Roadmap
+
+The following milestones describe the project's goals, rather than currently
+supported features. See [PLAN.md](PLAN.md) for detailed progress and acceptance criteria.
+
+- Complete faithful gameplay: rendering, audio, movies and PSP services, verified
+  through a representative level, saving, restarting and reloading.
+- Verify PSP-compatible saves, with safe writes, backups, import and export.
+- Improve graphics and controls with adjustable resolution, verified FOV and
+  framerate options, fully rebindable controls and analog camera support.
+- Build a shared launcher and in-game settings UI for ISO installation,
+  configuration and save management, including Android setup and touch support.
+- Provide translation infrastructure for text, fonts and texture replacements,
+  with translation-pack support and Japanese fallback.
+- Deliver tested, reproducible builds for Windows, macOS, Linux and Android,
+  once platform verification and release requirements are met.
+
 ## PSPRecomp framework
 
 The project is built on PSPRecomp. The upstream framework documentation follows below.
@@ -79,3 +96,27 @@ The framework is MIT licensed. Individual profiles may include separately licens
 ## License
 
 PSPRecomp framework code is distributed under the MIT License. See [`LICENSE`](LICENSE).
+
+## Credits
+
+- [PSPRecomp](https://github.com/jessicanataliagta/PSPRecomp) — the recompilation framework this project builds on.
+- [SDL3](https://www.libsdl.org/) — windowing, input and audio output.
+- [FFmpeg](https://ffmpeg.org/) — music and movie decoding.
+- [Vulkan](https://www.vulkan.org/) and [MoltenVK](https://github.com/KhronosGroup/MoltenVK) — rendering.
+- [tiny-AES-c](https://github.com/kokke/tiny-AES-c) — the installer and PSP save-data support.
+- [TeamGDB](https://github.com/TeamGDB) — their Yakumo project served as inspiration.
+
+## Legal disclaimer
+
+This is an unofficial, independent project and is not affiliated with, endorsed
+by, or sponsored by Sony Interactive Entertainment.
+
+Saru Get You (サルゲッチュ / Ape Escape), the franchise to which **Saru Get You:
+Saru Saru Daisakusen** belongs, is a trademark of **Sony Interactive Entertainment
+Inc.** See the [official PlayStation trademark attribution](https://www.playstation.com/ja-jp/games/ape-escape/).
+The original game and its artwork remain the property of their respective
+rights holders. All other trademarks belong to their respective owners.
+
+Users must supply their own legally obtained copy of the game. The project's
+source-code license does not grant any rights to the original game, its assets
+or its trademarks.

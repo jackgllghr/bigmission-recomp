@@ -208,7 +208,7 @@ VkCommandBuffer VulkanContext::flush() {
     return begin_frame();
 }
 
-void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, std::uint32_t source_height) {
+void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, std::uint32_t source_height, bool present) {
     std::string error;
     if (swapchain_stale_ || swapchain_ == VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
@@ -216,7 +216,7 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
         (void)create_swapchain(error);
     }
     std::uint32_t index = 0u;
-    bool present = swapchain_ != VK_NULL_HANDLE;
+    present = present && swapchain_ != VK_NULL_HANDLE;
     if (present) {
         const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, acquired_, VK_NULL_HANDLE, &index);
         if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {

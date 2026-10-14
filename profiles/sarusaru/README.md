@@ -4,8 +4,9 @@ Native recompilation work for **Saru! Get You! SaruSaru Daisakusen** (Japan),
 disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 
 **Early macOS arm64 build: the game boots, renders and plays sound in a
-window, but is not verified playable end to end.** Settings, rebinding,
-the launcher and translation are not implemented yet.
+window, but is not verified playable end to end.** File-based settings and
+keyboard/gamepad rebinding are available. The launcher, in-game settings UI,
+FOV overrides, higher simulation rates and translation are still to come.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
 ## Requirements
@@ -51,11 +52,74 @@ out/macos-arm64/bin/sarusaru profiles/sarusaru/game/BOOT.elf \
   '../Saru! Get You! SaruSaru Daisakusen (Japan).iso'
 ```
 
-`--scale N` sets the internal resolution (1-8 times 480x272, default 2).
-Keys: arrows d-pad, Z circle (confirm in this Japanese release), X cross,
+`--scale N` overrides the settings file's internal resolution for this run
+(1-8 times 480x272, default 2). Default keys: arrows d-pad, Z circle
+(confirm in this Japanese release), X cross,
 A square, S triangle, Q/W L/R, Enter start, Backspace select, I/J/K/L the
 analog stick, Tab (held) fast-forward, Escape quit. Gamepads map by button
 position. Saves go to the same per-user memory stick as the bootstrap's.
+
+### Settings and rebinding
+
+The shell creates `settings.ini` on its first normal launch. On macOS it lives
+in `~/Library/Application Support/SaruSaruRecomp/`; on Windows in
+`%APPDATA%/SaruSaruRecomp/`; on Linux in
+`$XDG_CONFIG_HOME/SaruSaruRecomp/` (or `~/.config/SaruSaruRecomp/`).
+`--settings FILE` selects another file and takes precedence over
+`SARUSARU_SETTINGS`. Missing files are created with defaults. Invalid existing
+files stop startup with a file/line error and are left intact.
+
+The full template is [`resources/settings.ini`](resources/settings.ini), also
+printed by `sarusaru --print-default-settings`. Edit the file and restart:
+
+```ini
+[graphics]
+internal_resolution = 3
+frame_rate = 30
+fov_degrees = 0
+
+[input]
+dead_zone = 0.2
+
+[keyboard]
+circle = C, V
+fast_forward = Tab
+
+[gamepad]
+circle = b
+analog_left = axis:rightx-
+analog_right = axis:rightx+
+analog_up = axis:righty-
+analog_down = axis:righty+
+```
+
+Omitted settings retain their defaults. Keyboard names are SDL **physical
+scancode** names, independent of the active keyboard layout; `scancode:N`
+also works for keys whose names contain a comma or `#`. Multiple bindings are
+comma-separated; `none` unbinds an action. Both PSP controls and the host's
+`quit`/`fast_forward` actions can be rebound.
+
+SDL's gamepad string names use `a/b/x/y` for south/east/west/north, `dpup`,
+`dpdown`, `dpleft`, `dpright`, `leftshoulder`, `rightshoulder`, `start`, `back`,
+and other SDL buttons. Axis names are `leftx`, `lefty`, `rightx`, `righty`,
+`lefttrigger`, `righttrigger`; `+` and `-` select a direction. Swapping those
+directions inverts an axis. Triggers can bind any action. Buttons activate
+above half travel; stick axes have a rescaled dead zone, while triggers use
+their unipolar range. Connected controllers contribute together, and normal
+hot-plugging remains supported. One source may intentionally trigger several
+actions. These settings will be the backing model for the launcher's in-game
+screen; there is no settings screen yet.
+
+`frame_rate` is a **presentation cap**, from 1 to 60; 0 presents at every native
+PSP vblank (about 59.94 Hz). It leaves guest vblank timing, input sampling,
+render submissions, audio and movie timing intact. It does not turn the game's
+roughly 29.97 Hz updates into 60 Hz gameplay. In fast-forward it still selects
+frames on guest time, so it is not a wall-clock cap.
+
+`fov_degrees` reserves a vertical-FOV preference (0 for native, or 30-120).
+Nonzero values are retained but print an explicit warning and have **no effect**
+yet. Camera overrides and higher simulation rates need further verification;
+see [`docs/settings-investigation.md`](docs/settings-investigation.md).
 
 For unattended checks, `SARUSARU_CAPTURE=<directory>` saves the picture as
 BMP files every `SARUSARU_CAPTURE_EVERY` seconds of game time (default 5),

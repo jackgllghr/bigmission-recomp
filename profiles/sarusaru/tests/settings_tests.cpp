@@ -1,0 +1,108 @@
+#include "shell/settings.hpp"
+#include "shell/input.hpp"
+#include "shell/presentation_clock.hpp"
+#include "kernel/guest_clock.hpp"
+
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <stdexcept>
+
+namespace {
+void require(bool condition, const char *message) {
+    if (!condition) { std::cerr << "FAIL: " << message << '\n'; std::exit(1); }
+}
+void rejects(std::string_view text) {
+    try { (void)sarusaru::shell::parse_settings(text); }
+    catch (const std::runtime_error &) { return; }
+    require(false, "malformed settings accepted");
+}
+}
+int main() {
+    using namespace sarusaru::shell;
+    using namespace sarusaru::ctrl;
+    const Settings defaults = default_settings();
+    require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
+    require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
+    const auto custom = parse_settings(
+        "[graphics]\r\ninternal_resolution = 4\r\nframe_rate = 30\nfov_degrees = 75\n"
+        "[input]\ndead_zone = 0.3\n[keyboard]\ncircle = C, V\nquit = none\nfast_forward = F\n"
+        "[gamepad]\nanalog_left = axis:rightx+\nanalog_right = axis:rightx-\nl = axis:righttrigger+\n");
+    require(custom.internal_resolution == 4 && custom.frame_rate == 30 && custom.fov_degrees == 75,
+            "graphics settings not parsed");
+    require(parse_settings(serialize_settings(custom)) == custom, "custom bindings do not round-trip");
+    for (const auto text : {
+        "[graphics]\ninternal_resolution = 0", "[graphics]\nframe_rate = 61",
+        "[graphics]\nframe_rate = 30junk", "[graphics]\nfov_degrees = 10",
+        "[graphics]\nfov_degrees = nan", "[graphics]\nframe_rate = 30\nframe_rate = 60",
+        "[input]\ndead_zone = 1", "[input]\ndead_zone = -0.1", "[input]\nunknown = 1",
+        "[keyboard]\ncircle = NotAKey", "[keyboard]\nunknown = C", "[keyboard]\ncircle = C,",
+        "[gamepad]\nl = axis:leftx", "[gamepad]\nl = axis:unknown+", "[gamepad]\nl = unknown",
+        "[keyboard]\ncircle = scancode:9999", "[future]\nvalue = 1", "frame_rate = 30",
+        "[graphics]\nframe_rate", "[keyboard]\ncircle = "}) rejects(text);
+
+    std::array<bool, SDL_SCANCODE_COUNT> keys{};
+    std::array<GamepadState, 2> pads{};
+    auto state = map_input(defaults.controls, keys, pads);
+    require(state.pad.buttons == 0 && state.pad.lx == 128 && state.pad.ly == 128 && !state.quit,
+            "neutral controls not centered");
+    keys[SDL_SCANCODE_Z] = keys[SDL_SCANCODE_J] = keys[SDL_SCANCODE_I] = true;
+    state = map_input(defaults.controls, keys, pads);
+    require(state.pad.buttons == kButtonCircle && state.pad.lx == 1 && state.pad.ly == 1, "default keyboard bindings changed");
+    keys.fill(false);
+    keys[SDL_SCANCODE_Z] = true;
+    require(map_input(custom.controls, keys, pads).pad.buttons == 0, "old keyboard binding still active");
+    keys[SDL_SCANCODE_V] = keys[SDL_SCANCODE_F] = keys[SDL_SCANCODE_ESCAPE] = true;
+    state = map_input(custom.controls, keys, pads);
+    require(state.pad.buttons == kButtonCircle && state.fast_forward && !state.quit, "alternatives/unbound host actions failed");
+    keys.fill(false);
+    pads[0].buttons[SDL_GAMEPAD_BUTTON_SOUTH] = true;
+    pads[1].buttons[SDL_GAMEPAD_BUTTON_START] = true;
+    pads[0].axes[SDL_GAMEPAD_AXIS_LEFT_TRIGGER] = 20000;
+    pads[0].axes[SDL_GAMEPAD_AXIS_LEFTX] = -32768;
+    pads[0].axes[SDL_GAMEPAD_AXIS_LEFTY] = 32767;
+    state = map_input(defaults.controls, keys, pads);
+    require(state.pad.buttons == (kButtonCross | kButtonStart | kButtonL) && state.pad.lx == 1 && state.pad.ly == 255,
+            "multi-pad buttons, triggers or axis extremes failed");
+    pads = {};
+    pads[0].axes[SDL_GAMEPAD_AXIS_LEFTX] = 6000;
+    require(map_input(defaults.controls, keys, pads).pad.lx == 128, "stick noise escaped dead zone");
+    pads[0].axes[SDL_GAMEPAD_AXIS_LEFTX] = 32767;
+    require(map_input(custom.controls, keys, pads).pad.lx == 128, "old gamepad axis binding still active");
+    pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTX] = 32767;
+    require(map_input(custom.controls, keys, pads).pad.lx == 1, "rebound/inverted gamepad axis failed");
+    pads[0].axes[SDL_GAMEPAD_AXIS_RIGHT_TRIGGER] = 16000;
+    require(map_input(custom.controls, keys, pads).pad.buttons == 0, "trigger fired below threshold");
+    pads[0].axes[SDL_GAMEPAD_AXIS_RIGHT_TRIGGER] = 20000;
+    require(map_input(custom.controls, keys, pads).pad.buttons == (kButtonL | kButtonR), "shared trigger rebinding failed");
+    auto numeric = parse_settings("[keyboard]\ncircle = scancode:54");
+    require(parse_settings(serialize_settings(numeric)) == numeric, "delimiter key did not round-trip");
+
+    PresentationClock native(0), thirty(30), sixty(60), one(1);
+    unsigned n = 0, t = 0, s = 0, o = 0;
+    for (std::uint64_t i = 0; i <= 600; ++i) {
+        const auto time = sarusaru::kernel::vblank_time_us(i);
+        n += native.due(time); t += thirty.due(time); s += sixty.due(time); o += one.due(time);
+    }
+    require(n == 601 && s == 601 && t == 301 && o == 11, "presentation cap drifted or altered native rate");
+    require(!thirty.due(sarusaru::kernel::vblank_time_us(600)), "presented twice at the same time");
+    require(thirty.due(100'000'000) && !thirty.due(100'000'000), "long stall caused repeated catch-up frames");
+
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("sarusaru-settings-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(directory);
+    const auto path = directory / "nested" / "settings.ini";
+    require(load_settings(path) == defaults && load_settings(path) == defaults, "missing file creation/reload failed");
+    { std::ofstream out(path); out << "[graphics]\ninternal_resolution = 5\n"; }
+    require(load_settings(path).internal_resolution == 5, "existing settings not loaded");
+    { std::ofstream out(path); out << "broken file\n"; }
+    try { (void)load_settings(path); require(false, "invalid existing file accepted"); }
+    catch (const std::runtime_error &) {}
+    std::ifstream in(path); std::string line; std::getline(in, line);
+    require(line == "broken file", "invalid existing file overwritten");
+    in.close();
+    std::filesystem::remove_all(directory);
+    std::cout << "Settings, control mapping and presentation clock tests passed\n";
+}
