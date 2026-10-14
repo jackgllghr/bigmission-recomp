@@ -5,6 +5,8 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <span>
 
 namespace sarusaru::audio {
 
@@ -28,8 +30,8 @@ inline constexpr std::uint32_t kBlocksInFlight = 2u;
 
 // sceAudio output channels on the kernel's virtual clock. Each block plays
 // for sample_count / 44100 s; blocking output waits until a channel has room,
-// which paces the guest audio thread. Samples are counted, not played: host
-// output arrives with the SDL shell.
+// which paces the guest audio thread. Samples are counted, and handed to a
+// host sink (the windowed shell's audio output) when one is set.
 class Audio {
 public:
     struct Channel {
@@ -43,6 +45,12 @@ public:
     };
 
     explicit Audio(kernel::EarlyKernel &kernel) noexcept : kernel_(&kernel) {}
+
+    // Receives each accepted block when it is queued: interleaved 16-bit
+    // samples (mono or stereo) and the channel's volumes (0x8000 = unity).
+    using Sink = std::function<void(std::int32_t channel, std::span<const std::int16_t> samples, bool mono,
+                                    std::uint32_t left_volume, std::uint32_t right_volume)>;
+    void set_sink(Sink sink) { sink_ = std::move(sink); }
 
     [[nodiscard]] std::int32_t reserve(std::int32_t channel, std::uint32_t samples, std::uint32_t format);
     [[nodiscard]] std::int32_t reserve_output2(std::uint32_t samples);
@@ -67,7 +75,8 @@ private:
 
     [[nodiscard]] Channel *reserved_channel(std::int32_t channel) noexcept;
     [[nodiscard]] std::uint64_t block_duration_us(const Channel &channel) const noexcept;
-    std::uint32_t enqueue(Channel &channel);
+    std::uint32_t enqueue(std::int32_t index, Channel &channel, std::uint32_t buffer);
+    Sink sink_;
 };
 
 void register_audio(Audio &audio, psprecomp::Runtime &runtime);

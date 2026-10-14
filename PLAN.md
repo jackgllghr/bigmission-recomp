@@ -205,7 +205,8 @@ time (245,504 GE display lists, 14.5 million primitives) without meeting an
 unmodeled import. Nothing is drawn or heard yet: the next milestone is the
 host shell and GE renderer (chunks 10 and 11).
 
-Twenty-six CTest suites pass. Repeat generation rewrites zero source units.
+Twenty-six CTest suites pass. With generated code at `-O1` and AOT call
+chaining enabled, the headless run reaches stage 1 at about 28 times real time. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
 - three generator defects reproduced with synthetic fixtures;

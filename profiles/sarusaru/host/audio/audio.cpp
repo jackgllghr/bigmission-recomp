@@ -1,6 +1,7 @@
 #include "audio/audio.hpp"
 
 #include <algorithm>
+#include <vector>
 
 namespace sarusaru::audio {
 namespace {
@@ -89,7 +90,18 @@ std::int32_t Audio::rest_length(std::int32_t channel) const {
     return static_cast<std::int32_t>(((target.queued_until_us - now) * kSampleRate + 999'999u) / 1'000'000u);
 }
 
-std::uint32_t Audio::enqueue(Channel &channel) {
+std::uint32_t Audio::enqueue(std::int32_t index, Channel &channel, std::uint32_t buffer) {
+    if (sink_) {
+        const bool mono = channel.format == kFormatMono;
+        const std::uint32_t values = channel.sample_count * (mono ? 1u : 2u);
+        auto &memory = kernel_->runtime().memory();
+        if (memory.contains(buffer, values * 2u)) {
+            std::vector<std::int16_t> samples(values);
+            for (std::uint32_t i = 0; i < values; ++i)
+                samples[i] = static_cast<std::int16_t>(memory.load16(buffer + i * 2u));
+            sink_(index, samples, mono, channel.left_volume, channel.right_volume);
+        }
+    }
     const std::uint64_t start = std::max(channel.queued_until_us, kernel_->now_us());
     channel.queued_until_us = start + block_duration_us(channel);
     channel.samples_output += channel.sample_count;
@@ -98,7 +110,6 @@ std::uint32_t Audio::enqueue(Channel &channel) {
 
 void Audio::output(psprecomp::AllegrexContext &context, std::int32_t channel, std::uint32_t left,
                    std::uint32_t right, std::uint32_t buffer, bool blocking) {
-    (void)buffer;  // Not mixed yet; see the class comment.
     if (channel < 0 || channel > kOutput2) { context.set_gpr(2u, kInvalidChannel); return; }
     if (left > kMaxVolume || right > kMaxVolume) { context.set_gpr(2u, kInvalidVolume); return; }
     Channel *target = reserved_channel(channel);
@@ -109,11 +120,11 @@ void Audio::output(psprecomp::AllegrexContext &context, std::int32_t channel, st
     const std::uint64_t room_at = target->queued_until_us > (kBlocksInFlight - 1u) * block_duration_us(*target)
         ? target->queued_until_us - (kBlocksInFlight - 1u) * block_duration_us(*target) : 0u;
     if (room_at <= kernel_->now_us()) {
-        context.set_gpr(2u, enqueue(*target));
+        context.set_gpr(2u, enqueue(channel, *target, buffer));
         return;
     }
     if (!blocking) { context.set_gpr(2u, kChannelBusy); return; }
-    kernel_->block_current(context, {"audio output", room_at, 0u, [this, target] { return enqueue(*target); }, 0, false});
+    kernel_->block_current(context, {"audio output", room_at, 0u, [this, channel, target, buffer] { return enqueue(channel, *target, buffer); }, 0, false});
 }
 
 void register_audio(Audio &audio, psprecomp::Runtime &runtime) {

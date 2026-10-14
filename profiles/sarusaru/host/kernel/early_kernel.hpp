@@ -115,6 +115,9 @@ public:
     // Called at every vblank the virtual clock crosses while `active`.
     void set_vblank_handler(std::function<void()> handler) { vblank_handler_ = std::move(handler); }
     void set_vblank_active(bool active) noexcept { vblank_active_ = active; }
+    // Host hook called at every vblank the virtual clock crosses (presenting a
+    // frame, polling input, pacing to real time). Unset, timing is unchanged.
+    void set_frame_observer(std::function<void()> observer) { frame_observer_ = std::move(observer); }
     void guest_call_returned(psprecomp::AllegrexContext &context);
     [[nodiscard]] psprecomp::Runtime &runtime() noexcept { return *runtime_; }
     [[nodiscard]] std::int32_t allocate_partition_memory(const std::string &name, std::uint32_t type,
@@ -197,6 +200,7 @@ private:
     ThreadUid interrupt_uid_{};
     std::deque<GuestCall> interrupt_calls_;
     std::function<void()> vblank_handler_;
+    std::function<void()> frame_observer_;
     bool vblank_active_{};
     std::map<ThreadUid, ThreadInfo> threads_;
 

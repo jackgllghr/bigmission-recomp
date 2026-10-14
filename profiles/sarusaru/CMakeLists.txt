@@ -144,18 +144,28 @@ if(SARUSARU_BUILD_BOOTSTRAP)
     file(GLOB aot_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generated/generated_*.cpp")
     add_library(sarusaru_aot STATIC ${aot_sources})
     target_link_libraries(sarusaru_aot PUBLIC psprecomp_core)
-    # Keep initial diagnostic compilation inexpensive; optimize after correctness.
+    # Generated code is optimised: at -O0 each unit's stack frame is so large
+    # that chained guest calls (up to 48 deep) overflow the native stack.
+    # SARUSARU_AOT_OPTIMIZATION trades build time for speed (-O0 for quick
+    # diagnostic rebuilds, run with SARUSARU_CHAINING unset).
+    set(SARUSARU_AOT_OPTIMIZATION "-O1" CACHE STRING "Optimisation flag for the generated game code")
     if(NOT MSVC)
-        target_compile_options(sarusaru_aot PRIVATE -O0)
+        target_compile_options(sarusaru_aot PRIVATE ${SARUSARU_AOT_OPTIMIZATION})
     endif()
 
-    add_executable(sarusaru_bootstrap host/bootstrap.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
+    # Everything one running game needs, shared by the bootstrap and the shell.
+    add_library(sarusaru_session STATIC host/session.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
         host/kernel/sync.cpp host/kernel/interrupts.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp host/ctrl/controller.cpp
         host/display/display.cpp host/ge/ge.cpp host/io/io_manager.cpp
         host/rtc/rtc.cpp host/modules/utility_modules.cpp host/modules/module_manager.cpp host/audio/audio.cpp
         host/sas/sas.cpp)
-    target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
-    target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot sarusaru_savedata sarusaru_atrac sarusaru_gpu)
+    target_include_directories(sarusaru_session PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_session PUBLIC sarusaru_aot sarusaru_savedata sarusaru_atrac sarusaru_gpu)
+    if(SARUSARU_HAS_FFMPEG)
+        target_compile_definitions(sarusaru_session PRIVATE SARUSARU_HAS_FFMPEG=1)
+    endif()
+    add_executable(sarusaru_bootstrap host/bootstrap.cpp)
+    target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_session)
     sarusaru_use_ffmpeg(sarusaru_bootstrap)
     set_target_properties(sarusaru_bootstrap PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

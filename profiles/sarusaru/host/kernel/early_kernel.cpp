@@ -157,13 +157,15 @@ void EarlyKernel::run_next_ready(psprecomp::AllegrexContext &context, const char
                 (!earliest || thread.wake_at_us < *earliest))
                 earliest = thread.wake_at_us;
         }
-        const bool vblanks = vblank_active_ && vblank_handler_ && idle_vblanks < kMaxIdleVblanks;
+        const bool guest_vblanks = vblank_active_ && vblank_handler_;
+        const bool vblanks = (guest_vblanks || frame_observer_) && idle_vblanks < kMaxIdleVblanks;
         const std::uint64_t vblank = vblank_time_us(vblanks_by(now_us_) + 1u);
         if (!earliest && !vblanks) break;
         if (vblanks && (!earliest || vblank <= *earliest)) {
             now_us_ = vblank;
             ++idle_vblanks;
-            if (interrupts_enabled_) vblank_handler_();
+            if (frame_observer_) frame_observer_();
+            if (guest_vblanks && interrupts_enabled_) vblank_handler_();
         } else {
             now_us_ = std::max(now_us_, *earliest);
         }

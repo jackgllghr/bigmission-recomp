@@ -229,6 +229,15 @@ The pinned upstream is recorded in `config/supported_game.json`.
   Pictures are assumed to leave the decoder in presentation order at
   29.97 Hz; only start position 0 is modeled. Demuxing and H.264 decoding
   come from Yakumo (see `THIRD_PARTY.md`).
+- Moved game setup into `GameSession` (`session.*`), shared by the headless
+  bootstrap and the coming windowed shell. The kernel gained a host frame
+  observer called at every vblank the virtual clock crosses, and `sceAudio`
+  an optional sink receiving each queued block, for the shell's presentation
+  and audio output; unset, behaviour is unchanged.
+- Generated game code is now compiled at `-O1` (`SARUSARU_AOT_OPTIMIZATION`):
+  at `-O0` its stack frames overflowed the native stack once AOT call
+  chaining nested guest calls. `SARUSARU_CHAINING=1` runs the bootstrap in
+  the chained mode the shell uses: about 28 times real time into stage 1.
 - Adopted Yakumo's GE state machine and texture decoding (`gpu/`; see
   `THIRD_PARTY.md`). The GE walker keeps control flow, stalls and interrupts
   and hands every other command to `GeState`, which decodes draws for a
