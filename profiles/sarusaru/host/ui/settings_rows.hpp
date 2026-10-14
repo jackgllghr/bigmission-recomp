@@ -7,6 +7,8 @@
 #include "ui/text.hpp"
 
 #include <array>
+#include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -14,8 +16,8 @@
 namespace sarusaru::ui {
 
 enum class SettingRow {
-    InternalResolution, FrameInterpolation, FrameRateCap, Fov, GameFrameRate,
-    Fullscreen, WindowSize,
+    InternalResolution, Textures, FrameInterpolation, FrameRateCap, Fov, GameFrameRate,
+    CelShading, Fullscreen, WindowSize,
     DeadZone,
     Language, GameText, ConfirmButton,
 };
@@ -42,6 +44,13 @@ struct RowView {
 // at the ends. A value set by hand that is not one of the row's steps moves
 // to the nearest step in that direction.
 void step(SettingRow row, shell::Settings &settings, int direction);
+
+// The Textures row's choice, from the pack directory's name
+// (install/texture_build.hpp): 0 for the original textures, 4 or 8 for an
+// HD pack made at that scale, nothing for a pack made some other way.
+[[nodiscard]] std::optional<std::uint32_t> texture_scale(const shell::Settings &settings);
+// The next of original (0), 4x and 8x in `direction`.
+[[nodiscard]] std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direction);
 
 // The general rule step() follows, for a sorted list of values.
 [[nodiscard]] double step_value(std::span<const double> values, double current, int direction);

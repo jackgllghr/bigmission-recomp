@@ -87,6 +87,18 @@ HdTexturePack HdTexturePack::load(const std::filesystem::path &directory, std::s
     return pack;
 }
 
+std::optional<std::unordered_set<std::string>> HdTexturePack::wanted() const {
+    std::ifstream in(directory_ / kWantedName);
+    if (!in) return std::nullopt;
+    std::unordered_set<std::string> hashes;
+    for (std::string line; std::getline(in, line);) {
+        const auto hash = std::string(trim(line));
+        if (is_hash(hash) && !images_.contains(hash)) hashes.insert(hash);
+    }
+    if (hashes.empty()) return std::nullopt;
+    return hashes;
+}
+
 std::optional<std::vector<std::uint32_t>> HdTexturePack::find(const gpu::TextureIdentity &identity) const {
     if (identity.hash.empty() || !images_.contains(identity.hash)) return std::nullopt;
     const std::uint64_t width = static_cast<std::uint64_t>(identity.width) * manifest_.scale;

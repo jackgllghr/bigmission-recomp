@@ -10,6 +10,7 @@
 #include "game_disc.hpp"
 #include "install/game_builder.hpp"
 #include "install/pack_download.hpp"
+#include "install/texture_build.hpp"
 #include "install/toolchain.hpp"
 #include "ui/bindings.hpp"
 #include "shell/settings.hpp"
@@ -47,7 +48,7 @@ public:
     Outcome run(UiScript *script = nullptr);
 
 private:
-    enum class Screen { Home, Disc, Browser, Install, Settings, Bindings, Pack };
+    enum class Screen { Home, Disc, Browser, Install, Settings, Bindings, Pack, Textures };
 
     Layer &layer_;
     shell::Settings &settings_;
@@ -98,6 +99,11 @@ private:
     std::unique_ptr<install::PackDownload> pack_download_;
     std::string pack_error_;
 
+    // Making HD textures: the scale chosen, the build under way, and why the last one failed.
+    std::uint32_t texture_scale_{4};
+    std::unique_ptr<install::TextureBuild> texture_build_;
+    std::string texture_error_;
+
     ImTextureID title_art_{};
     ImVec2 title_size_{};
 
@@ -110,6 +116,10 @@ private:
     void problem();
     void bindings();
     void pack();
+    void textures();
+    // Picks the Textures row's next choice: the original textures, a pack
+    // already made, or the screen that makes one.
+    void choose_textures(int direction);
     void capture_overlay();
     bool capture_event(const SDL_Event &event);
 

@@ -26,6 +26,15 @@ int main() {
     const Settings defaults = default_settings();
     require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
     require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
+    require(!defaults.cel_shading, "cel shading must default to off");
+    const auto cel = parse_settings("[graphics]\ncel_shading = 1\n");
+    require(cel.cel_shading && parse_settings(serialize_settings(cel)) == cel, "cel shading does not round-trip");
+    require(!parse_settings("[graphics]\ncel_shading = 0\n").cel_shading, "cel shading off not parsed");
+    const auto outlined = parse_settings("[graphics]\ncel_shading = 2\n");
+    require(outlined.cel_shading == 2 && parse_settings(serialize_settings(outlined)) == outlined, "outlined preset does not round-trip");
+    rejects("[graphics]\ncel_shading = 3");
+    rejects("[graphics]\ncel_shading = -1");
+    rejects("[graphics]\ncel_shading = yes");
     const auto english = parse_settings("[translation]\nlanguage = en\npack = packs/English menu.sstp\n");
     require(english.translation_language == "en" && english.translation_pack == "packs/English menu.sstp", "translation selection not parsed");
     const auto textured = parse_settings("[graphics]\ntexture_pack = textures/hd 4x\n");

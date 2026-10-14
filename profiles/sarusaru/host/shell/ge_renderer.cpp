@@ -1,5 +1,6 @@
 #include "shell/ge_renderer.hpp"
 
+#include "gpu/character_outline.hpp"
 #include "gpu/texture_decode.hpp"
 #include "gpu/texture_hash.hpp"
 #include "gpu/triangle_indices.hpp"
@@ -607,15 +608,15 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
         std::fprintf(stderr,
             "draw prim=%u n=%zu idx=%zu through=%d target=%08x tex=%d %08x %ux%u fmt=%u tfx=%u tcc=%d clear=%d/%u "
             "blend=%d %u/%u eq%u depth=%d f%u w%d alpha=%d f%u ref%u cull=%d/%d light=%d fog=%d color=%d mat=%08x "
-            "vp=%.0f,%.0f,%.0f s=%.0f,%.0f,%.0f off=%.0f,%.0f sc=%u,%u-%u,%u cmd=%08x\n",
+            "vtype=%08x outline=%d vp=%.0f,%.0f,%.0f s=%.0f,%.0f,%.0f off=%.0f,%.0f sc=%u,%u-%u,%u cmd=%08x\n",
             static_cast<unsigned>(call.primitive), call.vertices.size(), call.indices.size(), call.through,
             call.target.color_address, call.texture.enabled, call.texture.address, call.texture.width, call.texture.height,
             static_cast<unsigned>(call.texture.format), call.texture.function, call.texture.alpha_from_texture,
             call.clear_mode, call.clear_flags, call.blend.enabled, call.blend.source_factor, call.blend.destination_factor,
             call.blend.equation, call.depth.test_enabled, call.depth.function, call.depth.write_enabled,
             call.alpha_test.enabled, call.alpha_test.function, call.alpha_test.reference, call.culling_enabled,
-            call.cull_clockwise, call.lighting_enabled, call.fog.enabled, call.has_vertex_color, call.material_color,
-            v.x_offset, v.y_offset, v.z_offset, v.x_scale, v.y_scale, v.z_scale, v.offset_x, v.offset_y, v.scissor_x1,
+            call.cull_clockwise, call.lighting_enabled, call.fog.enabled, call.has_vertex_color, call.material_color, call.vertex_type,
+            cel_shading_ == 2u && gpu::character_outline(call), v.x_offset, v.y_offset, v.z_offset, v.x_scale, v.y_scale, v.z_scale, v.offset_x, v.offset_y, v.scissor_x1,
             v.scissor_y1, v.scissor_x2, v.scissor_y2, call.command_address);
         const auto &t = call.texture;
         std::vector<std::uint32_t> texels;
@@ -844,7 +845,8 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
     Push push{};
     push.transform = through ? kIdentity : wvp;
     push.viewport = {static_cast<float>(kTargetWidth), static_cast<float>(kTargetHeight), through ? 1.0f : 0.0f,
-                     static_cast<float>((fog ? 1 : 0) | (lighting ? 2 : 0))};
+                     static_cast<float>((fog ? 1 : 0) | (lighting ? 2 : 0) |
+                                       (cel_shading_ && !through && !call.clear_mode ? 4 : 0))};
     // The texture function, plus 8 when the texture's alpha is ignored (TCC off).
     const std::uint32_t texture_function = (call.texture.function & 7u) | (call.texture.alpha_from_texture ? 0u : 8u);
     push.texture_params = {sampling ? 1.0f : 0.0f, static_cast<float>(texture_function),
@@ -893,6 +895,24 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
     vk_.vkCmdBindVertexBuffers(commands_, 0u, 1u, &vertices_.buffer, &vertex_buffer_offset);
     vk_.vkCmdDraw(commands_, static_cast<std::uint32_t>(out.size()), 1u, 0u, 0u);
     ++draws_;
+
+    if (cel_shading_ == 2u && gpu::character_outline(call)) {
+        // Draw the expanded back faces after the surface. Its depth prevents
+        // the black shell covering the character itself; later scenery also
+        // occludes it. Keep the GE framebuffer's alpha/stencil and depth intact.
+        PipelineKey outline_key = key;
+        outline_key.raster = static_cast<std::uint32_t>(VK_CULL_MODE_FRONT_BIT) | (key.raster & 4u);
+        outline_key.blend = 7u << 14u; // opaque RGB only
+        outline_key.depth = 1u | (static_cast<std::uint32_t>(VK_COMPARE_OP_LESS_OR_EQUAL) << 1u);
+        Push outline_push = push;
+        outline_push.viewport = {vp.width / scale, vp.height / scale, 0.0f, 8.0f};
+        outline_push.texture_params = {0.0f, 0.0f, 0.0f, 0.0f};
+        vk_.vkCmdBindPipeline(commands_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline(outline_key));
+        vk_.vkCmdPushConstants(commands_, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0u, sizeof outline_push, &outline_push);
+        vk_.vkCmdDraw(commands_, static_cast<std::uint32_t>(out.size()), 1u, 0u, 0u);
+        ++draws_;
+    }
 }
 
 const Image *GeRenderer::presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,

@@ -278,6 +278,7 @@ fullscreen = 0
 frame_rate = 60
 frame_interpolation = 1
 fov_degrees = 50
+cel_shading = 0
 
 [input]
 dead_zone = 0.2
@@ -357,6 +358,19 @@ through `SARUSARU_EXPERIMENTAL_GAME_FRAME_RATE` and reports the number of
 overridden game frames and the chosen interval. The windowed shell uses the
 settings file instead. Both paths verify the supported executable before the
 game-specific hook is installed.
+
+The launcher’s **Settings → Graphics → Cel shading** preset (or
+`cel_shading = 1` under `[graphics]`) gives 3D shading four distinct brightness
+bands before textures are applied. It defaults to Off, preserves texture detail
+and alpha, and applies to interpolated frames too. Screen-space HUD, menus and
+framebuffer clears retain their original shading. It
+offers **Banded** (`cel_shading = 1`) and **Outlined** (`cel_shading = 2`).
+Outlined adds black silhouettes with an expanded back-face pass on opaque
+animated meshes with normals. Width stays at one native pixel (two at 2×
+resolution), with depth-tested occlusion. Static scenery, transparent effects
+and texture cutouts are excluded; rigid unskinned character accessories may
+retain their original edges. The outline pass preserves framebuffer alpha and
+depth and also runs on interpolated frames.
 
 `fov_degrees` sets the vertical FOV of the gameplay camera (0 for native, about
 36.5 degrees, or 30-120). It applies only while a player-following gameplay

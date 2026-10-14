@@ -187,6 +187,8 @@ Settings parse_settings(std::string_view text) {
                 if (fps != 0 && fps != 15 && fps != 20 && fps != 30 && fps != 60)
                     throw std::runtime_error("game frame rate must be 0, 15, 20, 30 or 60");
                 settings.experimental_game_frame_rate = static_cast<std::uint32_t>(fps);
+            } else if (full == "graphics.cel_shading") {
+                settings.cel_shading = static_cast<std::uint32_t>(integer(value, 0, 2));
             } else if (full == "graphics.frame_interpolation") {
                 settings.frame_interpolation = integer(value, 0, 1) != 0;
             } else if (full == "graphics.fov_degrees") {
@@ -229,6 +231,8 @@ std::string serialize_settings(const Settings &settings) {
            "# Keyboard values: SDL physical key names or scancode:N; comma separates alternatives.\n"
            "# Gamepad values: SDL button names or axis:NAME+ / axis:NAME-; none unbinds.\n"
            "[graphics]\n# Rendering scale: 1-8 times the PSP's 480x272.\ninternal_resolution = " << settings.internal_resolution << '\n'
+        << "# Cel shading: 0 = off, 1 = banded, 2 = banded with black character outlines.\n"
+        << "cel_shading = " << settings.cel_shading << '\n'
         << "# Window size at startup, in points; the window stays resizable and the picture keeps its aspect.\n"
         << "window_width = " << settings.window_width << "\nwindow_height = " << settings.window_height << '\n'
         << "# 1 = fullscreen at the desktop resolution (Alt+Enter or F11 toggles while playing).\n"

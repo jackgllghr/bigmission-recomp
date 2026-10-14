@@ -42,11 +42,12 @@ if(SARUSARU_HAS_RENDERER)
         host/ui/launcher.cpp host/ui/ui_script.cpp)
     target_link_libraries(sarusaru_ui PUBLIC sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install)
     # Texture dump mode and on-device HD texture packs (PNG through SDL).
-    add_library(sarusaru_textures STATIC host/textures/texture_dump.cpp host/textures/hd_pack.cpp)
-    target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu SDL3::SDL3)
+    add_library(sarusaru_textures STATIC host/textures/texture_dump.cpp host/textures/hd_pack.cpp
+        host/textures/disc_textures.cpp host/textures/recipe.cpp host/textures/image.cpp)
+    target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu sarusaru_disc SDL3::SDL3)
     add_library(sarusaru_install STATIC host/install/process.cpp host/install/download.cpp host/install/toolchain.cpp
-        host/install/game_builder.cpp host/install/pack_download.cpp)
-    target_link_libraries(sarusaru_install PUBLIC sarusaru_game_module sarusaru_disc SDL3::SDL3)
+        host/install/game_builder.cpp host/install/pack_download.cpp host/install/texture_build.cpp)
+    target_link_libraries(sarusaru_install PUBLIC sarusaru_game_module sarusaru_disc sarusaru_textures SDL3::SDL3)
     add_dependencies(sarusaru_install psp_recomp)
 endif()
 # Shift-JIS text (guest output, later the translation tools), through iconv
@@ -108,6 +109,19 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
         set_target_properties(sarusaru_hd_texture_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
         add_test(NAME sarusaru_hd_texture_tests COMMAND sarusaru_hd_texture_tests)
+        # Making a pack from an invented disc, with a nearest-neighbour stand-in for the upscaler.
+        add_executable(sarusaru_fake_upscaler tests/fake_upscaler.cpp)
+        target_link_libraries(sarusaru_fake_upscaler PRIVATE sarusaru_textures)
+        set_target_properties(sarusaru_fake_upscaler PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+        add_executable(sarusaru_texture_recipe_tests tests/texture_recipe_tests.cpp)
+        target_link_libraries(sarusaru_texture_recipe_tests PRIVATE sarusaru_install)
+        target_compile_definitions(sarusaru_texture_recipe_tests PRIVATE
+            SARUSARU_FAKE_UPSCALER="$<TARGET_FILE:sarusaru_fake_upscaler>")
+        add_dependencies(sarusaru_texture_recipe_tests sarusaru_fake_upscaler)
+        set_target_properties(sarusaru_texture_recipe_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+        add_test(NAME sarusaru_texture_recipe_tests COMMAND sarusaru_texture_recipe_tests)
         add_executable(sarusaru_launcher_tests tests/launcher_tests.cpp)
         target_include_directories(sarusaru_launcher_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         target_link_libraries(sarusaru_launcher_tests PRIVATE sarusaru_ui_logic sarusaru_disc)
@@ -299,6 +313,23 @@ if(NOT SARUSARU_ENGLISH_PACK_URL STREQUAL "")
     endif()
 endif()
 configure_file(host/install/pack_config.hpp.in install/pack_config.hpp @ONLY)
+# The optional HD texture recipe: which textures to upscale and how, never
+# pixels. The launcher downloads it and upscales the player's own textures on
+# their device (docs/hd-textures.md). file:// is for trying a local recipe.
+set(SARUSARU_TEXTURE_RECIPE_URL "" CACHE STRING "URL of the HD texture recipe the launcher offers (empty: none)")
+set(SARUSARU_TEXTURE_RECIPE_SHA256 "" CACHE STRING "SHA-256 of the HD texture recipe")
+set(SARUSARU_TEXTURE_RECIPE_SIZE "0" CACHE STRING "Size in bytes of the HD texture recipe")
+if(NOT SARUSARU_TEXTURE_RECIPE_URL STREQUAL "")
+    string(LENGTH "${SARUSARU_TEXTURE_RECIPE_SHA256}" _sarusaru_recipe_hash_length)
+    if(NOT SARUSARU_TEXTURE_RECIPE_URL MATCHES "^(https|file)://" OR NOT SARUSARU_TEXTURE_RECIPE_SHA256 MATCHES "^[0-9a-f]+$"
+       OR NOT _sarusaru_recipe_hash_length EQUAL 64 OR NOT SARUSARU_TEXTURE_RECIPE_SIZE MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR "SARUSARU_TEXTURE_RECIPE_URL needs an https (or file) URL, a 64-digit lowercase SHA-256 and a size in bytes")
+    endif()
+    if(SARUSARU_TEXTURE_RECIPE_URL MATCHES "^file://")
+        message(WARNING "SARUSARU_TEXTURE_RECIPE_URL is a local file; release builds need an https URL")
+    endif()
+endif()
+configure_file(host/install/texture_config.hpp.in install/texture_config.hpp @ONLY)
 # llvm-mingw links its C++ runtime as DLLs; they go beside the executables,
 # and the module a player builds uses the same ones.
 if(MINGW)
@@ -401,7 +432,7 @@ if(SARUSARU_HAS_RENDERER)
         target_include_directories(sarusaru PRIVATE
             "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/resources>")
     endif()
-    target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_ui sarusaru_translation sarusaru_textures)
+    target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_ui sarusaru_translation)
     sarusaru_use_ffmpeg(sarusaru)
     sarusaru_game_stack(sarusaru)
     # Shipped: only the relative rpath, never the build tree's (which CMake

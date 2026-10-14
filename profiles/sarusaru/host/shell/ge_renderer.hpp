@@ -36,6 +36,8 @@ namespace sarusaru::shell {
 class GeRenderer {
 public:
     GeRenderer(VulkanContext &vulkan, std::uint32_t scale) : vk_(vulkan), scale_(scale) {}
+    // Set before drawing; applies equally to native and interpolated frames.
+    void set_cel_shading(std::uint32_t preset) noexcept { cel_shading_ = preset; }
     bool create(std::string &error);
     void destroy();
     // Set once before the first draw; the session keeps the pack alive.
@@ -107,6 +109,7 @@ private:
 
     VulkanContext &vk_;
     std::uint32_t scale_;
+    std::uint32_t cel_shading_{};
     VkRenderPass render_pass_{VK_NULL_HANDLE};
     VkDescriptorSetLayout texture_layout_{VK_NULL_HANDLE}, uniform_layout_{VK_NULL_HANDLE};
     VkPipelineLayout pipeline_layout_{VK_NULL_HANDLE};

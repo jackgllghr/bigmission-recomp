@@ -44,6 +44,9 @@ int main() {
     require(gpu::identify_texture(texture(8, 4, 4), padded).hash == narrow.hash, "columns past the stride changed the identity");
     require(gpu::identify_texture(texture(4, 8, 4), texels).hash != narrow.hash, "same bytes in another shape collided");
     require(gpu::identify_texture(texture(8, 8, 8), texels).hash.empty(), "short texel buffer identified");
+    // The same value tools/build_texture_recipe.py computes (tests/test_texture_recipe.py).
+    require(gpu::identify_texture(texture(2, 1, 2), std::vector<std::uint32_t>{0x04030201u, 0x08070605u}).hash ==
+                "8abe573ea62b1337bca08735b63c811d", "identity differs from the recipe tool's");
 
     // Manifest.
     const auto manifest = textures::parse_hd_manifest("# comment\nformat = 1\ndisc = ULJS00001\nscale = 4\n");

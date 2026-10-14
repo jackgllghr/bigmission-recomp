@@ -8,8 +8,8 @@
 namespace sarusaru::ui {
 namespace {
 
-constexpr SettingRow kGraphics[] = {SettingRow::InternalResolution, SettingRow::FrameInterpolation,
-    SettingRow::FrameRateCap, SettingRow::Fov, SettingRow::GameFrameRate};
+constexpr SettingRow kGraphics[] = {SettingRow::InternalResolution, SettingRow::Textures, SettingRow::FrameInterpolation,
+    SettingRow::FrameRateCap, SettingRow::Fov, SettingRow::GameFrameRate, SettingRow::CelShading};
 constexpr SettingRow kWindow[] = {SettingRow::Fullscreen, SettingRow::WindowSize};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone};
 constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::ConfirmButton};
@@ -43,6 +43,21 @@ std::string on_off(bool value) { return std::string(tr(value ? Text::On : Text::
 
 std::span<const SettingsTab> settings_tabs() { return kTabs; }
 
+std::optional<std::uint32_t> texture_scale(const shell::Settings &settings) {
+    if (settings.texture_pack.empty()) return 0u;
+    auto name = settings.texture_pack.filename().string();
+    if (name.empty()) name = settings.texture_pack.parent_path().filename().string();
+    if (name.starts_with("4x-")) return 4u;
+    if (name.starts_with("8x-")) return 8u;
+    return std::nullopt;
+}
+
+std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direction) {
+    constexpr std::uint32_t kOrder[] = {0u, 4u, 8u};
+    const int index = !current ? 0 : *current == 8u ? 2 : *current == 4u ? 1 : 0;
+    return kOrder[(index + (direction > 0 ? 1 : 2)) % 3];
+}
+
 double step_value(std::span<const double> values, double current, int direction) {
     if (values.empty()) return current;
     // Within half a thousandth counts as the step itself (float settings).
@@ -72,6 +87,20 @@ RowView describe(SettingRow row, const shell::Settings &settings) {
         view.value = std::to_string(scale) + "\u00D7 (" + std::to_string(480u * scale) + "\u00D7" +
                      std::to_string(272u * scale) + ")";
         view.description = text(Text::DescResolution);
+        break;
+    }
+    case SettingRow::CelShading:
+        view.label = text(Text::RowCelShading);
+        view.value = text(settings.cel_shading == 0 ? Text::Off :
+                          settings.cel_shading == 1 ? Text::ValueCelBanded : Text::ValueCelOutlined);
+        view.description = text(settings.cel_shading == 2 ? Text::DescCelOutlined : Text::DescCelShading);
+        break;
+    case SettingRow::Textures: {
+        view.label = text(Text::RowTextures);
+        const auto scale = texture_scale(settings);
+        view.value = text(!scale ? Text::ValueTexturesCustom : *scale == 0u ? Text::ValueTexturesOriginal
+                                  : *scale == 4u ? Text::ValueTexturesHd : Text::ValueTextures4k);
+        view.description = text(Text::DescTextures);
         break;
     }
     case SettingRow::FrameInterpolation:
@@ -148,6 +177,15 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
         // 1 to 8, wrapping.
         settings.internal_resolution = direction > 0 ? settings.internal_resolution % 8u + 1u
                                                      : (settings.internal_resolution + 6u) % 8u + 1u;
+        break;
+    case SettingRow::CelShading: {
+        constexpr double presets[] = {0, 1, 2};
+        settings.cel_shading = static_cast<std::uint32_t>(step_value(presets, settings.cel_shading, direction));
+        break;
+    }
+    // The launcher makes or finds the pack for an HD choice; back to the original here.
+    case SettingRow::Textures:
+        if (next_texture_scale(texture_scale(settings), direction) == 0u) settings.texture_pack.clear();
         break;
     case SettingRow::FrameInterpolation:
         settings.frame_interpolation = !settings.frame_interpolation;

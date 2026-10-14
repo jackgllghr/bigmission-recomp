@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <unordered_set>
@@ -20,7 +21,9 @@ namespace sarusaru::textures {
 class TextureDump {
 public:
     // Creates `directory` if needed and reads the index already there.
-    explicit TextureDump(std::filesystem::path directory);
+    // With `wanted`, only those hashes are written (an HD pack collecting the
+    // textures its recipe cannot find on the disc).
+    explicit TextureDump(std::filesystem::path directory, std::optional<std::unordered_set<std::string>> wanted = {});
 
     // Writes the texture unless its hash is already in the dump. A failed
     // write is reported once on stderr and does not stop the game.
@@ -37,6 +40,7 @@ public:
 private:
     std::filesystem::path directory_;
     std::unordered_set<std::string> seen_;
+    std::optional<std::unordered_set<std::string>> wanted_;
     std::size_t written_{};
     bool failed_{};
 };

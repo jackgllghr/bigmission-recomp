@@ -53,8 +53,25 @@ vec2 sharp_bilinear(vec2 uv) {
     return (base + f + 0.5) / size;
 }
 
+// Quantise the interpolated shade rather than each vertex, so triangles
+// carry crisp bands instead of blending the bands back into a gradient.
+// Scale by the brightest channel to preserve hue and apply before texturing
+// so texture detail survives. Alpha and the PSP alpha test are unchanged.
+vec3 cel_shade(vec3 shade) {
+    float brightness = max(shade.r, max(shade.g, shade.b));
+    if (brightness <= 0.0) return shade;
+    float band = min(floor(brightness * 4.0), 3.0) / 3.0;
+    return shade * (band / brightness);
+}
+
 void main() {
+    if ((int(push.viewport.w + 0.5) & 8) != 0) {
+        out_color = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
     vec4 color = frag_color;
+    bool cel = (int(push.viewport.w + 0.5) & 4) != 0;
+    if (cel) color.rgb = cel_shade(color.rgb);
     if (push.texture_params.x > 0.5) {
         vec2 uv = push.texture_params.x > 1.5 ? sharp_bilinear(frag_texcoord) : frag_texcoord;
         vec4 texel = texture(guest_texture, clamp(uv, frag_uv_rect.xy, frag_uv_rect.zw));
@@ -79,7 +96,7 @@ void main() {
 
     // A separate specular term is added after texturing, then fog blends
     // towards its colour; neither touches alpha.
-    color.rgb = min(color.rgb + frag_specular, vec3(1.0));
+    color.rgb = min(color.rgb + (cel ? cel_shade(frag_specular) : frag_specular), vec3(1.0));
     if ((int(push.viewport.w + 0.5) & 1) != 0) color.rgb = mix(lighting.fog_color.rgb, color.rgb, clamp(frag_fog, 0.0, 1.0));
 
     // PSP alpha test, evaluated per fragment.

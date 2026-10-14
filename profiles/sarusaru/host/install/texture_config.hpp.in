@@ -1,0 +1,11 @@
+#pragma once
+
+// The HD texture recipe this build offers, set when the port is configured
+// (SARUSARU_TEXTURE_RECIPE_*). Empty: the build offers none.
+#include <string_view>
+
+namespace sarusaru::install {
+inline constexpr std::string_view kTextureRecipeUrl = "@SARUSARU_TEXTURE_RECIPE_URL@";
+inline constexpr std::string_view kTextureRecipeSha256 = "@SARUSARU_TEXTURE_RECIPE_SHA256@";
+inline constexpr std::string_view kTextureRecipeSize = "@SARUSARU_TEXTURE_RECIPE_SIZE@";
+} // namespace sarusaru::install

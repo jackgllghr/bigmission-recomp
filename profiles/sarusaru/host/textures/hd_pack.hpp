@@ -5,6 +5,9 @@
 //
 //   pack.ini      format = 1, disc = <disc ID>, scale = 2-8
 //   <hash>.png    one image per texture, named by gpu::TextureIdentity
+//   wanted.txt    optional: hashes the pack's recipe lists but could not find
+//                 on the disc; the game writes them to collected/ when drawn,
+//                 for the launcher to upscale next time
 //
 // Each image is the texture's logical rectangle at `scale` times its size.
 // Only the index is read at startup; an image is decoded when the renderer
@@ -49,6 +52,10 @@ public:
     [[nodiscard]] std::uint32_t scale() const noexcept { return manifest_.scale; }
     [[nodiscard]] std::size_t size() const noexcept { return images_.size(); }
     [[nodiscard]] const std::filesystem::path &directory() const noexcept { return directory_; }
+    // The textures to collect while playing (wanted.txt), if any.
+    [[nodiscard]] std::optional<std::unordered_set<std::string>> wanted() const;
+    static constexpr std::string_view kWantedName = "wanted.txt";
+    static constexpr std::string_view kCollectedName = "collected";
 
 private:
     std::filesystem::path directory_;

@@ -78,7 +78,9 @@ def is_translation(path):
 
 def is_texture_set(path):
     """A texture dump or HD texture pack (docs/hd-textures.md): game art, never packaged."""
-    return path.name in ("textures.tsv", "pack.ini")
+    stem = path.name.split(".")[0]
+    upscaled = path.suffix == ".png" and len(stem) == 32 and all(c in "0123456789abcdef" for c in stem)
+    return path.name in ("textures.tsv", "pack.ini", "wanted.txt") or upscaled
 
 
 def player_files(bin_dir, windows):

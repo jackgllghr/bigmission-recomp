@@ -201,6 +201,7 @@ void Launcher::frame() {
         case Screen::Settings: settings(); break;
         case Screen::Bindings: bindings(); break;
         case Screen::Pack: pack(); break;
+        case Screen::Textures: textures(); break;
         }
     }
     ImGui::End();
@@ -666,7 +667,9 @@ void Launcher::settings() {
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const RowView view = describe(rows[i], settings_);
         const int change = setting_row(layer_, "row" + std::to_string(i), view, row_width);
-        if (change != 0 && rows[i] == SettingRow::GameText && settings_.translation_language != "en" && !pack_ready()) {
+        if (change != 0 && rows[i] == SettingRow::Textures) {
+            choose_textures(change);
+        } else if (change != 0 && rows[i] == SettingRow::GameText && settings_.translation_language != "en" && !pack_ready()) {
             // English needs its pack: the one downloaded before, or the download screen.
             const auto source = install::english_pack_source();
             const auto kept = source ? install::english_pack_path(*source) : std::nullopt;
@@ -725,6 +728,121 @@ std::string url_host(std::string_view url) {
 }
 
 } // namespace
+
+void Launcher::choose_textures(int direction) {
+    const auto scale = next_texture_scale(texture_scale(settings_), direction);
+    if (scale == 0u) {
+        settings_.texture_pack.clear();
+        save();
+        return;
+    }
+    const auto recipe = install::texture_recipe_source();
+    const auto directory = recipe ? install::texture_pack_directory(*recipe, scale) : std::nullopt;
+    if (directory && install::texture_pack_state(*directory) == install::TexturePackState::Ready) {
+        settings_.texture_pack = *directory;
+        save();
+        return;
+    }
+    // Not made yet, or the game collected textures to add: the screen that makes them.
+    texture_scale_ = scale;
+    texture_error_.clear();
+    go(Screen::Textures, "textures_make");
+}
+
+void Launcher::textures() {
+    using Step = install::TextureProgress::Step;
+    const float u = layer_.unit();
+    const float top = screen_title(layer_, tr(Text::TexturesTitle));
+    const ImRect inner = content_panel(layer_, top, 700.0f);
+    const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
+    const auto recipe = install::texture_recipe_source();
+    const auto upscaler = install::upscaler_source();
+    const auto directory = recipe ? install::texture_pack_directory(*recipe, texture_scale_) : std::nullopt;
+    const std::string choice(tr(texture_scale_ == 8u ? Text::ValueTextures4k : Text::ValueTexturesHd));
+
+    // A build that ended: the pack on and back to the settings, or the choice again with why.
+    if (texture_build_) {
+        const auto progress = texture_build_->progress();
+        if (progress.step == Step::Done) {
+            settings_.texture_pack = texture_build_->destination();
+            texture_build_.reset();
+            save();
+            go(Screen::Settings, "row1");
+            return;
+        }
+        if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
+            texture_error_ = progress.step == Step::Failed ? format(Text::TexturesFailed, {progress.error}) : "";
+            texture_build_.reset();
+            focus_control("textures_make");
+        }
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, inner.Min.y + pad * 0.8f));
+    begin_list("##textures", ImVec2(inner.GetWidth() - 2.0f * pad, inner.GetHeight() - 1.6f * pad));
+    paragraph(layer_, tr(Text::TexturesIntro), width, colors::kInkDim);
+    ImGui::Dummy(ImVec2(0, 8.0f * u));
+    std::error_code missing;
+    if (!recipe || !directory) {
+        paragraph(layer_, !recipe ? std::string(tr(Text::TexturesUnavailable))
+                                  : format(Text::TexturesFailed, {"there is no per-user data directory"}),
+                  width, colors::kRed);
+    } else if (!upscaler) {
+        paragraph(layer_, tr(Text::TexturesNoUpscaler), width, colors::kRed);
+    } else if (settings_.game_disc.empty() || !std::filesystem::is_regular_file(settings_.game_disc, missing)) {
+        paragraph(layer_, tr(Text::TexturesNeedDisc), width, colors::kRed);
+    } else if (texture_build_) {
+        const auto progress = texture_build_->progress();
+        std::string status;
+        switch (progress.step) {
+        case Step::Downloading:
+            status = format(Text::TexturesDownloading, {megabytes(progress.done), megabytes(progress.total)});
+            break;
+        case Step::Unpacking: status = tr(Text::TexturesUnpacking); break;
+        case Step::Reading: status = tr(Text::TexturesReading); break;
+        case Step::Upscaling:
+            status = format(Text::TexturesUpscaling, {std::to_string(progress.done), std::to_string(progress.total)});
+            break;
+        default:
+            status = format(Text::TexturesWriting, {std::to_string(progress.done), std::to_string(progress.total)});
+            break;
+        }
+        paragraph(layer_, status, width);
+        ImGui::Dummy(ImVec2(0, 4.0f * u));
+        std::optional<float> fraction;
+        if (progress.total != 0u && progress.step != Step::Reading && progress.step != Step::Unpacking)
+            fraction = static_cast<float>(progress.done) / static_cast<float>(progress.total);
+        progress_bar(layer_, width, fraction);
+        ImGui::Dummy(ImVec2(0, 8.0f * u));
+        if (action_row(layer_, "textures_cancel", tr(Text::InstallCancel), "", width)) texture_build_->cancel();
+    } else {
+        paragraph(layer_, format(Text::TexturesSource, {megabytes(recipe->bytes + upscaler->archive.bytes), url_host(upscaler->archive.url)}),
+                  width);
+        ImGui::Dummy(ImVec2(0, 4.0f * u));
+        const bool update = install::texture_pack_state(*directory) == install::TexturePackState::Collected;
+        const std::string label = update ? std::string(tr(Text::TexturesUpdate)) : format(Text::TexturesMake, {choice});
+        if (action_row(layer_, "textures_make", label, "", width)) {
+            texture_error_.clear();
+            texture_build_ = std::make_unique<install::TextureBuild>(*recipe, *upscaler, settings_.game_disc,
+                                                                     std::string(identity_.disc_id), texture_scale_, *directory);
+            focus_control("textures_cancel");
+        }
+    }
+    if (!texture_error_.empty()) {
+        ImGui::Dummy(ImVec2(0, 6.0f * u));
+        paragraph(layer_, texture_error_, width, colors::kRed);
+    }
+    end_list(layer_);
+
+    // Back stops a build under way rather than leaving it running.
+    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) {
+        if (texture_build_)
+            texture_build_->cancel();
+        else
+            go(Screen::Settings, "row1");
+    }
+    hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
+                   {Control::Back, tr(texture_build_ ? Text::HintCancel : Text::HintBack)}});
+}
 
 bool Launcher::pack_ready() const {
     if (settings_.translation_pack.empty()) return false;

@@ -92,6 +92,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
     int status = 0;
     std::string error;
     sarusaru::shell::GeRenderer renderer(vulkan, settings.internal_resolution);
+    renderer.set_cel_shading(settings.cel_shading);
     sarusaru::shell::AudioOutput audio;
     sarusaru::shell::Input input(settings.controls);
     sarusaru::shell::PresentationClock presentation(settings.frame_rate);
@@ -151,6 +152,16 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
             renderer.set_texture_dump(&*texture_dump);
             std::cout << "Dumping textures to " << texture_dump_directory.string() << " (" << texture_dump->known()
                       << " already there)\n";
+        } else if (hd_textures) {
+            // Textures the pack's recipe could not find on the disc are kept
+            // as they are drawn, for the launcher to upscale next time.
+            if (auto wanted = hd_textures->wanted()) {
+                const auto count = wanted->size();
+                texture_dump.emplace(hd_textures->directory() / sarusaru::textures::HdTexturePack::kCollectedName,
+                                     std::move(wanted));
+                renderer.set_texture_dump(&*texture_dump);
+                std::cout << "Collecting up to " << count << " textures for the HD pack\n";
+            }
         }
         auto &memory = game.runtime.memory();
         // Frame interpolation: each draw is also blended with its match in

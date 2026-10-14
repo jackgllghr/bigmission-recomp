@@ -2,6 +2,7 @@
 // MIT License; see profiles/sarusaru/THIRD_PARTY.md.
 // GE contracts against bounded synthetic display lists and vertex data.
 #include "gpu/ge_state.hpp"
+#include "gpu/character_outline.hpp"
 
 #include <array>
 #include <cstdlib>
@@ -447,6 +448,28 @@ int main() {
             "comparison progress reports its real bounded successful milestone");
         expect(diagnostics.str().find(" differs over ") == std::string::npos,
             "fast and scalar decoding agree exactly across format and skinning contracts");
+    }
+    {
+        DrawCall character;
+        character.primitive = PrimitiveType::Triangles;
+        character.vertex_type = (3u << 9u) | (3u << 5u);
+        character.depth.test_enabled = character.depth.write_enabled = true;
+        expect(character_outline(character), "opaque skinned character receives an outline");
+        auto scenery = character;
+        scenery.vertex_type &= ~(3u << 9u);
+        expect(!character_outline(scenery), "static scenery is not outlined");
+        auto hud = character;
+        hud.through = true;
+        expect(!character_outline(hud), "HUD is not outlined");
+        auto effect = character;
+        effect.blend.enabled = true;
+        expect(!character_outline(effect), "transparent effects are not outlined");
+        auto cutout = character;
+        cutout.alpha_test.enabled = true;
+        cutout.alpha_test.function = 6u;
+        expect(!character_outline(cutout), "alpha cutouts do not acquire a solid hull");
+        character.clear_mode = true;
+        expect(!character_outline(character), "framebuffer clears are not outlined");
     }
     std::cout << (failures ? "FAIL" : "PASS") << ": GE contracts (" << failures << " failures)\n";
     return failures ? 1 : 0;

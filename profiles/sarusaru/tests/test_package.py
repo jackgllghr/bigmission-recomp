@@ -61,7 +61,8 @@ class PlayerFilesTests(unittest.TestCase):
 
     def test_refuses_texture_dumps_and_packs(self):
         for name in ("resources/dump/textures.tsv", "resources/hd/pack.ini",
-                     "resources/textures/0123456789abcdef0123456789abcdef.png"):
+                     "resources/textures/0123456789abcdef0123456789abcdef.png",
+                     "resources/0123456789abcdef0123456789abcdef.png", "resources/hd/wanted.txt"):
             with self.subTest(name=name):
                 path = self.bin / name
                 path.parent.mkdir(parents=True, exist_ok=True)

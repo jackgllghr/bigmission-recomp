@@ -169,7 +169,7 @@ layout(location = 4) flat out vec4 frag_uv_rect;
 
 layout(push_constant) uniform Push {
     mat4 transform;      // WVP, or identity for through vertices
-    vec4 viewport;       // xy: target size in PSP pixels, z: through, w: 1 fog + 2 lighting
+    vec4 viewport;       // xy: target size in PSP pixels, z: through, w: 1 fog + 2 lighting + 4 cel shading + 8 outline pass
     vec4 texture_params; // x: texture enabled, y: texture function, z: alpha ref, w: alpha func
     vec4 uv_transform;   // xy: scale, zw: offset
     vec4 view_z;         // row of view * world that gives view-space z
@@ -296,6 +296,18 @@ void main() {
         // The PSP viewport's z scale and offset are folded into the Vulkan
         // viewport's min/max depth, which expects this [0, 1] device z.
         clip.z = (clip.z + clip.w) * 0.5;
+        if ((enables & 8) != 0) {
+            // Inverted hull: expand the projected normal by one native pixel.
+            // Pixel-space normalisation keeps the width constant with distance
+            // and aspect ratio. The host culls front faces and tests depth.
+            vec4 normal_clip = push.transform * vec4(in_normal, 0.0);
+            vec2 direction = (normal_clip.xy * clip.w - clip.xy * normal_clip.w) * push.viewport.xy;
+            float magnitude = length(direction);
+            if (magnitude > 1e-6 && clip.w > 0.0) {
+                clip.xy += (direction / magnitude) * (2.0 / push.viewport.xy) * clip.w;
+                clip.z += 1e-5 * clip.w;
+            }
+        }
         gl_Position = clip;
     }
 }

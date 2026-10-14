@@ -40,7 +40,8 @@ bool write_png(const std::filesystem::path &path, std::span<const std::uint32_t>
     return true;
 }
 
-TextureDump::TextureDump(std::filesystem::path directory) : directory_(std::move(directory)) {
+TextureDump::TextureDump(std::filesystem::path directory, std::optional<std::unordered_set<std::string>> wanted)
+    : directory_(std::move(directory)), wanted_(std::move(wanted)) {
     std::filesystem::create_directories(directory_);
     std::ifstream index(directory_ / kIndexName);
     for (std::string line; std::getline(index, line);) {
@@ -51,7 +52,7 @@ TextureDump::TextureDump(std::filesystem::path directory) : directory_(std::move
 
 void TextureDump::record(const gpu::TextureState &texture, const gpu::TextureIdentity &identity,
                          std::span<const std::uint32_t> texels) {
-    if (identity.hash.empty() || !seen_.insert(identity.hash).second) return;
+    if (identity.hash.empty() || (wanted_ && !wanted_->contains(identity.hash)) || !seen_.insert(identity.hash).second) return;
     const bool saved = write_png(directory_ / (identity.hash + ".png"), texels, identity.width, identity.height, texture.width);
     if (saved) {
         const auto index_path = directory_ / kIndexName;

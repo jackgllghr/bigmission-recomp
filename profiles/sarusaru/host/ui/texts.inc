@@ -71,6 +71,13 @@ X(BindingsDescription, "Choose the keys and gamepad buttons for each PSP control
 X(SaveFailed, "Settings could not be saved: {0}", "設定を保存できませんでした：{0}")
 X(On, "On", "オン")
 X(Off, "Off", "オフ")
+X(ValueCelBanded, "Banded", "階調")
+X(ValueCelOutlined, "Outlined", "輪郭線付き")
+X(DescCelOutlined, "Banded shading with black silhouettes around animated characters, like a cartoon. HUD and scenery keep their original edges.",
+    "段階的な陰影と黒い輪郭線でキャラクターをアニメ風に描画します。HUD と背景の輪郭はそのままです。")
+X(RowCelShading, "Cel shading", "セルシェーディング")
+X(DescCelShading, "Gives 3D shading distinct bands for a cartoon look. Keeps textures, HUD and menus intact.",
+    "3D の陰影を段階的にして、アニメ風に描画します。テクスチャ、HUD、メニューはそのままです。")
 X(RowResolution, "Resolution", "解像度")
 X(DescResolution, "Draws the game at this many times the PSP's 480×272. Higher is sharper and needs a faster GPU.",
   "PSP の 480×272 の何倍で描画するかを選びます。高いほど鮮明になりますが、より高性能な GPU が必要です。")
@@ -121,6 +128,33 @@ X(ValueGameEnglish, "English (unofficial)", "英語（非公式）")
 X(DescGameText,
   "The language of the game's own menus, names and tutorials. English is an unofficial machine translation, downloaded the first time it is chosen.",
   "ゲーム本編のメニュー・名前・チュートリアルの言語です。英語は非公式の機械翻訳で、はじめて選んだときにダウンロードします。")
+
+X(RowTextures, "Textures", "テクスチャ")
+X(ValueTexturesOriginal, "Original", "オリジナル")
+X(ValueTexturesHd, "HD (4×)", "HD（4×）")
+X(ValueTextures4k, "4K (8×)", "4K（8×）")
+X(ValueTexturesCustom, "Custom pack", "カスタムパック")
+X(DescTextures,
+  "Sharper textures, upscaled on this computer from your own disc. Made the first time each is chosen.",
+  "お手持ちのディスクからこのコンピューターで高解像度にしたテクスチャです。はじめて選んだときに作ります。")
+
+// HD textures (made on this computer)
+X(TexturesTitle, "HD Textures", "HDテクスチャ")
+X(TexturesIntro,
+  "The game's textures are upscaled on this computer from your own disc by Real-ESRGAN, an image upscaler. No game art is downloaded: only the list of what to upscale and the upscaler itself. This can take a while, and the game keeps some textures to upscale next time as you play.",
+  "ゲームのテクスチャを、画像拡大ツール Real-ESRGAN でお手持ちのディスクからこのコンピューター上で高解像度にします。ゲームの絵はダウンロードしません。ダウンロードするのは対象のリストと拡大ツールだけです。時間がかかることがあります。プレイ中に見つかったテクスチャは、次回にまとめて高解像度にします。")
+X(TexturesSource, "Downloads up to {0} MB from {1}.", "{1} から最大 {0} MB をダウンロードします。")
+X(TexturesMake, "Make {0} textures", "{0} テクスチャを作る")
+X(TexturesUpdate, "Upscale the textures collected while playing", "プレイ中に集めたテクスチャを高解像度にする")
+X(TexturesDownloading, "Downloading: {0} of {1} MB", "ダウンロード中：{0} / {1} MB")
+X(TexturesUnpacking, "Unpacking the upscaler…", "拡大ツールを展開しています…")
+X(TexturesReading, "Reading textures from your disc…", "ディスクからテクスチャを読み込んでいます…")
+X(TexturesUpscaling, "Upscaling: {0} of {1} images", "高解像度化中：{0} / {1} 枚")
+X(TexturesWriting, "Saving: {0} of {1} textures", "保存中：{0} / {1} テクスチャ")
+X(TexturesFailed, "The textures were not made: {0}", "テクスチャを作れませんでした：{0}")
+X(TexturesUnavailable, "This build of the port does not offer HD textures.", "このビルドではHDテクスチャを利用できません。")
+X(TexturesNoUpscaler, "The upscaler has no build for this computer.", "このコンピューター用の拡大ツールがありません。")
+X(TexturesNeedDisc, "Choose your game disc first.", "先にゲームディスクを選んでください。")
 
 // The English game text (an optional download)
 X(PackTitle, "English Game Text", "英語のゲーム文章")

@@ -107,6 +107,38 @@ void rows() {
     require(settings.internal_resolution == 8, "resolution did not wrap down");
     require(describe(SettingRow::InternalResolution, settings).value == "8× (3840×2176)", "resolution label wrong");
 
+    // Textures: the choice comes from the pack directory's name; the launcher
+    // makes or finds the pack, and stepping to the original clears it.
+    require(texture_scale(settings) == 0u && describe(SettingRow::Textures, settings).value == "Original",
+            "original textures not the default");
+    settings.texture_pack = "/data/SaruSaruRecomp/textures/4x-0123456789abcdef";
+    require(texture_scale(settings) == 4u && describe(SettingRow::Textures, settings).value == "HD (4×)", "HD pack not named");
+    settings.texture_pack = "/data/SaruSaruRecomp/textures/8x-0123456789abcdef/";
+    require(texture_scale(settings) == 8u && describe(SettingRow::Textures, settings).value == "4K (8×)", "4K pack not named");
+    require(next_texture_scale(texture_scale(settings), 1) == 0u && next_texture_scale(0u, 1) == 4u &&
+                next_texture_scale(0u, -1) == 8u && next_texture_scale(std::nullopt, 1) == 4u, "texture choices do not cycle");
+    step(SettingRow::Textures, settings, 1);
+    require(settings.texture_pack.empty(), "stepping to the original kept the pack");
+    settings.texture_pack = "my-pack";
+    require(!texture_scale(settings) && describe(SettingRow::Textures, settings).value == "Custom pack", "custom pack not named");
+    step(SettingRow::Textures, settings, 1);
+    require(settings.texture_pack == "my-pack", "stepping towards HD changed the pack without the launcher");
+    settings.texture_pack.clear();
+
+    require(!settings.cel_shading && describe(SettingRow::CelShading, settings).value == "Off", "cel shading not off by default");
+    step(SettingRow::CelShading, settings, 1);
+    require(settings.cel_shading == 1 && describe(SettingRow::CelShading, settings).value == "Banded", "cel shading did not turn on");
+    step(SettingRow::CelShading, settings, -1);
+    require(!settings.cel_shading, "cel shading did not turn off");
+
+    step(SettingRow::CelShading, settings, -1);
+    require(settings.cel_shading == 2 && describe(SettingRow::CelShading, settings).value == "Outlined", "cel preset did not wrap backwards");
+    step(SettingRow::CelShading, settings, 1);
+    require(settings.cel_shading == 0, "outlined preset did not wrap to off");
+    step(SettingRow::CelShading, settings, 1);
+    step(SettingRow::CelShading, settings, 1);
+    require(settings.cel_shading == 2, "banded preset did not step to outlined");
+
     settings.fov_degrees = 52.5f;
     step(SettingRow::Fov, settings, 1);
     require(settings.fov_degrees == 55.0f, "hand-set FOV not snapped to the next step");
@@ -177,7 +209,7 @@ void rows() {
             const auto view = describe(row, settings);
             require(!view.label.empty() && !view.value.empty() && !view.description.empty(), "row without text");
         }
-    require(seen == 11, "settings rows missing from the tabs");
+    require(seen == 13, "settings rows missing from the tabs");
 }
 
 void bindings() {
