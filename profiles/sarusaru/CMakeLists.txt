@@ -34,6 +34,10 @@ if(SARUSARU_HAS_FFMPEG)
 endif()
 
 # GE display-list state and texture decoding (adapted from Yakumo).
+add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp)
+target_include_directories(sarusaru_frame_rate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+target_link_libraries(sarusaru_frame_rate PUBLIC psprecomp_core)
+
 add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp)
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_gpu PUBLIC psprecomp_core)
@@ -48,6 +52,10 @@ target_link_libraries(sarusaru_savedata PUBLIC psprecomp_core)
 
 if(PSPRECOMP_BUILD_PROFILE_TESTS)
     enable_testing()
+    add_executable(sarusaru_frame_rate_tests tests/frame_rate_tests.cpp
+        host/display/display.cpp host/kernel/early_kernel.cpp)
+    target_link_libraries(sarusaru_frame_rate_tests PRIVATE sarusaru_frame_rate)
+    add_test(NAME sarusaru_frame_rate_tests COMMAND sarusaru_frame_rate_tests)
     if(SARUSARU_HAS_RENDERER)
         add_executable(sarusaru_settings_tests tests/settings_tests.cpp)
         target_link_libraries(sarusaru_settings_tests PRIVATE sarusaru_controls)
@@ -186,7 +194,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
         host/rtc/rtc.cpp host/modules/utility_modules.cpp host/modules/module_manager.cpp host/audio/audio.cpp
         host/sas/sas.cpp)
     target_include_directories(sarusaru_session PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
-    target_link_libraries(sarusaru_session PUBLIC sarusaru_aot sarusaru_savedata sarusaru_atrac sarusaru_gpu sarusaru_text)
+    target_link_libraries(sarusaru_session PUBLIC sarusaru_aot sarusaru_savedata sarusaru_atrac sarusaru_gpu sarusaru_text sarusaru_frame_rate)
     if(SARUSARU_HAS_FFMPEG)
         target_compile_definitions(sarusaru_session PRIVATE SARUSARU_HAS_FFMPEG=1)
     endif()

@@ -65,6 +65,7 @@ bool GameSession::install_kernel() {
 GameSession::GameSession(const std::filesystem::path &executable, const std::filesystem::path &iso,
                          const SessionOptions &options)
     : elf(load_executable(executable)), disc(iso), chaining_configured(configure_chaining(options.count_every_dispatch)),
+      frame_rate(options.experimental_game_frame_rate),
       savedata(options.memory_stick, [this] { return startup_hle.compiled_sdk_version(); }) {
     verify_disc(disc);
     const auto relocations = elf.load_and_relocate(runtime.memory(), load_base);
@@ -83,7 +84,15 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
     umd::register_umd(umd, runtime, &kernel);
     io::register_io(io, runtime);
     ctrl::register_ctrl(controller, kernel, runtime);
-    display::register_display(display, kernel, runtime);
+    display::VcountHook vcount_hook;
+    display::VblankWaitHook vblank_wait_hook;
+    if (frame_rate.enabled()) {
+        vcount_hook = [this](psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx) { frame_rate.on_vcount(rt, ctx); };
+        vblank_wait_hook = [this](psprecomp::Runtime &rt, const psprecomp::AllegrexContext &ctx, std::uint64_t now) {
+            return frame_rate.wait_deadline(rt, ctx, now);
+        };
+    }
+    display::register_display(display, kernel, runtime, std::move(vcount_hook), std::move(vblank_wait_hook));
     ge::register_ge(ge, kernel, runtime);
     rtc::register_rtc(rtc, runtime);
     modules::register_utility_modules(utility_modules, runtime);

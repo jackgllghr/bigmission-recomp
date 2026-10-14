@@ -6,7 +6,8 @@ disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 **Early macOS arm64 build: the game boots, renders and plays sound in a
 window, but is not verified playable end to end.** File-based settings and
 keyboard/gamepad rebinding are available. The launcher, in-game settings UI,
-FOV overrides, higher simulation rates and translation are still to come.
+FOV overrides, timing-correct higher simulation rates and translation are still
+to come. Native game cadence overrides are available as an explicit experiment.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
 ## Requirements
@@ -43,6 +44,27 @@ Exit 1 means an input, build or execution error. The bootstrap script preserves
 the host's diagnostic exit code.
 
 ## Play in a window
+
+Build and launch with one command (also prepares and generates game code on
+the first run):
+
+```sh
+python3 profiles/sarusaru/scripts/build_and_run_macos.py
+```
+
+The script uses the ISO path saved during preparation. On a fresh checkout, or
+if the ISO has moved, pass `--iso '/path/to/game.iso'`. It builds incrementally
+with two jobs; `--jobs 1` reduces memory pressure. Pass game options after `--`:
+
+```sh
+python3 profiles/sarusaru/scripts/build_and_run_macos.py -- \
+  --settings profiles/sarusaru/resources/settings.ini
+```
+
+The game runs until you quit, and its exit code is preserved. The script works
+from any directory; explicit relative paths are resolved from your current
+directory. It uses the normal per-user settings unless you pass `--settings`
+or set `SARUSARU_SETTINGS`.
 
 After the bootstrap script has generated the game code once:
 
@@ -115,6 +137,31 @@ PSP vblank (about 59.94 Hz). It leaves guest vblank timing, input sampling,
 render submissions, audio and movie timing intact. It does not turn the game's
 roughly 29.97 Hz updates into 60 Hz gameplay. In fast-forward it still selects
 frames on guest time, so it is not a wall-clock cap.
+
+`experimental_game_frame_rate` overrides the game's frame-wait interval. Use
+0 for the original behavior, or 15, 20, 30, or 60. These rates correspond to four,
+three, two or one PSP vblanks per game frame, so actual rates are approximately
+14.985, 19.980, 29.970 and 59.940 Hz. To try the 60 mode:
+
+```ini
+[graphics]
+frame_rate = 60
+experimental_game_frame_rate = 60
+```
+
+This increases **game updates**, not just swapchain presentations. Fixed-step
+movement, animation and frame-counted scripts are not compensated: 60 can run
+them faster, and 15/20 can run them slower. It is not yet a timing-correct 60 FPS
+gameplay mode. The setting defaults to 0 and prints that limitation at startup.
+The original PSP clock, audio clock and movie timestamps remain unchanged.
+The presentation cap still applies independently; setting it below the game
+rate hides some updated frames without reducing game updates.
+
+For headless investigation, the bootstrap accepts the same experimental setting
+through `SARUSARU_EXPERIMENTAL_GAME_FRAME_RATE` and reports the number of
+overridden game frames and the chosen interval. The windowed shell uses the
+settings file instead. Both paths verify the supported executable before the
+game-specific hook is installed.
 
 `fov_degrees` reserves a vertical-FOV preference (0 for native, or 30-120).
 Nonzero values are retained but print an explicit warning and have **no effect**

@@ -104,6 +104,9 @@ int main(int argc, char **argv) {
         settings = sarusaru::shell::load_settings(settings_path);
         if (scale) settings.internal_resolution = *scale;
         std::cout << "Settings: " << settings_path.string() << '\n';
+        if (settings.experimental_game_frame_rate != 0)
+            std::cerr << "sarusaru: experimental game frame rate " << settings.experimental_game_frame_rate
+                      << "; fixed-step gameplay/animation speed is not compensated\n";
         if (settings.fov_degrees != 0.0f)
             std::cerr << "sarusaru: FOV preference saved, but camera overrides are not implemented; using native FOV\n";
     } catch (const std::exception &error) {
@@ -138,6 +141,7 @@ int main(int argc, char **argv) {
 
             sarusaru::SessionOptions options;
             options.memory_stick = sarusaru::utility::default_memory_stick();
+            options.experimental_game_frame_rate = settings.experimental_game_frame_rate;
             sarusaru::GameSession game(std::string(paths[0]), std::string(paths[1]), options);
             auto &memory = game.runtime.memory();
             game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) { renderer.draw(memory, call); });

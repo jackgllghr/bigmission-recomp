@@ -53,6 +53,11 @@ private:
     void apply_pending(std::uint64_t now_us) noexcept;
 };
 
-void register_display(Display &display, kernel::EarlyKernel &kernel, psprecomp::Runtime &runtime);
+// Optional profile hook after GetVcount returns; the PSP vcount itself remains native.
+using VcountHook = std::function<void(psprecomp::Runtime &, psprecomp::AllegrexContext &)>;
+using VblankWaitHook = std::function<std::optional<std::uint64_t>(psprecomp::Runtime &,
+    const psprecomp::AllegrexContext &, std::uint64_t now_us)>;
+void register_display(Display &display, kernel::EarlyKernel &kernel, psprecomp::Runtime &runtime,
+                      VcountHook vcount_hook = {}, VblankWaitHook vblank_wait_hook = {});
 
 } // namespace sarusaru::display

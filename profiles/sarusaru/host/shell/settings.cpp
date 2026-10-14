@@ -139,6 +139,11 @@ Settings parse_settings(std::string_view text) {
                 settings.internal_resolution = static_cast<std::uint32_t>(integer(value, 1, 8));
             } else if (full == "graphics.frame_rate") {
                 settings.frame_rate = static_cast<std::uint32_t>(integer(value, 0, 60));
+            } else if (full == "graphics.experimental_game_frame_rate") {
+                const auto fps = integer(value, 0, 60);
+                if (fps != 0 && fps != 15 && fps != 20 && fps != 30 && fps != 60)
+                    throw std::runtime_error("game frame rate must be 0, 15, 20, 30 or 60");
+                settings.experimental_game_frame_rate = static_cast<std::uint32_t>(fps);
             } else if (full == "graphics.fov_degrees") {
                 settings.fov_degrees = number(value, 0.0f, 120.0f);
                 if (settings.fov_degrees != 0.0f && settings.fov_degrees < 30.0f)
@@ -161,6 +166,8 @@ std::string serialize_settings(const Settings &settings) {
            "# Gamepad values: SDL button names or axis:NAME+ / axis:NAME-; none unbinds.\n"
            "[graphics]\ninternal_resolution = " << settings.internal_resolution << '\n'
         << "# Presentation cap only: 0 = native; 1-60. Simulation speed is unchanged.\nframe_rate = " << settings.frame_rate << '\n'
+        << "# Experimental game update rate: 0 = native; 15, 20, 30 or 60. Changes fixed-step gameplay speed.\n"
+        << "experimental_game_frame_rate = " << settings.experimental_game_frame_rate << '\n'
         << "# Reserved camera preference: 0 = native. Nonzero values currently warn and have no effect.\nfov_degrees = " << decimal(settings.fov_degrees) << '\n'
         << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n';
     for (const bool keyboard : {true, false}) {

@@ -9,6 +9,7 @@
 #include "ctrl/controller.hpp"
 #include "display/display.hpp"
 #include "ge/ge.hpp"
+#include "game/frame_rate.hpp"
 #include "io/io_manager.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
@@ -35,6 +36,8 @@ struct SessionOptions {
     // which keeps a diagnostic dispatch budget meaningful. Slower.
     bool count_every_dispatch{false};
     std::filesystem::path memory_stick;
+    // 0 = original cadence. Other supported rates opt into uncompensated game timing.
+    std::uint32_t experimental_game_frame_rate{};
 };
 
 class GameSession {
@@ -64,6 +67,7 @@ public:
     io::IoManager io{disc, runtime};
     ctrl::Controller controller;
     display::Display display;
+    game::FrameRateOverride frame_rate;
     ge::Ge ge{kernel};
     rtc::Rtc rtc{kernel, rtc::Rtc::host_boot_local_unix_us()};
     modules::UtilityModules utility_modules;

@@ -66,7 +66,8 @@ std::uint64_t Display::next_vblank_start_us(std::uint64_t now_us) noexcept {
     return kernel::vblank_time_us(kernel::vblanks_by(now_us) + 1u);
 }
 
-void register_display(Display &display, kernel::EarlyKernel &kernel, psprecomp::Runtime &runtime) {
+void register_display(Display &display, kernel::EarlyKernel &kernel, psprecomp::Runtime &runtime,
+                      VcountHook vcount_hook, VblankWaitHook vblank_wait_hook) {
     runtime.register_hle("sceDisplay", 0x0E20F177u,  // sceDisplaySetMode
         [&display](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
             ctx.set_gpr(2u, static_cast<std::uint32_t>(display.set_mode(ctx.gpr[4], ctx.gpr[5], ctx.gpr[6])));
@@ -89,8 +90,9 @@ void register_display(Display &display, kernel::EarlyKernel &kernel, psprecomp::
             ctx.set_gpr(2u, 0u);
         });
     runtime.register_hle("sceDisplay", 0x9C6EAAD7u,  // sceDisplayGetVcount
-        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+        [&kernel, hook = std::move(vcount_hook)](psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx) {
             ctx.set_gpr(2u, Display::vcount(kernel.now_us()));
+            if (hook) hook(rt, ctx);
         });
     runtime.register_hle("sceDisplay", 0x4D4E10ECu,  // sceDisplayIsVblank
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
@@ -105,8 +107,11 @@ void register_display(Display &display, kernel::EarlyKernel &kernel, psprecomp::
     };
     runtime.register_hle("sceDisplay", 0x984C27E7u, wait_vblank_start);  // sceDisplayWaitVblankStart
     runtime.register_hle("sceDisplay", 0x46F186C3u,  // sceDisplayWaitVblankStartCB
-        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
-            kernel.block_current(ctx, {"vblank", Display::next_vblank_start_us(kernel.now_us()), 0u, nullptr, 0, true});
+        [&kernel, hook = std::move(vblank_wait_hook)](psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx) {
+            const auto deadline = hook ? hook(rt, ctx, kernel.now_us()) : std::nullopt;
+            if (rt.stopped()) return;
+            kernel.block_current(ctx, {"vblank", deadline.value_or(Display::next_vblank_start_us(kernel.now_us())),
+                0u, nullptr, 0, true});
         });
     runtime.register_hle("sceDisplay", 0x36CDFADEu,  // sceDisplayWaitVblank: returns at once inside vblank
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {

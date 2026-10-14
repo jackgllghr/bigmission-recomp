@@ -36,6 +36,8 @@ struct Settings {
     std::uint32_t internal_resolution{2};
     // Presentation cap, 0 = every PSP vblank. Guest timing stays 60000/1001 Hz.
     std::uint32_t frame_rate{0};
+    // Native game cadence override: 0, 15, 20, 30 or 60. Changes fixed-step game speed.
+    std::uint32_t experimental_game_frame_rate{0};
     // 0 = native; reserved until gameplay camera/cutscene discrimination is verified.
     float fov_degrees{0.0f};
     ControlSettings controls;

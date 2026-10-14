@@ -4,7 +4,8 @@
 
 The windowed shell loads a validated per-user INI file before starting SDL or
 the game. Internal resolution, keyboard/gamepad bindings, axis dead zone and
-presentation rate are applied at startup. `--scale` is a transient override.
+presentation rate are applied at startup. An opt-in experimental game cadence
+override is also available; fixed-step gameplay is not compensated. `--scale` is a transient override.
 The file also retains a FOV preference, with an explicit warning that nonzero
 values have no effect yet. The in-game editor belongs to the launcher work.
 
@@ -45,7 +46,37 @@ lists per five seconds, apart from extra startup lists. This supports a native
 rate near 29.97 Hz for this observed path. It does not prove that every gameplay
 subsystem uses the same timestep or that a one-vblank interval is safe.
 
-Before offering higher simulation rates:
+### Implemented experimental cadence override
+
+`experimental_game_frame_rate` accepts 0, 15, 20, 30 and 60. Zero installs no
+hooks. The other values select a four-, three-, two- or one-vblank interval.
+`game/frame_rate.*` patches the frame object's interval only when GetVcount
+returns to the verified frame-wait site. It checks the object against the game's
+global frame-object pointer and validates its memory range and interval. An
+unexpected object stops the experiment rather than writing to unrelated memory.
+
+The frame-wait routine contains at most two vblank waits, rather than a loop
+over its interval. An interval-only experiment therefore produced about 30
+updates per second for both 15 and 20. The implemented hook also supplies the
+frame's absolute deadline to the routine's two WaitVblankStartCB call sites.
+Both calls share that deadline. The deadline accounts for vblanks already
+elapsed since the previous game frame, so it does not accumulate another full
+interval or drift. Every intervening PSP vblank still happens, including kernel
+frame observers and guest interrupts. Other callers retain ordinary HLE waits.
+
+This operates at import boundaries so it also covers generated same-unit jumps
+and AOT call chaining. Generated source and the user's ISO/executable are not
+modified. GameSession validates the executable hash before installing the hooks.
+
+The game's FPS getter (`0x088FF154`) derives 15/20/30/60 from this same interval,
+so its FPS-aware counters see the selected cadence. Other update paths embed
+fixed 1/30-second steps and integer frame counters, including routines around
+`0x0888B7E8`, `0x0895E6A4`, `0x0898D748` and `0x089C3C48`. The override does
+**not** compensate those paths. Higher rates can accelerate movement, animation
+or scripts; lower rates can slow them. This is an explicitly experimental
+cadence control, not verified timing-correct gameplay.
+
+Before offering timing-correct higher simulation rates:
 
 1. Locate the constructor/setter for the frame object's interval and its callers.
 2. Track the game timestep through movement, animation, camera and script updates.
@@ -84,12 +115,33 @@ Before activating FOV:
 ## Verification
 
 - Native macOS arm64 shell and settings test executable build successfully.
-- All 29 CTest suites pass, including new synthetic settings/input/clock tests.
+- All 30 CTest suites pass, including synthetic settings/input/clock and
+  game-frame-rate tests.
 - Tests cover defaults and partial files, readable binding round-trips, malformed
   input, preserving invalid existing files, keyboard alternatives and unbinding,
   shared gamepad bindings, trigger thresholds, axis reversal and dead zones.
 - Clock tests cover native and capped cadence on actual rational PSP vblank
   timestamps, repeated timestamps and large time jumps.
 - The 120-second headless ISO probe above supplies timing/camera evidence.
+- The production override was exercised for 120 seconds of guest time at each
+  rate, with AOT chaining enabled and isolated memory sticks. All runs reached
+  the requested stop time without an unmodeled import. In steady five-second
+  windows, completed GE lists and override calls matched:
+
+  | Requested cadence | Game frames per five seconds |
+  | --- | ---: |
+  | Native | 149-150 |
+  | 15 | 74-75 |
+  | 20 | 99-100 |
+  | 30 | 149-150 |
+  | 60 | 299-300 |
+
+  Logs are ignored at `analysis/framerate-{0,15,20,30,60}.log`; the local probe
+  is `progress/framerate_probe.cpp`. These runs verify update cadence, not
+  movement/animation speed, audio sync or playable level completion.
+- Frame-rate tests cover all supported intervals, invalid rates, unexpected
+  objects, caller isolation, native vcount preservation, both wait sites and
+  steady-state deadlines with every intervening PSP vblank observed.
 - No interactive GPU presentation test or Windows/Linux build was performed
-  for this chunk. Gameplay FOV and higher simulation rates remain unimplemented.
+  for this chunk. Gameplay FOV and timing-correct higher simulation rates remain
+  unimplemented.

@@ -2,6 +2,7 @@
 #include "psprecomp/common.hpp"
 
 #include <cstdlib>
+#include <charconv>
 #include <iostream>
 #include <string_view>
 
@@ -21,6 +22,15 @@ int main(int argc, char **argv) {
         // runs the faster chained mode the windowed shell uses.
         options.count_every_dispatch = std::getenv("SARUSARU_CHAINING") == nullptr;
         options.memory_stick = sarusaru::utility::default_memory_stick();
+        if (const char *value = std::getenv("SARUSARU_EXPERIMENTAL_GAME_FRAME_RATE"); value && *value) {
+            const std::string_view text(value);
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), options.experimental_game_frame_rate);
+            if (error != std::errc{} || end != text.data() + text.size())
+                throw psprecomp::Error("Invalid SARUSARU_EXPERIMENTAL_GAME_FRAME_RATE");
+            if (options.experimental_game_frame_rate != 0)
+                std::cerr << "Experimental game frame rate " << options.experimental_game_frame_rate
+                          << "; fixed-step gameplay/animation speed is not compensated\n";
+        }
         sarusaru::GameSession game(argv[1], argv[2], options);
         // SARUSARU_INPUT scripts the pad for unattended runs, e.g. "60:START;60.2:-".
         if (const char *input = std::getenv("SARUSARU_INPUT"); input != nullptr && *input != '\0') {
@@ -46,6 +56,8 @@ int main(int argc, char **argv) {
                   << ge.state().draw_count() << " draws decoded ("
                   << ge.state().vertex_count() << " vertices, "
                   << ge.state().unhandled_command_count() << " unhandled commands)\n"
+                  << "Game frames overridden: " << game.frame_rate.overridden_frames()
+                  << "; interval: " << game.frame_rate.interval_vblanks() << " vblanks (0 = native)\n"
                   << "Stop arguments: a0=" << psprecomp::hex32(cpu.gpr[4]) << " a1=" << psprecomp::hex32(cpu.gpr[5])
                   << " a2=" << psprecomp::hex32(cpu.gpr[6]) << " a3=" << psprecomp::hex32(cpu.gpr[7]) << '\n'
                   << "Observed startup values: compiled SDK "

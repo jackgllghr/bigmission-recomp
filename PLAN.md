@@ -77,6 +77,9 @@ needs document-picker integration, lifecycle handling and touch-accessible setup
       dead zone, axis direction, quit and fast-forward.
 - [x] Measure the current game frame-wait path and observed perspective matrices.
       The sampled frame-wait interval is two PSP vblanks (about 29.97 Hz).
+- [x] Experimental game cadence overrides for 15/20/30/60, separate from the
+      presentation cap; preserve PSP clocks and scope waits to the game's frame
+      routine. Fixed-step gameplay speed is not compensated yet.
 - [ ] Implement and verify gameplay FOV, distinguishing menu and cutscene cameras.
       The stored FOV preference currently warns and has no effect.
 - [ ] Verify higher simulation rates/interpolation against movement, animation,
@@ -231,7 +234,7 @@ the save menu and the stage hub all render correctly at 2x internal
 resolution on an Apple M4. Next: the acceptance run with real input, GPU
 write-back, and the remaining GE registers.
 
-Twenty-seven CTest suites pass. With generated code at `-O1` and AOT call
+Thirty CTest suites pass. With generated code at `-O1` and AOT call
 chaining enabled, the headless run reaches stage 1 at about 28 times real time. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
