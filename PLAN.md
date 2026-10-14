@@ -130,9 +130,12 @@ networking (`sceNet*`, 21 in total).
        Still to come when reached: `ms0:` on a per-user host directory with
        path confinement, `umd0:` raw access, Devctl and further Ioctl
        commands, relative paths.
-8. [~] Modules and overlays: `sceUtilityLoadModule`/`UnloadModule` record
-       state for HLE-provided system libraries. Still to come:
-       `ModuleMgrForUser` load/start of on-disc modules.
+8. [x] Modules and overlays: `sceUtilityLoadModule`/`UnloadModule` record
+       state for HLE-provided system libraries. The game's only on-disc
+       modules are Sony's media libraries (`psmf.prx`, `libpsmfplayer.prx`),
+       which `ModuleMgrForUser` "loads" as IDs because their exports are
+       provided by HLE; any other module stops execution. No code overlays
+       have been observed.
        Establish which modules and code overlays load at runtime, decide
        AOT vs. HLE for each, and measure generated-code coverage.
 9. [ ] Remaining startup libraries as reached: `sceRtc`, `scePower`,
@@ -184,10 +187,10 @@ first data file, initialises its sound system (printing progress to stdout),
 and enters its main loop. A longer run loads title-screen data, queries and
 auto-loads its save (none on a fresh memory stick), streams its first music
 track through ATRAC3plus decoding, and draws for 57 s of guest time (1,719 GE
-display lists, over a million primitives) before stopping at
-`ModuleMgrForUser::sceKernelLoadModule`.
+display lists, over a million primitives), loads its media modules, then
+stops at `sceMpeg::sceMpegInit` as movie playback begins.
 
-Twenty-two CTest suites pass. Repeat generation rewrites zero source units.
+Twenty-three CTest suites pass. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
 - three generator defects reproduced with synthetic fixtures;

@@ -6,6 +6,7 @@
 #include "display/display.hpp"
 #include "ge/ge.hpp"
 #include "io/io_manager.hpp"
+#include "modules/module_manager.hpp"
 #include "modules/utility_modules.hpp"
 #include "rtc/rtc.hpp"
 #include "sas/sas.hpp"
@@ -123,6 +124,8 @@ int main(int argc, char **argv) {
         sarusaru::rtc::register_rtc(rtc, runtime);
         sarusaru::modules::UtilityModules utility_modules;
         sarusaru::modules::register_utility_modules(utility_modules, runtime);
+        sarusaru::modules::ModuleManager module_manager(early_kernel);
+        sarusaru::modules::register_module_manager(module_manager, runtime);
         sarusaru::audio::Audio audio(early_kernel);
         sarusaru::audio::register_audio(audio, runtime);
         sarusaru::sas::SasCore sas;

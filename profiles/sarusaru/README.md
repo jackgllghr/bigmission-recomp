@@ -94,13 +94,13 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
   initialises its sound system, auto-loads its save (none on a fresh memory
   stick), streams its first ATRAC3plus music track and draws for 57 s of
-  guest time (1,719 GE lists) before stopping at
-  `ModuleMgrForUser::sceKernelLoadModule`. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
+  guest time (1,719 GE lists), loads its media modules and stops at
+  `sceMpeg::sceMpegInit` as movie playback begins. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All twenty-two CTest suites pass, including 17 ISO/preparation cases and seven
+- All twenty-three CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -216,6 +216,12 @@ The pinned upstream is recorded in `config/supported_game.json`.
   engineered descriptions and are not hardware-verified. Reverb settings are
   validated and recorded but not applied (effect sends are dropped); the
   multichannel output mode and the noise spectrum are not modeled.
+- Added `ModuleMgrForUser` (`modules/module_manager.cpp`): `psmf.prx` and
+  `libpsmfplayer.prx`, Sony's media libraries whose exports the game imports
+  and this profile provides by HLE, load and start as module IDs without
+  code; any other module stops execution naming its path. Module ID queries
+  report the main module; `sceKernelStopUnloadSelfModuleWithStatus` ends the
+  run as a game exit.
 - Added `sceAtrac3plus` (`audio/atrac.cpp`) on FFmpeg: GetAtracID/SetData/
   Release/Reinit, DecodeData with sample-accurate encoder delay, loop and end
   handling, GetRemainFrame, GetNextSample, SetLoopNum, and streaming through
