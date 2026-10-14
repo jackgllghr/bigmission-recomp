@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -126,13 +127,16 @@ def stage(build, version, host, out_dir):
     files = player_files(build / "bin", windows)
     work = Path(tempfile.mkdtemp(prefix="sarusaru-package-"))
     top = work / f"{NAME}-{version}-{host}"
-    content = top / f"{APP_NAME}.app/Contents/MacOS" if macos else top
+    app = top / f"{APP_NAME}.app"
     for source, relative in files:
-        target = content / relative
+        target = app / bundle_path(relative) if macos else top / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target, follow_symlinks=True)
+        if macos and source.is_symlink():
+            target.symlink_to(os.readlink(source))
+        else:
+            shutil.copy2(source, target, follow_symlinks=True)
     if macos:
-        bundle(top / f"{APP_NAME}.app", version)
+        bundle(app, version)
     shutil.copy2(ROOT / "LICENSE", top / "LICENSE.txt")
     shutil.copy2(PROFILE / "THIRD_PARTY.md", top / "THIRD_PARTY.md")
     family = "macos" if macos else "windows" if windows else "linux"
@@ -142,8 +146,22 @@ def stage(build, version, host, out_dir):
     return work, top
 
 
+def bundle_path(relative):
+    """Where a file of bin/ goes in the macOS app, as platform/paths.cpp expects: programs in
+    Contents/MacOS, libraries in Contents/Frameworks, everything else in Contents/Resources
+    (only code may be in MacOS and Frameworks for the bundle to be signed)."""
+    if len(relative.parts) == 1:
+        return Path("Contents/MacOS") / relative
+    if relative.parts[0] == "lib" and relative.suffix == ".dylib":
+        return Path("Contents/Frameworks") / relative.name
+    return Path("Contents/Resources") / relative
+
+
 def bundle(app, version):
-    """Info.plist and icon for the macOS app; the executable and its files are in Contents/MacOS."""
+    """Info.plist and icon for the macOS app, then an ad-hoc signature over the whole bundle.
+
+    The signature is not Apple's (the app is not notarised), but without one
+    macOS calls a downloaded app damaged rather than offering to open it."""
     contents = app / "Contents"
     (contents / "Resources").mkdir(parents=True, exist_ok=True)
     icon = make_icns(contents / "Resources")
@@ -163,22 +181,44 @@ def bundle(app, version):
         info["CFBundleIconFile"] = icon
     with (contents / "Info.plist").open("wb") as out:
         plistlib.dump(info, out)
+    if shutil.which("codesign") is not None:
+        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", "--timestamp=none", str(app)], check=True)
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
+
+
+def ico_images(path):
+    """{pixels: PNG bytes} of the square PNG images in a Windows .ico."""
+    data = path.read_bytes()
+    reserved, kind, count = struct.unpack_from("<HHH", data)
+    if reserved != 0 or kind != 1:
+        raise ValueError(f"{path} is not an icon file")
+    images = {}
+    for index in range(count):
+        width, height, _, _, _, _, size, offset = struct.unpack_from("<BBBBHHII", data, 6 + 16 * index)
+        png = data[offset:offset + size]
+        if width == height and png.startswith(b"\x89PNG\r\n\x1a\n"):
+            images[width or 256] = png
+    return images
 
 
 def make_icns(resources):
-    """The logo as an .icns, where macOS's own tools are available."""
-    if shutil.which("iconutil") is None or shutil.which("sips") is None:
+    """The Windows icon (resources/sarusaru.ico) as an .icns, where macOS's iconutil is available.
+
+    Each slot of the iconset takes the .ico's image of exactly that size; slots
+    it has no image for are left out rather than scaled up."""
+    if shutil.which("iconutil") is None:
         return None
-    logo = ROOT / "include/image/logo.png"
+    images = ico_images(PROFILE / "resources/sarusaru.ico")
     with tempfile.TemporaryDirectory() as temporary:
         iconset = Path(temporary) / "sarusaru.iconset"
         iconset.mkdir()
         for size in (16, 32, 128, 256, 512):
             for scale in (1, 2):
-                pixels = size * scale
-                name = f"icon_{size}x{size}{'@2x' if scale == 2 else ''}.png"
-                subprocess.run(["sips", "-z", str(pixels), str(pixels), str(logo), "--out", str(iconset / name)],
-                               check=True, capture_output=True)
+                png = images.get(size * scale)
+                if png is not None:
+                    (iconset / f"icon_{size}x{size}{'@2x' if scale == 2 else ''}.png").write_bytes(png)
+        if not any(iconset.iterdir()):
+            raise ValueError("resources/sarusaru.ico has no PNG images of an .icns size")
         subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(resources / "sarusaru.icns")], check=True)
     return "sarusaru.icns"
 

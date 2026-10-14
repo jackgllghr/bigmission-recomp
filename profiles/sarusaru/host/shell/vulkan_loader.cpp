@@ -18,9 +18,9 @@ bool VulkanLoader::load(std::string &error) {
 #if defined(__APPLE__)
     // Errors only, unless MVK_CONFIG_LOG_LEVEL is already set.
     setenv("MVK_CONFIG_LOG_LEVEL", "1", 0);
-    // The pinned MoltenVK sits in lib/ next to the executable (also inside an app bundle).
-    const auto directory = platform::executable_directory();
-    const auto utf8 = ((directory ? *directory : std::filesystem::path()) / "lib" / "libMoltenVK.dylib").u8string();
+    // The pinned MoltenVK, shipped with the port's other libraries.
+    const auto directory = platform::library_directory();
+    const auto utf8 = ((directory ? *directory : std::filesystem::path()) / "libMoltenVK.dylib").u8string();
     std::string path(utf8.begin(), utf8.end());
     library = path.c_str();
 #endif

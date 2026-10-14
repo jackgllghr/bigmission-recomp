@@ -34,8 +34,7 @@ ImFont *load(const char *file, bool merge = false) {
 const Fonts &fonts() { return g_fonts; }
 
 std::filesystem::path resource_path(std::string_view name) {
-    // Beside the executable, as everything the port ships is (also inside an app bundle).
-    const auto directory = platform::executable_directory();
+    const auto directory = platform::shipped_files_directory();
     return (directory ? *directory : std::filesystem::path()) / "resources" /
            std::filesystem::path(std::u8string(name.begin(), name.end()));
 }

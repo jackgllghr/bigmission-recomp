@@ -447,8 +447,10 @@ if(SARUSARU_HAS_RENDERER)
     sarusaru_game_stack(sarusaru)
     # Shipped: only the relative rpath, never the build tree's (which CMake
     # adds for the imported FFmpeg libraries and would name this machine).
+    # In the macOS app bundle (scripts/package.py) the libraries are in Contents/Frameworks.
     if(APPLE)
-        set_target_properties(sarusaru PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "@loader_path/lib")
+        set_target_properties(sarusaru PROPERTIES BUILD_WITH_INSTALL_RPATH ON
+            INSTALL_RPATH "@loader_path/lib;@executable_path/../Frameworks")
     elseif(UNIX)
         set_target_properties(sarusaru PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN/lib")
     endif()

@@ -82,23 +82,25 @@ bool download_llvm_mingw(ProcessGroup &processes, const std::filesystem::path &d
 
 std::optional<Kit> find_kit(std::string &missing) {
     const auto directory = platform::executable_directory();
-    if (!directory) {
+    const auto shipped = platform::shipped_files_directory();
+    const auto libraries = platform::library_directory();
+    if (!directory || !shipped || !libraries) {
         missing = "the executable's directory";
         return std::nullopt;
     }
     Kit kit;
 #if defined(_WIN32)
     kit.code_generator = *directory / "psp_recomp.exe";
-    kit.runtime_library = *directory / "sdk" / "lib" / "libpsprecomp_runtime.dll.a";
+    kit.runtime_library = *shipped / "sdk" / "lib" / "libpsprecomp_runtime.dll.a";
 #elif defined(__APPLE__)
     kit.code_generator = *directory / "psp_recomp";
-    kit.runtime_library = *directory / "lib" / "libpsprecomp_runtime.dylib";
+    kit.runtime_library = *libraries / "libpsprecomp_runtime.dylib";
 #else
     kit.code_generator = *directory / "psp_recomp";
-    kit.runtime_library = *directory / "lib" / "libpsprecomp_runtime.so";
+    kit.runtime_library = *libraries / "libpsprecomp_runtime.so";
 #endif
-    kit.include = *directory / "sdk" / "include";
-    kit.module_entry = *directory / "sdk" / "game_module_entry.cpp";
+    kit.include = *shipped / "sdk" / "include";
+    kit.module_entry = *shipped / "sdk" / "game_module_entry.cpp";
     for (const auto *part : {&kit.code_generator, &kit.runtime_library, &kit.module_entry}) {
         if (!is_file(*part)) {
             missing = path_argument(*part);

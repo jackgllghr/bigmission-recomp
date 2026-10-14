@@ -16,4 +16,11 @@ namespace sarusaru::platform {
 // nothing if the system will not say.
 [[nodiscard]] std::optional<std::filesystem::path> executable_directory();
 
+// Where the port's shipped files are: resources/ and sdk/ in the shipped-files
+// directory, the shared libraries in the library directory. Both are the
+// executable's directory (libraries in its lib/), except in a macOS app
+// bundle: Contents/Resources and Contents/Frameworks.
+[[nodiscard]] std::optional<std::filesystem::path> shipped_files_directory();
+[[nodiscard]] std::optional<std::filesystem::path> library_directory();
+
 } // namespace sarusaru::platform

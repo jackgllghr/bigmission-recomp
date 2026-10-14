@@ -68,4 +68,33 @@ std::optional<std::filesystem::path> executable_directory() {
     return (error ? path : resolved).parent_path();
 }
 
+namespace {
+
+// Contents/ of the app bundle the executable is in, if it is in one.
+std::optional<std::filesystem::path> bundle_contents([[maybe_unused]] const std::filesystem::path &executable_directory) {
+#if defined(__APPLE__)
+    const auto contents = executable_directory.parent_path();
+    if (executable_directory.filename() == "MacOS" && contents.filename() == "Contents" &&
+        contents.parent_path().extension() == ".app")
+        return contents;
+#endif
+    return std::nullopt;
+}
+
+} // namespace
+
+std::optional<std::filesystem::path> shipped_files_directory() {
+    auto directory = executable_directory();
+    if (!directory) return std::nullopt;
+    if (auto contents = bundle_contents(*directory)) return *contents / "Resources";
+    return directory;
+}
+
+std::optional<std::filesystem::path> library_directory() {
+    auto directory = executable_directory();
+    if (!directory) return std::nullopt;
+    if (auto contents = bundle_contents(*directory)) return *contents / "Frameworks";
+    return *directory / "lib";
+}
+
 } // namespace sarusaru::platform
