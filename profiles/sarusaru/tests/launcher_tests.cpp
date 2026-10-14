@@ -226,9 +226,10 @@ void rows() {
     require(!settings.skip_intro_logos, "logo skip did not turn off");
     require(seen == 12, "settings rows missing from the tabs");
     const auto graphics = settings_tabs().front().rows;
-    require(settings_tabs().size() == 3u && graphics.size() >= 2u && graphics[graphics.size() - 2] == SettingRow::Fullscreen &&
-                graphics.back() == SettingRow::WindowSize,
-            "window size is not under fullscreen on the Graphics tab");
+    require(settings_tabs().size() == 3u && graphics.size() == 7u && graphics[0] == SettingRow::Fullscreen &&
+                graphics[1] == SettingRow::WindowSize && graphics[5] == SettingRow::CelShading &&
+                graphics[6] == SettingRow::Textures,
+            "Graphics rows not in order: full screen and window size first, cel shading and textures last");
 }
 
 void bindings() {

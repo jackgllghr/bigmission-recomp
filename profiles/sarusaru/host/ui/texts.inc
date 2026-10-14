@@ -34,7 +34,7 @@ X(SettingsTitle, "Settings", "オプション")
 X(TabGraphics, "Graphics", "グラフィック")
 X(TabControls, "Controls", "操作")
 X(TabInterface, "Interface", "メニュー")
-X(Bindings, "Key and button bindings", "キーとボタンの割り当て")
+X(Bindings, "Key and Button Bindings", "キーとボタンの割り当て")
 X(BindingsDetail, "keyboard and gamepad", "キーボードとゲームパッド")
 X(BindingsDescription, "Choose the keys and gamepad buttons for each PSP control.",
   "PSP の各ボタンに使うキーとゲームパッドのボタンを選びます。")
@@ -45,13 +45,13 @@ X(ValueCelBanded, "Banded", "階調")
 X(ValueCelOutlined, "Outlined", "輪郭線付き")
 X(DescCelOutlined, "Banded shading with black outlines around characters and the world, like a cartoon. HUD and menus keep their original edges.",
     "段階的な陰影と黒い輪郭線でキャラクターと背景をアニメ風に描画します。HUD とメニューの輪郭はそのままです。")
-X(RowCelShading, "Cel shading", "セルシェーディング")
+X(RowCelShading, "Cel Shading", "セルシェーディング")
 X(DescCelShading, "Gives 3D shading distinct bands for a cartoon look. Keeps textures, HUD and menus intact.",
     "3D の陰影を段階的にして、アニメ風に描画します。テクスチャ、HUD、メニューはそのままです。")
 X(RowResolution, "Resolution", "解像度")
 X(DescResolution, "Draws the game at this many times the PSP's 480×272. Higher is sharper and needs a faster GPU.",
   "PSP の 480×272 の何倍で描画するかを選びます。高いほど鮮明になりますが、より高性能な GPU が必要です。")
-X(RowFrameRate, "Frame rate", "フレームレート")
+X(RowFrameRate, "Frame Rate", "フレームレート")
 X(ValueFps, "{0} FPS", "{0} FPS")
 X(ValueFrameRateNative, "Native", "標準")
 X(DescFrameRate, "How often pictures are shown. The game itself keeps its speed.",
@@ -59,34 +59,34 @@ X(DescFrameRate, "How often pictures are shown. The game itself keeps its speed.
 X(DescFrameRate60,
   "Shows a blended picture between the game's own 30 FPS frames, at the original game speed. Adds about 17 ms of delay.",
   "ゲーム本来の 30 FPS のフレームの間に補間した画面を表示します。ゲームの速さは変わりません。遅延が約 17 ms 増えます。")
-X(RowFov, "Field of view", "視野角")
+X(RowFov, "Field of View", "視野角")
 X(ValueFovNative, "Native (36.5°)", "標準 (36.5°)")
 X(DescFov, "Widens the camera in stages and the hub. Menus and cutscenes keep the original view.",
   "ステージとハブでカメラの視野を広げます。メニューやイベントシーンは元の視野のままです。")
-X(RowFullscreen, "Fullscreen", "フルスクリーン")
+X(RowFullscreen, "Full Screen", "フルスクリーン")
 X(DescFullscreen, "Fills the screen at the desktop's resolution. Alt+Enter or F11 switches while playing.",
   "デスクトップの解像度で画面全体に表示します。プレイ中は Alt+Enter か F11 で切り替えられます。")
-X(RowWindowSize, "Window size", "ウィンドウサイズ")
+X(RowWindowSize, "Window Size", "ウィンドウサイズ")
 X(DescWindowSize, "The window's size when the game starts. It can still be resized by dragging.",
   "起動時のウィンドウの大きさです。ドラッグして変えることもできます。")
-X(DescWindowSizeFullscreen, "Fullscreen is on. Turn it off to choose a window size.",
+X(DescWindowSizeFullscreen, "Full Screen is on. Turn it off to choose a window size.",
   "フルスクリーンがオンです。ウィンドウサイズを選ぶにはオフにしてください。")
-X(RowDeadZone, "Stick dead zone", "スティックのデッドゾーン")
+X(RowDeadZone, "Stick Dead Zone", "スティックのデッドゾーン")
 X(DescDeadZone, "How far a stick must move before the game sees it. Raise it if a worn stick drifts.",
   "スティックをどれだけ倒すと反応するかを決めます。スティックが勝手に動く場合は上げてください。")
-X(RowSkipIntroLogos, "Skip intro logos", "起動時のロゴをスキップ")
+X(RowSkipIntroLogos, "Skip Intro Logos", "起動時のロゴをスキップ")
 X(DescSkipIntroLogos, "Skip the opening logos automatically. You can also press the game’s Start button during the logos (Enter by default on keyboard).",
   "起動時のロゴを自動でスキップします。ロゴの表示中にゲームのSTARTボタン（キーボードの初期設定はEnter）を押してもスキップできます。")
-X(RowConfirm, "Confirm button", "決定ボタン")
+X(RowConfirm, "Confirm Button", "決定ボタン")
 X(ValueSouth, "South", "下")
 X(ValueEast, "East", "右")
 X(DescConfirm, "The face button that confirms in these menus. The game itself confirms with the east button (○ on PlayStation), as in Japan.",
   "このメニューで決定に使うボタンです。ゲーム本編では日本版と同じく右のボタン（PlayStationの○）で決定します。")
 X(RowLanguage, "Language", "言語 (Language)")
 X(ValueAutomatic, "Automatic ({0})", "自動（{0}）")
-X(DescLanguage, "The language of these menus. Automatic follows the system's language. Game text sets the game's own.",
+X(DescLanguage, "The language of these menus. Automatic follows the system's language. Game Text sets the game's own.",
   "このメニューの言語です。「自動」はシステムの言語に合わせます。ゲーム本編の言語は「ゲームの文章」で選びます。")
-X(RowGameText, "Game text", "ゲームの文章")
+X(RowGameText, "Game Text", "ゲームの文章")
 X(ValueGameJapanese, "Japanese (original)", "日本語（オリジナル）")
 X(ValueGameEnglish, "English (unofficial)", "英語（非公式）")
 X(DescGameText,

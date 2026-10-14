@@ -152,9 +152,9 @@ yellow and wears Pipo's red siren lamp.
   whose `BOOT.BIN` is the supported executable. Another PSP game, a damaged
   image or a different executable gets a sentence saying so above the
   buttons, as does a kept image that has since moved or changed.
-- **Settings** has Graphics, Controls and Interface tabs: resolution,
-  HD textures, frame rate (Native, 30 or 60 FPS motion), FOV, cel shading,
-  fullscreen, window size (not while fullscreen), the stick dead zone, the
+- **Settings** has Graphics, Controls and Interface tabs: full screen,
+  window size (not while full screen), resolution, frame rate (Native, 30 or
+  60 FPS motion), FOV, cel shading, HD textures, the stick dead zone, the
   launcher's language, the game's text (below) and the confirm button. Values
   step with left/right, the row's arrows, or by activating it; each is saved
   at once.

@@ -8,8 +8,8 @@
 namespace sarusaru::ui {
 namespace {
 
-constexpr SettingRow kGraphics[] = {SettingRow::InternalResolution, SettingRow::Textures, SettingRow::FrameRate,
-    SettingRow::Fov, SettingRow::CelShading, SettingRow::Fullscreen, SettingRow::WindowSize};
+constexpr SettingRow kGraphics[] = {SettingRow::Fullscreen, SettingRow::WindowSize, SettingRow::InternalResolution,
+    SettingRow::FrameRate, SettingRow::Fov, SettingRow::CelShading, SettingRow::Textures};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone};
 constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::ConfirmButton, SettingRow::SkipIntroLogos};
 constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabControls, kControls},

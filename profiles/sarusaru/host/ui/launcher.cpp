@@ -28,6 +28,14 @@ constexpr std::uint64_t kFrameNs = 16'666'667u;
 
 ImVec2 display() { return ImGui::GetIO().DisplaySize; }
 
+// The settings screen's focus ID for `row`, on its tab (rows are "row" and their index there).
+std::string row_id(SettingRow row) {
+    for (const auto &tab : settings_tabs())
+        if (const auto at = std::find(tab.rows.begin(), tab.rows.end(), row); at != tab.rows.end())
+            return "row" + std::to_string(at - tab.rows.begin());
+    return "row0";
+}
+
 std::string utf8(const std::filesystem::path &path) {
     const auto text = path.u8string();
     return {text.begin(), text.end()};
@@ -580,7 +588,7 @@ void Launcher::textures() {
             settings_.texture_pack = texture_build_->destination();
             texture_build_.reset();
             save();
-            go(Screen::Settings, "row1");
+            go(Screen::Settings, row_id(SettingRow::Textures));
             return;
         }
         if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
@@ -652,7 +660,7 @@ void Launcher::textures() {
         if (texture_build_)
             texture_build_->cancel();
         else
-            go(Screen::Settings, "row1");
+            go(Screen::Settings, row_id(SettingRow::Textures));
     }
     hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
                    {Control::Back, tr(texture_build_ ? Text::HintCancel : Text::HintBack)}});
@@ -682,7 +690,7 @@ void Launcher::pack() {
             settings_.translation_pack = pack_download_->destination();
             pack_download_.reset();
             save();
-            go(Screen::Settings, "row1");
+            go(Screen::Settings, row_id(SettingRow::GameText));
             return;
         }
         if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
@@ -731,7 +739,7 @@ void Launcher::pack() {
         if (pack_download_)
             pack_download_->cancel();
         else
-            go(Screen::Settings, "row1");
+            go(Screen::Settings, row_id(SettingRow::GameText));
     }
     if (source)
         hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
