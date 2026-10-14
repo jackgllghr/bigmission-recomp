@@ -114,8 +114,14 @@ a separate unresolved-candidate queue. Keys retain table identities and context
 evidence; conflicting area associations are explicit. Translator edits survive
 re-export and placeholder/source validation is available. See
 [`profiles/sarusaru/docs/translation-handoff.md`](profiles/sarusaru/docs/translation-handoff.md).
-Gameplay context confirmation, custom message/script decoding, image transcription
-and runtime import of these additional translations remain to do.
+Gameplay context confirmation, custom message/script decoding and image
+transcription remain to do.
+
+English v1 now applies machine drafts for all 193 structured gameplay labels,
+with verified padded name fields and explicit short variants for packed area
+strings. CSV human edits can be imported into a separate authoring catalog;
+human terminology and gameplay layout review remain pending. See
+[`profiles/sarusaru/docs/english-v1.md`](profiles/sarusaru/docs/english-v1.md).
 
 ### 7. Distribution and verification
 

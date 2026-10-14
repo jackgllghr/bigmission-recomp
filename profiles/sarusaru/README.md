@@ -23,6 +23,10 @@ labels and unresolved text candidates are separate. See
 [`docs/translation-handoff.md`](docs/translation-handoff.md) for editing,
 validation and the remaining context gaps.
 
+An optional [English v1 pack](docs/english-v1.md) adds 193 machine-translated
+gameplay labels. These are drafts awaiting human review; it also supports
+importing the later human-edited label CSV.
+
 ## Requirements
 
 - Apple Silicon Mac and Xcode command-line tools (`xcode-select --install`).

@@ -258,6 +258,10 @@ def export(elf_path, output):
         path = output / name
         if path.exists():
             rows[:] = read_edits(path, rows)
+    draft_path = PROFILE / 'resources/translations/english-gameplay-v1.json'
+    if draft_path.exists():
+        from translation_drafts import seed_drafts
+        seed_drafts(labels, json.loads(draft_path.read_text(encoding='utf-8')))
     bundle = {'schema': 1, 'source_locale': 'ja', 'target_locale': 'en',
               'disc_id': identity['disc_id'], 'disc_version': identity['disc_version'],
               'executable_sha256': sha(elf), 'labels': labels, 'candidates': candidates}
@@ -280,17 +284,30 @@ def main():
     generate.add_argument('--output', type=Path, default=PROFILE / 'analysis/translations/en')
     check = sub.add_parser('validate')
     check.add_argument('bundle', type=Path)
+    ingest = sub.add_parser('import-drafts', help='Convert human-edited label CSV into an English-only authoring catalog')
+    ingest.add_argument('bundle', type=Path)
+    ingest.add_argument('--catalog', type=Path, default=PROFILE / 'resources/translations/english-gameplay-v1.json')
+    ingest.add_argument('--output', type=Path, default=PROFILE.parents[1] / 'out/translations/english-human-draft.json')
     args = parser.parse_args()
     try:
         if args.command == 'export':
             export(args.elf, args.output)
-        else:
+        elif args.command == 'validate':
             bundle = json.loads((args.bundle / 'catalog.json').read_text(encoding='utf-8'))
             total = 0
             for name in ('labels', 'candidates'):
                 rows = read_edits(args.bundle / f'{name}.csv', bundle[name])
                 total += sum(bool(row['translation_en']) for row in rows)
             print(f'Validated {total} translations; runtime layout/encoding checks remain separate')
+        else:
+            from translation_drafts import import_handoff
+            protected = [args.catalog, args.bundle / 'catalog.json', args.bundle / 'labels.csv', args.bundle / 'candidates.csv']
+            if args.output.resolve() in {path.resolve() for path in protected}:
+                raise ValueError('Imported draft output must not replace its inputs')
+            imported = import_handoff(args.bundle, json.loads(args.catalog.read_text(encoding='utf-8')))
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write(args.output, json.dumps(imported, ensure_ascii=False, indent=2) + '\n')
+            print(f'Imported {len(imported["strings"])} gameplay label drafts to {args.output}')
     except (ValueError, OSError, KeyError, struct.error) as exc:
         parser.exit(1, f'extract_translation_labels: {exc}\n')
 

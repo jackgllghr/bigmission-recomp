@@ -15,6 +15,8 @@ metadata contain no extracted game text. No game file is changed by this tool.
    `untranslated`, `draft` or `reviewed`. Empty translation means Japanese
    fallback; draft/reviewed requires a translation. Existing English menu text
    starts as draft, including error paths that still need runtime verification.
+   Gameplay labels also start with machine drafts; their notes request human
+   review and identify any short runtime version.
 3. Preserve printf tokens such as `%s`, `%02d` and `%%` exactly, in order.
    Preserve intentional line breaks where the UI needs them. Put terminology
    questions, uncertainty or a longer preferred wording in `translator_note`.
@@ -89,5 +91,8 @@ Python standard library.
 This first extraction covers executable labels, not a complete game corpus.
 Image labels, custom encoded message streams, level scripts, movies and audio
 need separate extraction/transcription and capture work. Existing menu image
-translations remain in `resources/translations/english-menu.json`. New labels
-in this handoff are not automatically applied by the existing menu pack builder.
+translations remain in `resources/translations/english-menu.json`. The optional
+[English v1 pack](english-v1.md) now applies the 193 structured gameplay labels
+and documents importing future human edits with `import-drafts`. The conservative
+`max_bytes` here remains the original text length; v1 separately validates padded
+name fields for longer English replacements.

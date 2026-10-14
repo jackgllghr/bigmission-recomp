@@ -49,6 +49,7 @@ private:
         std::vector<Region> regions;
     };
     std::string locale_;
+    bool padded_strings_{};
     std::vector<Entry> entries_;
     struct StringEntry {
         std::string id, source_hash, replacement;

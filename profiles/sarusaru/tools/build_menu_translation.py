@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an English main-menu texture pack from your ISO and the supplied logo.
+"""Build an English menu pack, optionally with structured gameplay label drafts.
 
 Requires Pillow (pip install Pillow). Generated packs contain only replacement
 pixels and source hashes; extracted Japanese textures stay in memory.
@@ -118,8 +118,11 @@ def render_line(run, canvas):
     canvas.alpha_composite(layer.resize((run['width'], 16), Image.Resampling.LANCZOS))
 
 
-def build(iso_path, logo_path, catalog_path, output):
-    if output.resolve() in {iso_path.resolve(), logo_path.resolve(), catalog_path.resolve()}:
+def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None):
+    inputs = {iso_path.resolve(), logo_path.resolve(), catalog_path.resolve()}
+    if gameplay_catalog is not None:
+        inputs.add(gameplay_catalog.resolve())
+    if output.resolve() in inputs:
         raise ValueError('Pack output must not replace an input file')
     from PIL import Image, ImageOps
     supported = json.loads((PROFILE / 'config/supported_game.json').read_text())
@@ -129,6 +132,9 @@ def build(iso_path, logo_path, catalog_path, output):
         boot = iso.file(supported['executable_path'], 4_000_000)
         if hashlib.sha256(boot).hexdigest() != supported['executable_sha256']:
             raise ValueError('Unsupported executable; menu adapter supports UCJS10060 version 1.00')
+        if gameplay_catalog is not None:
+            from translation_drafts import merge_gameplay_catalog
+            catalog = merge_gameplay_catalog(boot, catalog, json.loads(gameplay_catalog.read_text(encoding='utf-8')))
         sources = {SOURCE_PATH: iso.file(SOURCE_PATH, 6_000_000), COMMON_SOURCE_PATH: iso.file(COMMON_SOURCE_PATH, 6_000_000)}
         members = archive_members(sources[SOURCE_PATH])
         common = archive_members(decode_lzs(sources[COMMON_SOURCE_PATH]))
@@ -149,7 +155,7 @@ def build(iso_path, logo_path, catalog_path, output):
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
     regions = render_labels(catalog, images)
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
-    result = bytearray(b'SSTEXPK2')
+    result = bytearray(b'SSTEXPK3' if any('capacity' in entry for entry in catalog.get('strings', [])) else b'SSTEXPK2')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', len(sources))
     for source_path, source in sources.items():
@@ -182,13 +188,19 @@ def build(iso_path, logo_path, catalog_path, output):
         if end < 0 or not 1 <= end - offset < 2048:
             raise ValueError('Invalid original string slot')
         source_string = boot[offset:end + 1]
+        capacity = entry.get('capacity', len(source_string))
+        if type(capacity) is not int or not len(source_string) <= capacity <= 2048 or offset + capacity > len(boot):
+            raise ValueError(f'{key}: invalid string field capacity')
+        if any(boot[end:offset + capacity]):
+            raise ValueError(f'{key}: string field padding is not zero')
+        source_field = boot[offset:offset + capacity]
         if not isinstance(text, str) or not text or any(ord(c) < 32 and c != '\n' or ord(c) > 126 for c in text):
             raise ValueError('Dialog translation supports ASCII and line breaks')
         lines = text.split('\n')
         if len(lines) > entry['max_lines'] or any(len(line) > entry['max_columns'] for line in lines):
             raise ValueError(f'{key}: dialog exceeds its layout budget')
         replacement = text.encode('ascii')
-        if len(replacement) >= len(source_string):
+        if len(replacement) >= capacity:
             raise ValueError(f'{key}: translation exceeds its original byte slot')
         def placeholders(raw):
             matches = list(token.finditer(raw))
@@ -197,10 +209,10 @@ def build(iso_path, logo_path, catalog_path, output):
             return [m.group() for m in matches if m.group() != '%%']
         if placeholders(source_string[:-1].decode('cp932')) != placeholders(replacement.decode('ascii')):
             raise ValueError(f'{key}: formatting tokens differ')
-        if any(offset < b and a < end + 1 for a, b in occupied):
+        if any(offset < b and a < offset + capacity for a, b in occupied):
             raise ValueError('Overlapping dialog string slots')
-        occupied.append((offset, end + 1))
-        result += name(key) + struct.pack('<II', offset, len(source_string)) + digest(source_string)
+        occupied.append((offset, offset + capacity))
+        result += name(key) + struct.pack('<II', offset, capacity) + digest(source_field)
         result += struct.pack('<H', len(replacement)) + replacement
     runs = catalog.get('glyph_runs', [])
     result += struct.pack('<H', len(runs))
@@ -230,10 +242,11 @@ def main():
     parser.add_argument('iso', type=Path)
     parser.add_argument('--logo', type=Path, default=ROOT / 'include/image/SaruSaruBigMission.png')
     parser.add_argument('--catalog', type=Path, default=PROFILE / 'resources/translations/english-menu.json')
+    parser.add_argument('--gameplay-catalog', type=Path, help='Include contextual English gameplay label drafts')
     parser.add_argument('--output', type=Path, default=ROOT / 'out/translations/english-menu.sstp')
     args = parser.parse_args()
     try:
-        build(args.iso, args.logo, args.catalog, args.output)
+        build(args.iso, args.logo, args.catalog, args.output, args.gameplay_catalog)
     except (ValueError, OSError, KeyError, ImportError, struct.error) as exc:
         parser.exit(1, f'build_menu_translation: {exc}\n')
 

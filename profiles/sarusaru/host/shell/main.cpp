@@ -181,7 +181,7 @@ int main(int argc, char **argv) {
                 renderer.set_translation_pack(&*translation_pack);
                 std::cout << "Translation: " << translation_pack->locale() << " (" << translation_pack->size()
                           << " menu textures, " << translation_pack->string_count()
-                          << " dialog strings); untranslated screens retain Japanese\n";
+                          << " text strings); untranslated screens retain Japanese\n";
             }
             auto &memory = game.runtime.memory();
             // Frame interpolation: each draw is also blended with its match in

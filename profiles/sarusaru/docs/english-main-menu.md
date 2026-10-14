@@ -55,6 +55,8 @@ Japanese keyboard's characters remain available intentionally. Select ABC for
 Latin name entry. Existing player names and save metadata are preserved.
 Gameplay, movies, minigame content beyond shared controls and other unrecognized
 text retain Japanese. The fourth main-menu entry remains progression-dependent.
+The optional [English v1 build](english-v1.md) additionally includes machine
+drafts for 193 structured gameplay names; the default menu-only pack remains V2.
 
 The UTF-8 authoring catalog is
 [`resources/translations/english-menu.json`](../resources/translations/english-menu.json).
@@ -146,6 +148,12 @@ packs still load. V2 contains:
 5. `u16` glyph-line count. Each record has a length-prefixed ASCII ID, `u16`
    width/height, 64-byte font hash, 64-byte line signature, `u16` glyph count,
    and `u32` pixel size plus a padded 512x16 RGBA image.
+
+`SSTEXPK3` retains this layout and additionally allows verified zero padding
+after the original string's first NUL within its declared capacity. V1/V2
+retain their original validation rules. The [gameplay v1 builder](english-v1.md)
+uses V3 only for observed fixed name fields, with full field hashes and padding
+validation; it does not expand packed area strings into neighboring data.
 
 Limits include 32 MiB per pack/source, 16 source files, 64 images, 64 regions per
 image, 256 strings, 32 glyph lines, GE extents up to 512, IDs up to 128 bytes and

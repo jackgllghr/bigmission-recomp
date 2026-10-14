@@ -134,6 +134,29 @@ int main() {
     try { load(outside).apply_strings(memory, elf, 0); require(false, "non-rodata patch accepted"); }
     catch (const std::runtime_error &) {}
 
+    // V3 permits verified zero-padded fixed name fields, preserving their tail
+    // metadata and neighboring strings. Older V2 retains strict NUL slot rules.
+    Bytes padded; text(padded, "Name"); padded.resize(24, 0);
+    auto padded_elf = string_elf(padded, second);
+    auto padded_pack = [&](const Bytes &source, char version) {
+        auto result = version2(); result[7] = version; integer(result, 1, 4);
+        string_record(result, "character.synthetic.name", 256, source, "Longer Name");
+        integer(result, 0, 2); return result;
+    };
+    padded_elf.load_into(memory);
+    try { load(padded_pack(padded, '2')).apply_strings(memory, padded_elf, 0); require(false, "V2 accepted padded field"); }
+    catch (const std::runtime_error &) {}
+    load(padded_pack(padded, '3')).apply_strings(memory, padded_elf, 0);
+    require(memory.load8(0x08801000) == 'L' && memory.load8(0x0880100B) == 0 &&
+            memory.load8(0x08801017) == 0 && memory.load8(0x08801020) == 'S',
+            "V3 padded field replacement exceeded its name field");
+    auto nonzero_padding = padded; nonzero_padding.back() = 42;
+    auto bad_padded_elf = string_elf(nonzero_padding, second); bad_padded_elf.load_into(memory);
+    try { load(padded_pack(nonzero_padding, '3')).apply_strings(memory, bad_padded_elf, 0);
+          require(false, "nonzero metadata treated as name padding"); }
+    catch (const std::runtime_error &) {}
+    require(memory.load8(0x08801000) == 'N', "failed padded field validation modified memory");
+
     // Complete glyph runs translate once, independent of guest addresses.
     Bytes glyph_signature;
     for (const auto value : {0, 0, 0, 16, 16, 0}) integer(glyph_signature, value, 2);

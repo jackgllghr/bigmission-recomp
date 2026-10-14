@@ -70,9 +70,10 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) invalid("short read");
     Reader reader(bytes);
     const auto magic = reader.text(8);
-    if (magic != "SSTEXPK1" && magic != "SSTEXPK2") invalid("unsupported format/version");
+    if (magic != "SSTEXPK1" && magic != "SSTEXPK2" && magic != "SSTEXPK3") invalid("unsupported format/version");
     if (disc_id.size() != 9 || reader.text(9) != disc_id || reader.digest() != executable_hash) invalid("incompatible game");
     TexturePack pack;
+    pack.padded_strings_ = magic == "SSTEXPK3";
     pack.locale_ = reader.text(2);
     if (pack.locale_ != "en") invalid("unsupported locale");
     const auto source_count = reader.integer(4);
@@ -102,7 +103,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             entry.width > entry.ge_width || entry.height > entry.ge_height || entry.buffer_width < entry.width || entry.buffer_width > 512)
             invalid("invalid texture dimensions");
         entry.source_hash = reader.digest();
-        if (magic == "SSTEXPK2") {
+        if (magic != "SSTEXPK1") {
             const auto regions = reader.integer(2);
             if (regions == 0 || regions > 64) invalid("invalid replacement region count");
             for (std::uint32_t r = 0; r < regions; ++r) {
@@ -129,7 +130,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
         entry.rgba.assign(rgba.begin(), rgba.end());
         pack.entries_.push_back(std::move(entry));
     }
-    if (magic == "SSTEXPK2") {
+    if (magic != "SSTEXPK1") {
         const auto string_count = reader.integer(4);
         if (string_count > 256) invalid("too many string replacements");
         std::vector<std::pair<std::uint32_t, std::uint32_t>> ranges;
@@ -222,10 +223,14 @@ void TexturePack::apply_strings(psprecomp::GuestMemory &memory, const psprecomp:
         if (!address) invalid("unmapped string slot");
         std::vector<std::uint8_t> original(entry.capacity);
         for (std::uint32_t i = 0; i < entry.capacity; ++i) original[i] = memory.load8(*address + i);
-        if (original.back() != 0 || std::find(original.begin(), original.end() - 1, 0) != original.end() - 1 ||
+        const auto terminator = std::find(original.begin(), original.end(), 0);
+        if (terminator == original.begin() || terminator == original.end() ||
+            (!padded_strings_ && terminator != original.end() - 1) ||
+            std::any_of(terminator, original.end(), [](auto byte) { return byte != 0; }) ||
             psprecomp::sha256(original) != entry.source_hash)
             invalid("string source mismatch: " + entry.id);
-        const std::string_view source(reinterpret_cast<const char *>(original.data()), original.size() - 1);
+        const std::string_view source(reinterpret_cast<const char *>(original.data()),
+                                      static_cast<std::size_t>(terminator - original.begin()));
         if (placeholders(source) != placeholders(entry.replacement)) invalid("formatting tokens changed: " + entry.id);
         addresses.push_back(*address);
     }
