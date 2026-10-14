@@ -28,6 +28,10 @@ int main() {
     require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
     const auto english = parse_settings("[translation]\nlanguage = en\npack = packs/English menu.sstp\n");
     require(english.translation_language == "en" && english.translation_pack == "packs/English menu.sstp", "translation selection not parsed");
+    const auto textured = parse_settings("[graphics]\ntexture_pack = textures/hd 4x\n");
+    require(textured.texture_pack == "textures/hd 4x" && parse_settings(serialize_settings(textured)) == textured,
+            "texture pack setting does not round-trip");
+    require(parse_settings("[graphics]\ntexture_pack = none\n").texture_pack.empty(), "texture_pack none not parsed");
     require(parse_settings(serialize_settings(english)) == english, "translation settings do not round-trip");
     const auto independent = parse_settings(
         "[translation]\nlanguage = en\npack = packs/menu.sstp\n[interface]\nlanguage = ja\n");

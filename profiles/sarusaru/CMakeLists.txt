@@ -41,6 +41,9 @@ if(SARUSARU_HAS_RENDERER)
     add_library(sarusaru_ui STATIC host/ui/layer.cpp host/ui/ui_renderer.cpp host/ui/theme.cpp host/ui/widgets.cpp
         host/ui/launcher.cpp host/ui/ui_script.cpp)
     target_link_libraries(sarusaru_ui PUBLIC sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install)
+    # Texture dump mode and on-device HD texture packs (PNG through SDL).
+    add_library(sarusaru_textures STATIC host/textures/texture_dump.cpp host/textures/hd_pack.cpp)
+    target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu SDL3::SDL3)
     add_library(sarusaru_install STATIC host/install/process.cpp host/install/download.cpp host/install/toolchain.cpp
         host/install/game_builder.cpp host/install/pack_download.cpp)
     target_link_libraries(sarusaru_install PUBLIC sarusaru_game_module sarusaru_disc SDL3::SDL3)
@@ -69,9 +72,9 @@ add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gamepl
 target_include_directories(sarusaru_frame_rate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_frame_rate PUBLIC psprecomp_runtime)
 
-add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp host/gpu/frame_interpolator.cpp host/gpu/fov.cpp)
+add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp host/gpu/texture_hash.cpp host/gpu/frame_interpolator.cpp host/gpu/fov.cpp)
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
-target_link_libraries(sarusaru_gpu PUBLIC psprecomp_runtime)
+target_link_libraries(sarusaru_gpu PUBLIC psprecomp_runtime psprecomp_core)
 
 add_library(sarusaru_translation STATIC host/translation/texture_pack.cpp host/translation/glyph_runs.cpp host/translation/dialogue.cpp)
 target_include_directories(sarusaru_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
@@ -100,6 +103,11 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
         set_target_properties(sarusaru_settings_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
         add_test(NAME sarusaru_settings_tests COMMAND sarusaru_settings_tests)
+        add_executable(sarusaru_hd_texture_tests tests/hd_texture_tests.cpp)
+        target_link_libraries(sarusaru_hd_texture_tests PRIVATE sarusaru_textures)
+        set_target_properties(sarusaru_hd_texture_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+        add_test(NAME sarusaru_hd_texture_tests COMMAND sarusaru_hd_texture_tests)
         add_executable(sarusaru_launcher_tests tests/launcher_tests.cpp)
         target_include_directories(sarusaru_launcher_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         target_link_libraries(sarusaru_launcher_tests PRIVATE sarusaru_ui_logic sarusaru_disc)
@@ -393,7 +401,7 @@ if(SARUSARU_HAS_RENDERER)
         target_include_directories(sarusaru PRIVATE
             "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/resources>")
     endif()
-    target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_ui sarusaru_translation)
+    target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_ui sarusaru_translation sarusaru_textures)
     sarusaru_use_ffmpeg(sarusaru)
     sarusaru_game_stack(sarusaru)
     # Shipped: only the relative rpath, never the build tree's (which CMake

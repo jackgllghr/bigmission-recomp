@@ -224,6 +224,15 @@ Without them the launcher says English is not offered by this build. The pack
 is built from the catalogs and the maintainer's own disc (see the
 [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) README) and published there, apart from the port.
 
+### HD textures
+
+HD and 4K textures are upscaled on the player's device from their own disc;
+no game pixels are distributed. `--dump-textures DIR` writes every texture the
+game draws, once each, as PNG with an index. `[graphics] texture_pack` (or
+`--texture-pack DIR`) selects an HD pack directory: `pack.ini` plus one
+upscaled PNG per texture, matched by content. The launcher's download and
+upscaling steps are not built yet. See [`docs/hd-textures.md`](docs/hd-textures.md).
+
 `SARUSARU_UI_SCRIPT` drives the launcher without a person, for checks with
 each device: keys through SDL, buttons through an SDL virtual gamepad (which
 can claim to be a PlayStation, Xbox or Switch pad), mouse and touch input
@@ -484,7 +493,7 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All thirty-five CTest suites pass, including 17 ISO/preparation cases and seven
+- All thirty-six CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes

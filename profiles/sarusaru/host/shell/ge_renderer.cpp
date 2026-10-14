@@ -1,6 +1,7 @@
 #include "shell/ge_renderer.hpp"
 
 #include "gpu/texture_decode.hpp"
+#include "gpu/texture_hash.hpp"
 #include "gpu/triangle_indices.hpp"
 
 #include <algorithm>
@@ -360,17 +361,27 @@ void GeRenderer::end_pass() {
 void GeRenderer::upload(Image &image, const std::uint32_t *texels, std::uint32_t width, std::uint32_t height) {
     end_pass();
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4u;
-    const VkDeviceSize offset = reserve(staging_, staging_cursor_, bytes, 16u);
-    std::memcpy(static_cast<std::uint8_t *>(staging_.mapped) + offset, texels, bytes);
+    // An HD texture can outgrow the per-frame staging buffer: it gets a
+    // buffer of its own, freed once the copy has run.
+    Buffer dedicated;
+    const bool oversized = bytes > staging_.size;
+    if (oversized && !vk_.create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, dedicated)) return;
+    Buffer &source = oversized ? dedicated : staging_;
+    const VkDeviceSize offset = oversized ? 0u : reserve(staging_, staging_cursor_, bytes, 16u);
+    std::memcpy(static_cast<std::uint8_t *>(source.mapped) + offset, texels, bytes);
     vk_.transition(commands_, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     VkBufferImageCopy copy{};
     copy.bufferOffset = offset;
     copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
     copy.imageExtent = {width, height, 1u};
-    vk_.vkCmdCopyBufferToImage(commands_, staging_.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &copy);
+    vk_.vkCmdCopyBufferToImage(commands_, source.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &copy);
     vk_.transition(commands_, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (oversized) {
+        flush();
+        vk_.destroy_buffer(dedicated);
+    }
 }
 
 VkSampler GeRenderer::sampler(const gpu::TextureState &texture) {
@@ -427,11 +438,33 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
         return VK_NULL_HANDLE;
     if (translation_pack_ != nullptr)
         translation_pack_->apply(texture, texels);
+    std::uint32_t width = texture.width, height = texture.height;
+    if (hd_pack_ != nullptr || texture_dump_ != nullptr) {
+        const auto identity = gpu::identify_texture(texture, texels);
+        if (texture_dump_ != nullptr) texture_dump_->record(texture, identity, texels);
+        if (hd_pack_ != nullptr)
+            if (auto hd = hd_pack_->find(identity)) {
+                // The UVs are normalized, so the larger image samples in place
+                // of the original. Columns past the logical width (a row
+                // stride narrower than the GE extent) keep the original texels.
+                const std::uint32_t scale = hd_pack_->scale();
+                width = texture.width * scale;
+                height = texture.height * scale;
+                const std::uint32_t hd_width = identity.width * scale;
+                std::vector<std::uint32_t> scaled(static_cast<std::size_t>(width) * height);
+                for (std::uint32_t y = 0; y < height; ++y)
+                    for (std::uint32_t x = 0; x < width; ++x)
+                        scaled[static_cast<std::size_t>(y) * width + x] =
+                            x < hd_width ? (*hd)[static_cast<std::size_t>(y) * hd_width + x]
+                                         : texels[static_cast<std::size_t>(y / scale) * texture.width + x / scale];
+                texels = std::move(scaled);
+            }
+    }
     Texture entry;
-    if (!vk_.create_image(texture.width, texture.height, kColorFormat,
+    if (!vk_.create_image(width, height, kColorFormat,
                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, entry.image))
         return VK_NULL_HANDLE;
-    upload(entry.image, texels.data(), texture.width, texture.height);
+    upload(entry.image, texels.data(), width, height);
     entry.last_frame = frame_;
     const VkImageView view = entry.image.view;
     textures_.emplace(key, std::move(entry));

@@ -17,6 +17,8 @@
 #include "display/display.hpp"
 #include "gpu/ge_state.hpp"
 #include "shell/vulkan_context.hpp"
+#include "textures/hd_pack.hpp"
+#include "textures/texture_dump.hpp"
 #include "translation/texture_pack.hpp"
 #include "psprecomp/guest_memory.hpp"
 
@@ -38,6 +40,11 @@ public:
     void destroy();
     // Set once before the first draw; the session keeps the pack alive.
     void set_translation_pack(const translation::TexturePack *pack) noexcept { translation_pack_ = pack; }
+    // Also set once before the first draw, and kept alive by the caller:
+    // decoded textures are replaced from `pack` and/or written to `dump`
+    // (after any translation), by their gpu::TextureIdentity.
+    void set_hd_textures(const textures::HdTexturePack *pack) noexcept { hd_pack_ = pack; }
+    void set_texture_dump(textures::TextureDump *dump) noexcept { texture_dump_ = dump; }
 
     // Per frame: `begin_frame` with the frame's command buffer, draws, then
     // `presentable` for the image VulkanContext::end_frame shows.
@@ -60,6 +67,8 @@ public:
 
 private:
     const translation::TexturePack *translation_pack_{};
+    const textures::HdTexturePack *hd_pack_{};
+    textures::TextureDump *texture_dump_{};
     struct Target {
         std::uint32_t address{};
         Image color, depth;

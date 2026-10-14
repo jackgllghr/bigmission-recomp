@@ -70,6 +70,20 @@ and then actual PSP hardware. Never overwrite the user's source save on import.
 - True analog right-stick camera and aim through verified game-specific hooks,
   not merely digital PSP button mappings.
 
+### HD textures chunk (milestones 4 and 5)
+
+HD (4x) and 4K (8x) textures, upscaled on the player's device; only a recipe
+is distributed, never game pixels. Notes: `profiles/sarusaru/docs/hd-textures.md`.
+
+- [x] Content identity for decoded textures (logical rectangle, 128-bit SHA-256).
+- [x] Texture dump mode (`--dump-textures DIR`): PNG per identity plus `textures.tsv`.
+- [x] HD pack directory (`pack.ini` + `<hash>.png`), lazily decoded and
+      uploaded at scale; `[graphics] texture_pack` / `--texture-pack`.
+- [ ] Recipe format and authoring tool; locating textures on the disc.
+- [ ] Launcher: Textures setting, recipe and pinned upscaler download,
+      on-device upscaling with progress and cancellation.
+- [ ] Off-thread image decoding, CPU cache across eviction, BC7 for 8x.
+
 ### 5. Shared launcher and in-game UI
 
 First-run ISO selection and installation (building the game module on the

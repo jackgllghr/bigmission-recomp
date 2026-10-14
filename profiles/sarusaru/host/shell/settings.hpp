@@ -54,6 +54,9 @@ struct Settings {
     bool frame_interpolation{false};
     // 0 = native; otherwise the gameplay camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
+    // An HD texture pack directory (textures/hd_pack.hpp), or empty for the
+    // original textures. Relative paths resolve beside the settings file.
+    std::filesystem::path texture_pack;
     ControlSettings controls;
     // The player's disc image, chosen in the launcher (empty until then).
     std::filesystem::path game_disc;

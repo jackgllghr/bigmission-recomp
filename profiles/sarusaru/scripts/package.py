@@ -6,7 +6,8 @@ to build the game on the player's machine from their own disc: the code
 generator and the runtime's headers (sdk/). It never holds anything derived
 from the game: no generated code and no game module, which the script refuses
 to package. Nor does it hold a translation: the English game text is a separate,
-optional download the launcher offers (sarusaru-translations).
+optional download the launcher offers (sarusaru-translations). Nor textures:
+dumps and HD packs are the game's art, made on the player's device.
 """
 
 import argparse
@@ -75,6 +76,11 @@ def is_translation(path):
     return path.suffix == ".sstp" or (path.suffix == ".json" and path.name.startswith("english-"))
 
 
+def is_texture_set(path):
+    """A texture dump or HD texture pack (docs/hd-textures.md): game art, never packaged."""
+    return path.name in ("textures.tsv", "pack.ini")
+
+
 def player_files(bin_dir, windows):
     """(source, path in package) for everything a player gets from bin/."""
     exe = ".exe" if windows else ""
@@ -105,6 +111,8 @@ def player_files(bin_dir, windows):
             raise ValueError(f"refusing to package game-derived file {source}")
         if is_translation(source) or any(part == "translations" for part in source.parts[len(bin_dir.parts):]):
             raise ValueError(f"refusing to package translation file {source}; it is a separate download")
+        if is_texture_set(source) or any(part == "textures" for part in source.parts[len(bin_dir.parts):]):
+            raise ValueError(f"refusing to package texture file {source}; textures are made on the player's device")
         if source.stem in DEVELOPER_ONLY:
             raise ValueError(f"unexpected developer file {source}")
     return picked

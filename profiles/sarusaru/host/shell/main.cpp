@@ -46,6 +46,8 @@ constexpr const char *kUsage =
     "  --settings FILE  settings and bindings (default: per-user settings.ini)\n"
     "  --scale N  override the file's internal resolution (1-8 times 480x272)\n"
     "  --translation-pack FILE  select an English menu texture pack for this run\n"
+    "  --texture-pack DIR  use this HD texture pack for this run (none: the original textures)\n"
+    "  --dump-textures DIR  write every texture the game draws to DIR, once each, as PNG\n"
     "  --print-default-settings  print the settings file template and exit\n"
     "  --install ISO  build the game from your disc without the window, as the launcher's Install does\n"
     "Alt+Enter or F11 toggles fullscreen.\n"
@@ -77,7 +79,8 @@ void set_window_icon(SDL_Window *window) {
 // Plays the game in `window` until the player quits or it stops. Returns the
 // exit status; a game that could not start sets `start_failure` and returns 1.
 int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::shell::Settings settings,
-         const std::filesystem::path &executable, const std::filesystem::path &iso, std::string &start_failure) {
+         const std::filesystem::path &executable, const std::filesystem::path &iso,
+         const std::filesystem::path &texture_dump_directory, std::string &start_failure) {
     if (settings.experimental_game_frame_rate != 0)
         std::cerr << "sarusaru: experimental game frame rate " << settings.experimental_game_frame_rate
                   << "; fixed-step gameplay/animation speed is not compensated\n";
@@ -134,6 +137,20 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
                       << " menu textures, " << translation_pack->string_count()
                       << " text strings, " << translation_pack->dialogue_count()
                       << " dialogue messages); untranslated screens retain Japanese\n";
+        }
+        std::optional<sarusaru::textures::HdTexturePack> hd_textures;
+        if (!settings.texture_pack.empty()) {
+            hd_textures = sarusaru::textures::HdTexturePack::load(settings.texture_pack, sarusaru::disc_id);
+            renderer.set_hd_textures(&*hd_textures);
+            std::cout << "HD textures: " << hd_textures->size() << " at " << hd_textures->scale() << "x from "
+                      << settings.texture_pack.string() << '\n';
+        }
+        std::optional<sarusaru::textures::TextureDump> texture_dump;
+        if (!texture_dump_directory.empty()) {
+            texture_dump.emplace(texture_dump_directory);
+            renderer.set_texture_dump(&*texture_dump);
+            std::cout << "Dumping textures to " << texture_dump_directory.string() << " (" << texture_dump->known()
+                      << " already there)\n";
         }
         auto &memory = game.runtime.memory();
         // Frame interpolation: each draw is also blended with its match in
@@ -344,6 +361,8 @@ int install_from_command_line(const std::filesystem::path &iso) {
 int main(int argc, char **argv) {
     std::optional<std::uint32_t> scale;
     std::filesystem::path translation_override;
+    std::optional<std::filesystem::path> texture_pack_override;
+    std::filesystem::path texture_dump_directory;
     std::filesystem::path settings_path;
     std::vector<std::string_view> paths;
     for (int i = 1; i < argc; ++i) {
@@ -363,6 +382,15 @@ int main(int argc, char **argv) {
         }
         if (arg == "--translation-pack" && i + 1 < argc) {
             translation_override = std::filesystem::absolute(argv[++i]);
+            continue;
+        }
+        if (arg == "--texture-pack" && i + 1 < argc) {
+            const std::string_view value = argv[++i];
+            texture_pack_override = value == "none" ? std::filesystem::path{} : std::filesystem::absolute(value);
+            continue;
+        }
+        if (arg == "--dump-textures" && i + 1 < argc) {
+            texture_dump_directory = std::filesystem::absolute(argv[++i]);
             continue;
         }
         if (arg == "--scale" && i + 1 < argc) {
@@ -448,10 +476,14 @@ int main(int argc, char **argv) {
                 } else if (!game_settings.translation_pack.empty() && game_settings.translation_pack.is_relative()) {
                     game_settings.translation_pack = settings_path.parent_path() / game_settings.translation_pack;
                 }
+                if (texture_pack_override)
+                    game_settings.texture_pack = *texture_pack_override;
+                else if (game_settings.texture_pack.is_relative() && !game_settings.texture_pack.empty())
+                    game_settings.texture_pack = settings_path.parent_path() / game_settings.texture_pack;
                 if (game_settings.translation_language == "en" && game_settings.translation_pack.empty())
                     throw std::runtime_error("English needs a translation pack; use --translation-pack FILE or [translation] pack");
                 start_failure.clear();
-                status = play(window, vulkan, game_settings, executable, iso, start_failure);
+                status = play(window, vulkan, game_settings, executable, iso, texture_dump_directory, start_failure);
                 if (!launcher || start_failure.empty()) break;
             }
         } catch (const std::exception &failure) {
