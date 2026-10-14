@@ -442,6 +442,8 @@ int main(int argc, char **argv) {
         if (launcher) ui_script = sarusaru::ui::UiScript::from_environment();
     } catch (const std::exception &error) {
         std::cerr << "sarusaru: " << error.what() << '\n';
+        // Started from Finder or Explorer there is no terminal for the error.
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SaruSaru Recomp", error.what(), nullptr);
         return 2;
     }
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
