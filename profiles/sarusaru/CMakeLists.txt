@@ -393,7 +393,7 @@ if(SARUSARU_HAS_RENDERER)
         target_include_directories(sarusaru PRIVATE
             "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/resources>")
     endif()
-    target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_ui)
+    target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_ui sarusaru_translation)
     sarusaru_use_ffmpeg(sarusaru)
     sarusaru_game_stack(sarusaru)
     # Shipped: only the relative rpath, never the build tree's (which CMake
