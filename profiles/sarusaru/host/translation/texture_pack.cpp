@@ -153,6 +153,27 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
         std::ranges::sort(ranges);
         for (std::size_t i = 1; i < ranges.size(); ++i)
             if (ranges[i].first < ranges[i - 1].second) invalid("overlapping string slots");
+        const auto runs = reader.integer(2);
+        if (runs > 32) invalid("too many glyph-run replacements");
+        std::set<std::string> run_identities;
+        for (std::uint32_t i = 0; i < runs; ++i) {
+            GlyphRun run;
+            run.id = reader.name(128);
+            if (!ids.insert(run.id).second) invalid("duplicate entry ID");
+            run.width = static_cast<std::uint16_t>(reader.integer(2));
+            run.height = static_cast<std::uint16_t>(reader.integer(2));
+            if (run.width == 0 || run.width > 448 || run.height != 16) invalid("invalid help-line dimensions");
+            run.font_hash = reader.digest();
+            run.signature = reader.digest();
+            run.glyph_count = static_cast<std::uint16_t>(reader.integer(2));
+            if (run.glyph_count == 0 || run.glyph_count > 64 || !run_identities.insert(run.font_hash + run.signature).second)
+                invalid("invalid or duplicate help-line identity");
+            const auto size = reader.integer(4);
+            if (size != 512u * 16u * 4u) invalid("invalid help-line pixel payload");
+            const auto pixels = reader.take(size);
+            run.rgba.assign(pixels.begin(), pixels.end());
+            pack.runs_.push_back(std::move(run));
+        }
     }
     if (!reader.empty()) invalid("trailing data");
     return pack;
@@ -222,15 +243,15 @@ bool TexturePack::apply(const gpu::TextureState &texture, std::vector<std::uint3
         if (texture.width != entry.ge_width || texture.height != entry.ge_height || texture.buffer_width != entry.buffer_width) continue;
         std::vector<std::uint8_t> source;
         source.reserve(entry.rgba.size());
-        for (const auto &region : entry.regions)
-        for (std::size_t y = region.y; y < region.y + region.height; ++y)
-        for (std::size_t x = region.x; x < region.x + region.width; ++x) {
+        for (std::size_t y = 0; y < entry.height; ++y) for (std::size_t x = 0; x < entry.width; ++x) {
             const auto value = pixels[y * texture.width + x];
             for (unsigned shift = 0; shift < 32; shift += 8) source.push_back(static_cast<std::uint8_t>(value >> shift));
         }
         if (psprecomp::sha256(source) != entry.source_hash) continue;
-        // Preserve padding and neighboring image data outside the logical crop.
-        for (std::size_t y = 0; y < entry.height; ++y) for (std::size_t x = 0; x < entry.width; ++x) {
+        // Preserve icons, backgrounds, untranslated labels and padding outside the authored regions.
+        for (const auto &region : entry.regions)
+        for (std::size_t y = region.y; y < region.y + region.height; ++y)
+        for (std::size_t x = region.x; x < region.x + region.width; ++x) {
             const auto offset = (y * entry.width + x) * 4;
             std::uint32_t value = 0;
             for (unsigned byte = 0; byte < 4; ++byte) value |= std::uint32_t(entry.rgba[offset + byte]) << (byte * 8);

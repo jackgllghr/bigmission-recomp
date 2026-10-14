@@ -42,9 +42,9 @@ add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cp
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_gpu PUBLIC psprecomp_core)
 
-add_library(sarusaru_translation STATIC host/translation/texture_pack.cpp)
+add_library(sarusaru_translation STATIC host/translation/texture_pack.cpp host/translation/glyph_runs.cpp)
 target_include_directories(sarusaru_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
-target_link_libraries(sarusaru_translation PUBLIC psprecomp_core)
+target_link_libraries(sarusaru_translation PUBLIC sarusaru_gpu psprecomp_core)
 
 # PSP-format save data. aes.c is tiny-AES-c, compiled as C++ like the rest.
 add_library(sarusaru_savedata STATIC

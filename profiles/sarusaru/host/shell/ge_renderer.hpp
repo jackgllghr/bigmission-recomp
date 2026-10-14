@@ -70,6 +70,7 @@ private:
         Image image;
         std::uint64_t last_frame{};
     };
+    std::unordered_map<std::uint32_t, Texture> host_textures_;
     struct PipelineKey {
         std::uint32_t topology{}, blend{}, depth{}, raster{};
         bool operator<(const PipelineKey &other) const noexcept {

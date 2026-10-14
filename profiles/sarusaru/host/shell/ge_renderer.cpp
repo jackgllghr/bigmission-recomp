@@ -225,6 +225,8 @@ void GeRenderer::destroy() {
         vk_.destroy_image(texture.image);
     }
     textures_.clear();
+    for (auto &[key, texture] : host_textures_) vk_.destroy_image(texture.image);
+    host_textures_.clear();
     for (auto &[key, pipeline] : pipelines_) {
         (void)key;
         vk_.vkDestroyPipeline(device, pipeline, nullptr);
@@ -392,6 +394,23 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
                                      float &v_scale) {
     const auto &texture = call.texture;
     u_scale = v_scale = 1.0f;
+    if (translation_pack_ != nullptr) {
+        const auto pixels = translation_pack_->host_rgba(texture.address);
+        if (!pixels.empty()) {
+            if (const auto found = host_textures_.find(texture.address); found != host_textures_.end()) return found->second.image.view;
+            Texture entry;
+            if (!vk_.create_image(512, 16, kColorFormat, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                  VK_IMAGE_ASPECT_COLOR_BIT, entry.image)) return VK_NULL_HANDLE;
+            std::vector<std::uint32_t> texels(pixels.size() / 4);
+            for (std::size_t i = 0; i < texels.size(); ++i)
+                for (unsigned byte = 0; byte < 4; ++byte)
+                    texels[i] |= static_cast<std::uint32_t>(pixels[i * 4 + byte]) << (byte * 8);
+            upload(entry.image, texels.data(), 512, 16);
+            const auto view = entry.image.view;
+            host_textures_.emplace(texture.address, std::move(entry));
+            return view;
+        }
+    }
     if (texture.width == 0u || texture.height == 0u) return VK_NULL_HANDLE;
     // Render to texture: sample the GPU target drawn at that address.
     const auto &game = targets_[kGame];

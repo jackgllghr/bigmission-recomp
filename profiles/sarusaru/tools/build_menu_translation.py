@@ -18,11 +18,19 @@ from translation_assets import archive_members, decode_lzs, decode_tim2
 PROFILE = Path(__file__).resolve().parents[1]
 ROOT = PROFILE.parents[1]
 SOURCE_PATH = 'PSP_GAME/USRDIR/Minigames/Menkolzs2.pac'
+COMMON_SOURCE_PATH = 'PSP_GAME/USRDIR/data/common.lzs'
 # Logical dimensions and GE sampling extents, observed and verified in guest draws.
 ASSETS = {
     'i_g_titl_l.lzs': ('title.logo', (352, 144), (512, 256, 352)),
     'b_but_b0.lzs': ('menu.labels', (256, 96), (256, 128, 256)),
     'e_nabi_a0.lzs': ('title.press_start', (256, 16), (256, 16, 256)),
+    'e_but_1.lzs': ('dialog.buttons', (128, 240), (128, 256, 128)),
+    'e_tit_0.lzs': ('screen.titles', (224, 480), (256, 512, 224)),
+    'b_but_d0.lzs': ('dialog.yes_no', (96, 32), (128, 32, 96)),
+    'b_but_d1.lzs': ('save.actions', (96, 48), (128, 64, 96)),
+    'b_com_s0.lzs': ('save.labels', (96, 272), (128, 512, 96)),
+    'b_ent_a0.lzs': ('name.tabs', (64, 96), (64, 128, 64)),
+    'common/b_but_c0.tm2': ('options.labels', (160, 64), (256, 64, 160)),
 }
 
 
@@ -35,7 +43,7 @@ def name(text):
     return struct.pack('<H', len(data)) + data
 
 
-def render_labels(catalog, images):
+def render_labels(catalog, images, require_title=True):
     from PIL import Image, ImageDraw, ImageFont
     if catalog.get('schema') != 1 or catalog.get('locale') != 'en':
         raise ValueError('Unsupported catalog schema/locale')
@@ -79,8 +87,30 @@ def render_labels(catalog, images):
                   stroke_fill=(220, 55, 8, 255))
         image.alpha_composite(layer.resize((width, height), Image.Resampling.LANCZOS), (x, y))
     expected = {'title.press_start', 'menu.new_game', 'menu.continue', 'menu.options', 'menu.gachi_king'}
-    if seen != expected:
-        raise ValueError('This atlas prototype requires all five menu labels; incomplete catalogs are rejected')
+    if require_title and not expected.issubset(seen):
+        raise ValueError('The five title/main-menu labels are required')
+    return rectangles
+
+
+def render_line(run, canvas):
+    from PIL import Image, ImageDraw, ImageFont
+    if not 1 <= run['width'] <= 448 or not 1 <= run['glyph_count'] <= 64 or len(run['signature']) != 64:
+        raise ValueError('Invalid help-line metadata')
+    if any(c not in '0123456789abcdef' for c in run['signature']):
+        raise ValueError('Invalid help-line signature')
+    text = run['text']
+    if not text or any(not 32 <= ord(c) <= 126 for c in text):
+        raise ValueError('Help lines support printable ASCII')
+    scale = 4
+    layer = Image.new('RGBA', (run['width'] * scale, 16 * scale))
+    font = ImageFont.load_default(size=12 * scale)
+    draw = ImageDraw.Draw(layer)
+    box = draw.textbbox((0, 0), text, font=font, stroke_width=scale)
+    if box[2] - box[0] > layer.width - 2 * scale or box[3] - box[1] > layer.height - 2 * scale:
+        raise ValueError('Help line exceeds pixel budget')
+    draw.text((scale - box[0], (layer.height - box[3] + box[1]) / 2 - box[1]), text, font=font,
+              fill=(255, 255, 255, 255), stroke_width=scale, stroke_fill=(0, 0, 0, 255))
+    canvas.alpha_composite(layer.resize((run['width'], 16), Image.Resampling.LANCZOS))
 
 
 def build(iso_path, logo_path, catalog_path, output):
@@ -94,9 +124,11 @@ def build(iso_path, logo_path, catalog_path, output):
         boot = iso.file(supported['executable_path'], 4_000_000)
         if hashlib.sha256(boot).hexdigest() != supported['executable_sha256']:
             raise ValueError('Unsupported executable; menu adapter supports UCJS10060 version 1.00')
-        source = iso.file(SOURCE_PATH, 6_000_000)
-        members = archive_members(source)
-        textures = {asset: decode_tim2(decode_lzs(members[asset])) for asset in ASSETS}
+        sources = {SOURCE_PATH: iso.file(SOURCE_PATH, 6_000_000), COMMON_SOURCE_PATH: iso.file(COMMON_SOURCE_PATH, 6_000_000)}
+        members = archive_members(sources[SOURCE_PATH])
+        common = archive_members(decode_lzs(sources[COMMON_SOURCE_PATH]))
+        textures = {asset: decode_tim2(common[asset.split('/')[1]] if asset.startswith('common/') else decode_lzs(members[asset])) for asset in ASSETS}
+        font = decode_tim2(decode_lzs(members['c_font_0.lzs']))
     images = {}
     for asset, (_, size, _) in ASSETS.items():
         texture = textures[asset]
@@ -110,14 +142,21 @@ def build(iso_path, logo_path, catalog_path, output):
         logo = ImageOps.contain(original.convert('RGBA'), ASSETS['i_g_titl_l.lzs'][1], Image.Resampling.LANCZOS)
     canvas = images['i_g_titl_l.lzs']
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
-    render_labels(catalog, images)
+    regions = render_labels(catalog, images)
+    regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
     result = bytearray(b'SSTEXPK2')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
-    result += struct.pack('<I', 1) + name(SOURCE_PATH) + digest(source)
-    result += struct.pack('<I', len(ASSETS))
-    for asset, (key, size, ge) in ASSETS.items():
+    result += struct.pack('<I', len(sources))
+    for source_path, source in sources.items():
+        result += name(source_path) + digest(source)
+    selected = {asset: spec for asset, spec in ASSETS.items() if asset in regions}
+    result += struct.pack('<I', len(selected))
+    for asset, (key, size, ge) in selected.items():
         rgba = images[asset].tobytes()
         result += name(key) + struct.pack('<5H', *size, *ge) + digest(textures[asset].rgba)
+        result += struct.pack('<H', len(regions[asset]))
+        for region in regions[asset]:
+            result += struct.pack('<4H', *region)
         result += struct.pack('<I', len(rgba)) + rgba
     strings = catalog.get('strings', [])
     if len(strings) > 256:
@@ -158,6 +197,15 @@ def build(iso_path, logo_path, catalog_path, output):
         occupied.append((offset, end + 1))
         result += name(key) + struct.pack('<II', offset, len(source_string)) + digest(source_string)
         result += struct.pack('<H', len(replacement)) + replacement
+    runs = catalog.get('glyph_runs', [])
+    result += struct.pack('<H', len(runs))
+    for run in runs:
+        canvas = Image.new('RGBA', (512, 16))
+        render_line(run, canvas)
+        result += name(run['id']) + struct.pack('<HH', run['width'], 16) + digest(font.rgba)
+        result += run['signature'].encode('ascii') + struct.pack('<H', run['glyph_count'])
+        rgba = canvas.tobytes()
+        result += struct.pack('<I', len(rgba)) + rgba
     # Atomic replacement of this explicit output file; no ISO writes or asset extraction.
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix='.translation-', delete=False) as temporary:
@@ -169,7 +217,7 @@ def build(iso_path, logo_path, catalog_path, output):
         staging.replace(output)
     finally:
         staging.unlink(missing_ok=True)
-    print(f'Built {output}: {len(ASSETS)} textures, {len(result)} bytes; Japanese fallback elsewhere')
+    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines; {len(result)} bytes')
 
 
 def main():

@@ -195,7 +195,7 @@ int main(int argc, char **argv) {
             // reaches the renderer (and the interpolator).
             const sarusaru::gpu::FovOverride fov(settings.fov_degrees);
             if (fov.enabled()) game.ge.state().set_view_hook([&fov](sarusaru::gpu::DrawCall &call) { fov.apply(call); });
-            game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) {
+            const auto render_draw = [&](const sarusaru::gpu::DrawCall &call) {
                 renderer.draw(memory, call);
                 if (!interpolating) return;
                 if (const auto requests = game.display.framebuffer_requests(); requests != frame_requests) {
@@ -204,6 +204,10 @@ int main(int argc, char **argv) {
                 }
                 interpolator.interpolate(call, 0.5f, between);
                 renderer.queue_interpolated(memory, between);
+            };
+            game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) {
+                if (translation_pack) translation_pack->translate_draw(memory, call, render_draw);
+                else render_draw(call);
             });
             std::uint64_t latches = game.display.framebuffer_latches(game.kernel.now_us()), latch_vblank = 0u;
             game.audio.set_sink([&](std::int32_t channel, std::span<const std::int16_t> samples, bool mono,
@@ -243,6 +247,7 @@ int main(int argc, char **argv) {
             bool quit = false;
             game.kernel.set_frame_observer([&] {
                 if (quit) return;
+                if (translation_pack) translation_pack->flush_draws(render_draw);
                 SDL_Event event;
                 while (SDL_PollEvent(&event)) {
                     if (event.type == SDL_EVENT_QUIT) quit = true;
