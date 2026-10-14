@@ -166,20 +166,26 @@ is untouched. Implementation and verification results are recorded in
 `profiles/sarusaru/README.md`; game-derived details remain in ignored analysis.
 
 The native arm64 AOT bootstrap compiles all 163 generated source units and
-runs startup on the early kernel: thread creation, priority scheduling,
-sleep/wakeup, timed waits on a deterministic virtual clock, partition memory,
-callback registration and interrupt masking. A read-only ISO9660 UMD layer
-reads the user's own ISO in place after binding it to the prepared
-executable. Controller configuration and blocking buffered reads (neutral pad)
-work, as do display state, vblank timing, semaphores, event flags and thread
-lifecycle, and vblank interrupt handlers. After one virtual vblank, startup now stops at
-`sceGe_user::sceGeEdramGetAddr`, the first graphics-engine call.
-Twelve CTest suites pass,
-including 17 input/preparation cases and seven generated-native-code cases.
-Repeat generation rewrites zero source units. Three game-neutral generator
-defects discovered during this work were reproduced with synthetic fixtures,
-fixed, and covered by native execution regression tests. The runtime's guest
-memory also lacked the PSP's 16 KiB scratchpad RAM, which this game uses; it is
-now mapped and covered by a framework test. The generator gained VFPU
-`vi2uc/vi2c/vi2us/vi2s`, `vrnds/vrndi/vrndf1/vrndf2` and `vcrs.t`; the
-remaining unlowered sites all lie in data the analysis misreads as code.
+runs startup on the early kernel: priority scheduling, sleep/wakeup, timed
+and object waits on a deterministic virtual clock, semaphores, event flags,
+thread lifecycle, partition memory, interrupt masking, vblank and GE
+interrupts, and thread callbacks. A read-only ISO9660 layer reads the user's
+own ISO in place after binding it to the prepared executable, for UMD state
+and `disc0:` file I/O. Controller, display, headless GE, RTC, utility-module,
+`sceAudio` and `sceSasCore` services are modeled.
+
+Startup now runs five game threads, draws its first display lists, reads its
+first data file, initialises its sound system (printing progress to stdout),
+then stops at `ThreadManForUser::sceKernelSuspendDispatchThread`.
+
+Nineteen CTest suites pass. Repeat generation rewrites zero source units.
+Game-neutral framework fixes, each covered by a regression test:
+
+- three generator defects reproduced with synthetic fixtures;
+- the PSP's 16 KiB scratchpad RAM, missing from guest memory;
+- VFPU `vi2uc/vi2c/vi2us/vi2s`, `vrnds/vrndi/vrndf1/vrndf2` and `vcrs.t`
+  lowering (no unlowered instruction remains in the code region; the rest
+  lie in data the analysis misreads as code);
+- function discovery from paired HI16/LO16 relocations, which finds code
+  pointers whose halves are built far apart (49 more entries here,
+  including a sound-thread entry point).

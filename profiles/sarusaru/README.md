@@ -92,9 +92,9 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
-  an indirect jump to `0x08A02AD4` (not an analysed entry) after loading the
-  AV codec utility module, running its callbacks, initialising its sound
-  system, reserving audio channels and initialising SAS. `SARUSARU_TRACE_SCHED=1` logs
+  `ThreadManForUser::sceKernelSuspendDispatchThread` after loading the AV
+  codec utility module, running its callbacks and initialising its sound
+  system (audio channels and SAS). `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
@@ -219,6 +219,12 @@ The pinned upstream is recorded in `config/supported_game.json`.
   a seeded xorshift32 kept in VFPU control register RCX0 (saved per thread,
   as on the PSP) stands in. No unlowered instruction remains in the code
   region; the rest lie in data the analysis misreads as code.
+- Function discovery now seeds code pointers from paired HI16/LO16
+  relocations (each address-forming LO16 site with the preceding HI16 for the
+  same segments, read after relocation). It finds pointers whose upper half
+  sits in a callee-saved register far from where the lower half is added;
+  here, 49 entries including a thread entry point that constant propagation
+  missed. Covered by a synthetic PRX test.
 - Mapped the PSP's 16 KiB scratchpad RAM (`0x00010000`) in the framework's
   `GuestMemory`, which previously faulted on it. Accesses use the checked
   slow paths; the main-RAM fast path is unchanged.
