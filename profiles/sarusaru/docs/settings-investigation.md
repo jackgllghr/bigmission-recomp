@@ -107,7 +107,7 @@ native cadence instead and works on the GE's draw calls only
   frame were unmatched, and a few per second snapped.
 - Matrices, CPU-transformed vertices, normals, colours and texture offsets are
   blended. Texture coordinates are not, because they select animation cells. A draw
-  whose anchor moves more than 35% of its view depth (64 pixels for
+  whose anchor moves more than 35% of its view depth (160 pixels for
   screen-space draws), or any vertex that jumps that far, is drawn unblended.
 - The renderer draws the blended copies into a second set of render targets.
   Textures are resolved when a draw is queued, and render-to-texture reads the

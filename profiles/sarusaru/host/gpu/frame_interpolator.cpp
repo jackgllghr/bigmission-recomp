@@ -7,10 +7,11 @@ namespace sarusaru::gpu {
 namespace {
 
 // A matched draw is blended only while it moves less than this between game
-// frames: a fraction of its distance from the camera for 3D draws, pixels for
-// screen-space ones. Larger steps are cuts or recycled draws, not motion.
+// frames: a fraction of its distance from the camera for 3D draws, a third of
+// the screen width for screen-space ones (the game slides banners about 135
+// pixels a frame). Larger steps are cuts or recycled draws, not motion.
 constexpr float kMaxRelativeStep = 0.35f;
-constexpr float kMaxScreenStep = 64.0f;
+constexpr float kMaxScreenStep = 160.0f;
 // Among instances of one mesh, only this many unused candidates are compared.
 constexpr std::size_t kCandidateWindow = 32u;
 
