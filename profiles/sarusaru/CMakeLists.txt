@@ -59,6 +59,10 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_include_directories(sarusaru_callback_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_callback_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_callback_tests COMMAND sarusaru_callback_tests)
+    add_executable(sarusaru_audio_tests tests/audio_tests.cpp host/audio/audio.cpp host/kernel/early_kernel.cpp)
+    target_include_directories(sarusaru_audio_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_audio_tests PRIVATE psprecomp_core)
+    add_test(NAME sarusaru_audio_tests COMMAND sarusaru_audio_tests)
 endif()
 
 option(SARUSARU_BUILD_BOOTSTRAP "Build the diagnostic host with locally generated AOT code" OFF)
@@ -84,7 +88,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
     add_executable(sarusaru_bootstrap host/bootstrap.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
         host/kernel/sync.cpp host/kernel/interrupts.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp host/ctrl/controller.cpp
         host/display/display.cpp host/ge/ge.cpp host/io/io_manager.cpp
-        host/rtc/rtc.cpp host/modules/utility_modules.cpp)
+        host/rtc/rtc.cpp host/modules/utility_modules.cpp host/audio/audio.cpp)
     target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot)
     set_target_properties(sarusaru_bootstrap PROPERTIES

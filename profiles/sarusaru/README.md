@@ -92,13 +92,14 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
-  `sceAudio::sceAudioChReserve` after loading the AV codec utility module,
-  running its callbacks and initialising its sound system. `SARUSARU_TRACE_SCHED=1` logs
+  `sceSasCore::__sceSasInit` after loading the AV codec utility module,
+  running its callbacks, initialising its sound system and reserving audio
+  output channels. `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All seventeen CTest suites pass, including 17 ISO/preparation cases and seven
+- All eighteen CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -193,6 +194,12 @@ The pinned upstream is recorded in `config/supported_game.json`.
   callbacks), after which the wait resumes with its original deadline. A
   nonzero return deletes the callback. `sceUmdActivate`/`Deactivate` notify
   the UMD callback with the new drive status.
+- Added headless `sceAudio` output (`audio/audio.cpp`): eight channels
+  allocated from 7 downwards plus the Output2 channel, reserve/release,
+  data length, format, volume and remaining length. A block plays for
+  sample_count / 44100 s of virtual time and a channel accepts a block while
+  at most two are in flight, so blocking output paces the audio thread.
+  Samples are counted, not played; blocking output returns the sample count.
 - Added `sceUtilityLoadModule`/`UnloadModule` for the PSPSDK utility module
   IDs. The libraries they load are provided by HLE at their import interface,
   so this records state only, with bad-ID, already-loaded and not-loaded

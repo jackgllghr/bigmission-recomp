@@ -144,8 +144,10 @@ networking (`sceNet*`, 21 in total).
        virtual event queue, host input feeding `sceCtrl`.
 11. [ ] GE rendering: Vulkan (MoltenVK on macOS) renderer over the headless
         GE state; framebuffer presentation. Largest single item.
-12. [ ] Audio: `sceAudio` output channels, then `sceSasCore` and `sceAtrac`
-        decoding, through SDL3 audio.
+12. [~] Audio: `sceAudio` output channels are modeled headless on the
+        virtual clock (blocking output paces the audio thread; samples are
+        counted, not played). Still to come: `sceSasCore`, `sceAtrac`, and
+        host output through SDL3 audio.
 13. [ ] Movies: `scePsmfPlayer`/`sceMpeg` playback, if the game uses them
         on the path to gameplay.
 14. [ ] Utility dialogs: message dialog, OSK, savedata (feeds milestone 3).

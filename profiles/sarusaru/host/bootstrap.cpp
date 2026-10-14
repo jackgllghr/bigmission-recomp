@@ -1,5 +1,6 @@
 #include "game_identity.hpp"
 #include "startup_hle.hpp"
+#include "audio/audio.hpp"
 #include "ctrl/controller.hpp"
 #include "display/display.hpp"
 #include "ge/ge.hpp"
@@ -119,6 +120,8 @@ int main(int argc, char **argv) {
         sarusaru::rtc::register_rtc(rtc, runtime);
         sarusaru::modules::UtilityModules utility_modules;
         sarusaru::modules::register_utility_modules(utility_modules, runtime);
+        sarusaru::audio::Audio audio(early_kernel);
+        sarusaru::audio::register_audio(audio, runtime);
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.
