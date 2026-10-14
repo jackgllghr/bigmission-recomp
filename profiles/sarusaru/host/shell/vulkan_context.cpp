@@ -7,6 +7,14 @@
 
 namespace sarusaru::shell {
 
+std::optional<VkSurfaceFormatKHR> encoded_swapchain_format(std::span<const VkSurfaceFormatKHR> formats) {
+    for (const auto format : formats) {
+        if (format.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) continue;
+        if (format.format == VK_FORMAT_B8G8R8A8_UNORM || format.format == VK_FORMAT_R8G8B8A8_UNORM) return format;
+    }
+    return std::nullopt;
+}
+
 bool VulkanContext::create(SDL_Window *window, std::string &error) {
     window_ = window;
     if (!vk.load(error)) return false;
@@ -106,9 +114,11 @@ bool VulkanContext::create_swapchain(std::string &error) {
         error = "the surface lists no formats";
         return false;
     }
-    VkSurfaceFormatKHR chosen = formats[0];
-    for (const auto &format : formats)
-        if (format.format == VK_FORMAT_B8G8R8A8_UNORM) chosen = format;
+    const auto chosen = encoded_swapchain_format(formats);
+    if (!chosen) {
+        error = "the surface has no sRGB presentation format compatible with the PSP renderer";
+        return false;
+    }
     std::uint32_t mode_count = 0;
     vk.vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &mode_count, nullptr);
     std::vector<VkPresentModeKHR> modes(mode_count);
@@ -132,8 +142,8 @@ bool VulkanContext::create_swapchain(std::string &error) {
     VkSwapchainCreateInfoKHR info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
     info.surface = surface;
     info.minImageCount = image_count;
-    info.imageFormat = chosen.format;
-    info.imageColorSpace = chosen.colorSpace;
+    info.imageFormat = chosen->format;
+    info.imageColorSpace = chosen->colorSpace;
     info.imageExtent = extent_;
     info.imageArrayLayers = 1u;
     info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -146,7 +156,7 @@ bool VulkanContext::create_swapchain(std::string &error) {
         error = "vkCreateSwapchainKHR failed";
         return false;
     }
-    swapchain_format_ = chosen.format;
+    swapchain_format_ = chosen->format;
     vkGetSwapchainImagesKHR(device, swapchain_, &image_count, nullptr);
     swapchain_images_.resize(image_count);
     vkGetSwapchainImagesKHR(device, swapchain_, &image_count, swapchain_images_.data());

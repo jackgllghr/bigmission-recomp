@@ -9,6 +9,8 @@
 #include <SDL3/SDL.h>
 
 #include <cstdint>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -32,6 +34,12 @@
     X(vkCmdSetBlendConstants) X(vkCmdDraw) X(vkCmdClearDepthStencilImage) X(vkCmdCopyImageToBuffer)
 
 namespace sarusaru::shell {
+
+// The GE stores and blends display-encoded PSP colours in UNORM images.  The
+// presentation surface must therefore interpret those values as sRGB; an sRGB
+// image format would encode them a second time.
+[[nodiscard]] std::optional<VkSurfaceFormatKHR> encoded_swapchain_format(
+    std::span<const VkSurfaceFormatKHR> formats);
 
 struct Buffer {
     VkBuffer buffer{VK_NULL_HANDLE};
