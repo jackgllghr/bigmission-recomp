@@ -2,7 +2,7 @@
 // MIT License; see profiles/sarusaru/THIRD_PARTY.md.
 // GE contracts against bounded synthetic display lists and vertex data.
 #include "gpu/ge_state.hpp"
-#include "gpu/character_outline.hpp"
+#include "gpu/geometry_outline.hpp"
 
 #include <array>
 #include <cstdlib>
@@ -454,22 +454,35 @@ int main() {
         character.primitive = PrimitiveType::Triangles;
         character.vertex_type = (3u << 9u) | (3u << 5u);
         character.depth.test_enabled = character.depth.write_enabled = true;
-        expect(character_outline(character), "opaque skinned character receives an outline");
+        expect(geometry_outline(character), "opaque skinned character receives an outline");
+        character.blend.enabled = true;
+        character.blend.source_factor = 2u;
+        character.blend.destination_factor = 3u;
+        expect(geometry_outline(character), "standard alpha-over character receives an outline");
         auto scenery = character;
         scenery.vertex_type &= ~(3u << 9u);
-        expect(!character_outline(scenery), "static scenery is not outlined");
+        expect(geometry_outline(scenery), "static scenery receives an outline");
+        scenery.vertex_type &= ~(3u << 5u);
+        expect(geometry_outline(scenery), "scenery without supplied normals receives an outline");
+        const std::array<std::array<float, 3>, 6> plane{{{0,0,0}, {1,0,0}, {0,1,0}, {0,1,0}, {1,0,0}, {1,1,0}}};
+        const std::array<float, 2> facing{1, 1};
+        expect(outline_edges(plane, facing).size() == 4u, "planar world quad outlines its boundary without a diagonal wireframe");
+        const std::array<float, 2> silhouette{1, -1};
+        expect(outline_edges(plane, silhouette).size() == 5u, "world silhouette edges receive a contour");
+        const std::array<std::array<float, 3>, 3> degenerate{};
+        expect(outline_edges(degenerate, {}).empty(), "degenerate geometry has no contour edges");
         auto hud = character;
         hud.through = true;
-        expect(!character_outline(hud), "HUD is not outlined");
+        expect(!geometry_outline(hud), "HUD is not outlined");
         auto effect = character;
-        effect.blend.enabled = true;
-        expect(!character_outline(effect), "transparent effects are not outlined");
+        effect.blend.equation = 4u;
+        expect(!geometry_outline(effect), "additive effects are not outlined");
         auto cutout = character;
         cutout.alpha_test.enabled = true;
         cutout.alpha_test.function = 6u;
-        expect(!character_outline(cutout), "alpha cutouts do not acquire a solid hull");
+        expect(!geometry_outline(cutout), "alpha cutouts do not acquire a solid hull");
         character.clear_mode = true;
-        expect(!character_outline(character), "framebuffer clears are not outlined");
+        expect(!geometry_outline(character), "framebuffer clears are not outlined");
     }
     std::cout << (failures ? "FAIL" : "PASS") << ": GE contracts (" << failures << " failures)\n";
     return failures ? 1 : 0;

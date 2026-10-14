@@ -32,6 +32,10 @@ struct UpscalerSource {
 };
 [[nodiscard]] std::optional<UpscalerSource> upscaler_source();
 
+// What making a pack still has to download: the recipe and the upscaler,
+// unless they are already here. Zero without a per-user data directory.
+[[nodiscard]] std::uint64_t texture_download_bytes(const PackSource &recipe, const UpscalerSource &upscaler);
+
 // <user data>/textures/<scale>x-<first 16 digits of the recipe's SHA-256>.
 [[nodiscard]] std::optional<std::filesystem::path> texture_pack_directory(const PackSource &recipe, std::uint32_t scale);
 

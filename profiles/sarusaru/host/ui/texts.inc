@@ -73,8 +73,8 @@ X(On, "On", "オン")
 X(Off, "Off", "オフ")
 X(ValueCelBanded, "Banded", "階調")
 X(ValueCelOutlined, "Outlined", "輪郭線付き")
-X(DescCelOutlined, "Banded shading with black silhouettes around animated characters, like a cartoon. HUD and scenery keep their original edges.",
-    "段階的な陰影と黒い輪郭線でキャラクターをアニメ風に描画します。HUD と背景の輪郭はそのままです。")
+X(DescCelOutlined, "Banded shading with black outlines around characters and the world, like a cartoon. HUD and menus keep their original edges.",
+    "段階的な陰影と黒い輪郭線でキャラクターと背景をアニメ風に描画します。HUD とメニューの輪郭はそのままです。")
 X(RowCelShading, "Cel shading", "セルシェーディング")
 X(DescCelShading, "Gives 3D shading distinct bands for a cartoon look. Keeps textures, HUD and menus intact.",
     "3D の陰影を段階的にして、アニメ風に描画します。テクスチャ、HUD、メニューはそのままです。")

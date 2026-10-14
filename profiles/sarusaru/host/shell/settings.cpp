@@ -231,7 +231,7 @@ std::string serialize_settings(const Settings &settings) {
            "# Keyboard values: SDL physical key names or scancode:N; comma separates alternatives.\n"
            "# Gamepad values: SDL button names or axis:NAME+ / axis:NAME-; none unbinds.\n"
            "[graphics]\n# Rendering scale: 1-8 times the PSP's 480x272.\ninternal_resolution = " << settings.internal_resolution << '\n'
-        << "# Cel shading: 0 = off, 1 = banded, 2 = banded with black character outlines.\n"
+        << "# Cel shading: 0 = off, 1 = banded, 2 = banded with black world and character outlines.\n"
         << "cel_shading = " << settings.cel_shading << '\n'
         << "# Window size at startup, in points; the window stays resizable and the picture keeps its aspect.\n"
         << "window_width = " << settings.window_width << "\nwindow_height = " << settings.window_height << '\n'

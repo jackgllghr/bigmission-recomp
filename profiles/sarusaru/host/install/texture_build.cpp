@@ -86,6 +86,18 @@ std::uint64_t count_files(const std::filesystem::path &directory) {
     return count;
 }
 
+// Where the recipe is kept (by its hash) and the upscaler unpacked.
+std::filesystem::path recipe_file(const std::filesystem::path &data, const PackSource &recipe) {
+    return data / "textures" / ("recipe-" + recipe.sha256.substr(0u, 16u) + ".txt");
+}
+std::filesystem::path upscaler_directory(const std::filesystem::path &data, const UpscalerSource &upscaler) {
+    return data / "tools" / upscaler.name;
+}
+bool have_recipe(const std::filesystem::path &path, const PackSource &recipe) {
+    std::error_code error;
+    return std::filesystem::is_regular_file(path, error) && psprecomp::sha256_file(path) == recipe.sha256;
+}
+
 } // namespace
 
 std::optional<PackSource> texture_recipe_source() {
@@ -113,6 +125,15 @@ std::optional<UpscalerSource> upscaler_source() {
     return std::nullopt;
 #endif
     return source;
+}
+
+std::uint64_t texture_download_bytes(const PackSource &recipe, const UpscalerSource &upscaler) {
+    const auto data = platform::user_data_directory();
+    if (!data) return 0u;
+    std::error_code error;
+    const bool upscaler_here =
+        std::filesystem::is_regular_file(upscaler_directory(*data, upscaler) / upscaler.executable, error);
+    return (have_recipe(recipe_file(*data, recipe), recipe) ? 0u : recipe.bytes) + (upscaler_here ? 0u : upscaler.archive.bytes);
 }
 
 std::optional<std::filesystem::path> texture_pack_directory(const PackSource &recipe, std::uint32_t scale) {
@@ -357,11 +378,10 @@ void TextureBuild::run() {
         std::error_code ignored;
 
         // The recipe, kept by its hash, and the upscaler, unpacked once.
-        const auto recipe_path = *data / "textures" / ("recipe-" + recipe_.sha256.substr(0u, 16u) + ".txt");
-        const auto tools = *data / "tools" / upscaler_.name;
+        const auto recipe_path = recipe_file(*data, recipe_);
+        const auto tools = upscaler_directory(*data, upscaler_);
         const auto program = tools / upscaler_.executable;
-        const bool need_recipe = !std::filesystem::is_regular_file(recipe_path, ignored) ||
-                                 psprecomp::sha256_file(recipe_path) != recipe_.sha256;
+        const bool need_recipe = !have_recipe(recipe_path, recipe_);
         const bool need_upscaler = !std::filesystem::is_regular_file(program, ignored);
         const std::uint64_t download = (need_recipe ? recipe_.bytes : 0u) + (need_upscaler ? upscaler_.archive.bytes : 0u);
         std::uint64_t received = 0;

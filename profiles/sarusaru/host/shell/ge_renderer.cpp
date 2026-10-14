@@ -1,6 +1,6 @@
 #include "shell/ge_renderer.hpp"
 
-#include "gpu/character_outline.hpp"
+#include "gpu/geometry_outline.hpp"
 #include "gpu/texture_decode.hpp"
 #include "gpu/texture_hash.hpp"
 #include "gpu/triangle_indices.hpp"
@@ -355,8 +355,52 @@ void GeRenderer::begin_pass(Target &target) {
 
 void GeRenderer::end_pass() {
     if (pass_target_ == nullptr) return;
+    draw_world_contours();
     vk_.vkCmdEndRenderPass(commands_);
     pass_target_ = nullptr;
+}
+
+void GeRenderer::draw_world_contours() {
+    auto &world = world_contours_;
+    if (world.vertices.empty() || pass_target_ == nullptr) return;
+    std::vector<GpuVertex> contours;
+    const float width = world.viewport.width / scale_, height = world.viewport.height / scale_;
+    const std::size_t capacity = static_cast<std::size_t>((vertices_.size - vertex_cursor_) / sizeof(GpuVertex));
+    for (const auto edge : gpu::outline_edges(world.positions, world.facing)) {
+        if (contours.size() + 6u > capacity) break;
+        const auto *a = world.vertices[edge[0]].position, *b = world.vertices[edge[1]].position;
+        if (a[3] <= 1e-6f || b[3] <= 1e-6f) continue;
+        const float dx = (b[0] / b[3] - a[0] / a[3]) * width;
+        const float dy = (b[1] / b[3] - a[1] / a[3]) * height;
+        const float length = std::hypot(dx, dy);
+        if (!(length > 1e-6f) || !std::isfinite(length)) continue;
+        const float nx = -dy / length / width, ny = dx / length / height;
+        GpuVertex corners[4] = {world.vertices[edge[0]], world.vertices[edge[0]], world.vertices[edge[1]], world.vertices[edge[1]]};
+        for (int corner = 0; corner < 4; ++corner) {
+            const float sign = (corner & 1) == 0 ? -1.0f : 1.0f;
+            corners[corner].position[0] += sign * nx * corners[corner].position[3];
+            corners[corner].position[1] += sign * ny * corners[corner].position[3];
+        }
+        for (const int corner : {0, 1, 2, 2, 1, 3}) contours.push_back(corners[corner]);
+    }
+    if (!contours.empty()) {
+        const VkDeviceSize bytes = contours.size() * sizeof(GpuVertex), offset = vertex_cursor_;
+        vertex_cursor_ += bytes;
+        std::memcpy(static_cast<std::uint8_t *>(vertices_.mapped) + offset, contours.data(), bytes);
+        Push push{};
+        push.viewport = {width, height, 0.0f, 24.0f};
+        vk_.vkCmdBindPipeline(commands_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline(world.key));
+        vk_.vkCmdPushConstants(commands_, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0u, sizeof push, &push);
+        vk_.vkCmdSetViewport(commands_, 0u, 1u, &world.viewport);
+        vk_.vkCmdSetScissor(commands_, 0u, 1u, &world.scissor);
+        vk_.vkCmdBindVertexBuffers(commands_, 0u, 1u, &vertices_.buffer, &offset);
+        vk_.vkCmdDraw(commands_, static_cast<std::uint32_t>(contours.size()), 1u, 0u, 0u);
+        ++draws_;
+    }
+    world.vertices.clear();
+    world.positions.clear();
+    world.facing.clear();
 }
 
 void GeRenderer::upload(Image &image, const std::uint32_t *texels, std::uint32_t width, std::uint32_t height) {
@@ -616,7 +660,7 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
             call.blend.equation, call.depth.test_enabled, call.depth.function, call.depth.write_enabled,
             call.alpha_test.enabled, call.alpha_test.function, call.alpha_test.reference, call.culling_enabled,
             call.cull_clockwise, call.lighting_enabled, call.fog.enabled, call.has_vertex_color, call.material_color, call.vertex_type,
-            cel_shading_ == 2u && gpu::character_outline(call), v.x_offset, v.y_offset, v.z_offset, v.x_scale, v.y_scale, v.z_scale, v.offset_x, v.offset_y, v.scissor_x1,
+            cel_shading_ == 2u && gpu::geometry_outline(call), v.x_offset, v.y_offset, v.z_offset, v.x_scale, v.y_scale, v.z_scale, v.offset_x, v.offset_y, v.scissor_x1,
             v.scissor_y1, v.scissor_x2, v.scissor_y2, call.command_address);
         const auto &t = call.texture;
         std::vector<std::uint32_t> texels;
@@ -750,6 +794,9 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
     }
     if (out.empty()) return;
 
+    const bool outline = cel_shading_ == 2u && gpu::geometry_outline(call);
+    const bool skinned = ((call.vertex_type >> 9u) & 3u) != 0u;
+
     // Per-frame space for everything the draw needs, flushing once if short.
     const VkDeviceSize uniform_alignment = std::max<VkDeviceSize>(vk_.properties.limits.minUniformBufferOffsetAlignment, 16u);
     const VkDeviceSize vertex_bytes = out.size() * sizeof(GpuVertex);
@@ -882,6 +929,9 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
         end_pass();
         begin_pass(*target);
     }
+    // Finish scene contours before screen-space overlays, so the HUD stays
+    // on top. Neighbouring scenery draws are gathered before edge selection.
+    if (through || call.clear_mode) draw_world_contours();
     vk_.vkCmdBindPipeline(commands_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline(key));
     const VkDescriptorSet sets[2] = {set, uniform_set_};
     const std::uint32_t offsets[2] = {static_cast<std::uint32_t>(environment_offset), static_cast<std::uint32_t>(object_offset)};
@@ -896,17 +946,50 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
     vk_.vkCmdDraw(commands_, static_cast<std::uint32_t>(out.size()), 1u, 0u, 0u);
     ++draws_;
 
-    if (cel_shading_ == 2u && gpu::character_outline(call)) {
-        // Draw the expanded back faces after the surface. Its depth prevents
-        // the black shell covering the character itself; later scenery also
-        // occludes it. Keep the GE framebuffer's alpha/stencil and depth intact.
+    if (outline && !skinned) {
+        auto &world = world_contours_;
+        if (!world.vertices.empty() && (world.viewport.width != vp.width || world.viewport.height != vp.height ||
+            world.viewport.x != vp.x || world.viewport.y != vp.y || world.key.depth != (key.depth & ~16u)))
+            draw_world_contours();
+        world.key = key;
+        world.key.raster = 0u;
+        world.key.blend = 7u << 14u;
+        world.key.depth &= ~16u;
+        world.viewport = vp;
+        world.scissor = scissor;
+        const std::size_t first = world.vertices.size();
+        for (const auto &v : out) {
+            GpuVertex projected{};
+            projected.color = 0xFFFFFFFFu;
+            std::array<float, 3> position{};
+            for (int row = 0; row < 4; ++row)
+                projected.position[row] = wvp[row] * v.position[0] + wvp[4 + row] * v.position[1] +
+                                          wvp[8 + row] * v.position[2] + wvp[12 + row];
+            projected.position[2] = (projected.position[2] + projected.position[3]) * 0.5f;
+            for (int row = 0; row < 3; ++row) {
+                const float value = call.world[row] * v.position[0] + call.world[4 + row] * v.position[1] +
+                                    call.world[8 + row] * v.position[2] + call.world[12 + row];
+                position[row] = std::round(value * 1024.0f) / 1024.0f;
+            }
+            world.positions.push_back(position);
+            world.vertices.push_back(projected);
+        }
+        for (std::size_t i = first; i + 2u < world.vertices.size(); i += 3u) {
+            const auto *a = world.vertices[i].position, *b = world.vertices[i + 1u].position, *c = world.vertices[i + 2u].position;
+            float area = 0.0f;
+            if (a[3] > 0.0f && b[3] > 0.0f && c[3] > 0.0f)
+                area = (b[0] / b[3] - a[0] / a[3]) * (c[1] / c[3] - a[1] / a[3]) -
+                       (b[1] / b[3] - a[1] / a[3]) * (c[0] / c[3] - a[0] / a[3]);
+            world.facing.push_back(area);
+        }
+    } else if (outline) {
+        // Characters retain the inverted hull and their texture alpha.
         PipelineKey outline_key = key;
         outline_key.raster = static_cast<std::uint32_t>(VK_CULL_MODE_FRONT_BIT) | (key.raster & 4u);
-        outline_key.blend = 7u << 14u; // opaque RGB only
-        outline_key.depth = 1u | (static_cast<std::uint32_t>(VK_COMPARE_OP_LESS_OR_EQUAL) << 1u);
+        outline_key.blend = (key.blend & ~(15u << 14u)) | (7u << 14u);
+        outline_key.depth = key.depth & ~16u;
         Push outline_push = push;
         outline_push.viewport = {vp.width / scale, vp.height / scale, 0.0f, 8.0f};
-        outline_push.texture_params = {0.0f, 0.0f, 0.0f, 0.0f};
         vk_.vkCmdBindPipeline(commands_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline(outline_key));
         vk_.vkCmdPushConstants(commands_, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0u, sizeof outline_push, &outline_push);

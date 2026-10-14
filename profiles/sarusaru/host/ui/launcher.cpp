@@ -815,9 +815,10 @@ void Launcher::textures() {
         ImGui::Dummy(ImVec2(0, 8.0f * u));
         if (action_row(layer_, "textures_cancel", tr(Text::InstallCancel), "", width)) texture_build_->cancel();
     } else {
-        paragraph(layer_, format(Text::TexturesSource, {megabytes(recipe->bytes + upscaler->archive.bytes), url_host(upscaler->archive.url)}),
-                  width);
-        ImGui::Dummy(ImVec2(0, 4.0f * u));
+        if (const auto bytes = install::texture_download_bytes(*recipe, *upscaler); bytes != 0u) {
+            paragraph(layer_, format(Text::TexturesSource, {megabytes(bytes), url_host(upscaler->archive.url)}), width);
+            ImGui::Dummy(ImVec2(0, 4.0f * u));
+        }
         const bool update = install::texture_pack_state(*directory) == install::TexturePackState::Collected;
         const std::string label = update ? std::string(tr(Text::TexturesUpdate)) : format(Text::TexturesMake, {choice});
         if (action_row(layer_, "textures_make", label, "", width)) {

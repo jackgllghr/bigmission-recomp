@@ -107,6 +107,15 @@ private:
         float normal[3];
     };
 
+    struct WorldContours {
+        std::vector<GpuVertex> vertices;
+        std::vector<std::array<float, 3>> positions;
+        std::vector<float> facing;
+        PipelineKey key;
+        VkViewport viewport{};
+        VkRect2D scissor{};
+    } world_contours_;
+
     VulkanContext &vk_;
     std::uint32_t scale_;
     std::uint32_t cel_shading_{};
@@ -146,6 +155,7 @@ private:
                    const QueuedTexture *queued);
     void begin_pass(Target &target);
     void end_pass();
+    void draw_world_contours();
     void flush();
     // Ensures `bytes` of room in a per-frame buffer, flushing the frame when full.
     VkDeviceSize reserve(Buffer &buffer, VkDeviceSize &cursor, VkDeviceSize bytes, VkDeviceSize alignment);

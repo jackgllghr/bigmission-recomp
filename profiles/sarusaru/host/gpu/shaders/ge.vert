@@ -169,7 +169,7 @@ layout(location = 4) flat out vec4 frag_uv_rect;
 
 layout(push_constant) uniform Push {
     mat4 transform;      // WVP, or identity for through vertices
-    vec4 viewport;       // xy: target size in PSP pixels, z: through, w: 1 fog + 2 lighting + 4 cel shading + 8 outline pass
+    vec4 viewport;       // xy: target size in PSP pixels, z: through, w: 1 fog + 2 lighting + 4 cel shading + 8 outline + 16 projected contour
     vec4 texture_params; // x: texture enabled, y: texture function, z: alpha ref, w: alpha func
     vec4 uv_transform;   // xy: scale, zw: offset
     vec4 view_z;         // row of view * world that gives view-space z
@@ -276,6 +276,11 @@ void main() {
     frag_specular = vec3(0.0);
     frag_fog = 1.0;
     frag_uv_rect = vec4(-1e30, -1e30, 1e30, 1e30);
+    if ((int(push.viewport.w + 0.5) & 16) != 0) {
+        gl_Position = in_position;
+        gl_Position.z -= 1e-5 * gl_Position.w;
+        return;
+    }
     if (push.viewport.z > 0.5) {
         vec4 rect = vec4(in_normal.xy, in_normal.z, in_position.w);
         frag_uv_rect = vec4(rect.xy * push.uv_transform.xy + push.uv_transform.zw,

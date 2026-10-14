@@ -40,7 +40,7 @@ struct Settings {
     // Relative paths resolve beside the selected settings file.
     std::filesystem::path translation_pack;
     std::uint32_t internal_resolution{2};
-    // 0 = original, 1 = banded, 2 = banded with black character silhouettes.
+    // 0 = original, 1 = banded, 2 = banded with black world and character silhouettes.
     std::uint32_t cel_shading{0};
     // The window's size at startup, in points (it stays resizable), and
     // whether it opens fullscreen at the desktop's resolution instead.
