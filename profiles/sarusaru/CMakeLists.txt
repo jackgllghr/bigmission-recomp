@@ -169,6 +169,28 @@ if(SARUSARU_BUILD_BOOTSTRAP)
     sarusaru_use_ffmpeg(sarusaru_bootstrap)
     set_target_properties(sarusaru_bootstrap PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    if(SARUSARU_HAS_RENDERER)
+        # The windowed game. The GE shaders are compiled to SPIR-V at build
+        # time and embedded, so the executable needs no shader files.
+        set(_sarusaru_shaders "${CMAKE_CURRENT_BINARY_DIR}/ge_shaders.inc")
+        add_custom_command(OUTPUT "${_sarusaru_shaders}"
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_shaders.py"
+                "$<TARGET_FILE:${SARUSARU_GLSLANG}>" "${_sarusaru_shaders}"
+                "kGeVertexShader=${CMAKE_CURRENT_SOURCE_DIR}/host/gpu/shaders/ge.vert"
+                "kGeFragmentShader=${CMAKE_CURRENT_SOURCE_DIR}/host/gpu/shaders/ge.frag"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_shaders.py" "${CMAKE_CURRENT_SOURCE_DIR}/host/gpu/shaders/ge.vert"
+                "${CMAKE_CURRENT_SOURCE_DIR}/host/gpu/shaders/ge.frag" ${SARUSARU_GLSLANG}
+            COMMENT "Compiling the GE shaders")
+        add_executable(sarusaru host/shell/main.cpp host/shell/vulkan_context.cpp host/shell/ge_renderer.cpp
+            host/shell/audio_output.cpp host/shell/input.cpp "${_sarusaru_shaders}")
+        target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_shell)
+        sarusaru_use_ffmpeg(sarusaru)
+        set_target_properties(sarusaru PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+        if(PSPRECOMP_BUILD_PROFILE_TESTS)
+            add_test(NAME sarusaru_shell_help COMMAND sarusaru --help)
+        endif()
+    endif()
     if(PSPRECOMP_BUILD_PROFILE_TESTS)
         add_test(NAME sarusaru_bootstrap_help COMMAND sarusaru_bootstrap --help)
         add_test(NAME sarusaru_bootstrap_missing_input COMMAND sarusaru_bootstrap)

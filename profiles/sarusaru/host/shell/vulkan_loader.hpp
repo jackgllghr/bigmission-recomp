@@ -44,6 +44,9 @@ struct VulkanLoader {
     bool portability{};
 
     // Loads the Vulkan library through SDL (SDL must be initialised).
+    // Loads the Vulkan library (once; later calls do nothing). Must come
+    // before creating an SDL_WINDOW_VULKAN window, which otherwise loads the
+    // system's default library.
     bool load(std::string &error);
     // `extensions` are required (e.g. the window's surface extensions).
     bool create_instance(std::vector<const char *> extensions, bool validation, std::string &error);

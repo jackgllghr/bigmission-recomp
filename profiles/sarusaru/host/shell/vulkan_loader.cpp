@@ -10,6 +10,7 @@
 namespace sarusaru::shell {
 
 bool VulkanLoader::load(std::string &error) {
+    if (vkGetInstanceProcAddr != nullptr) return true;
     const char *library = nullptr;
 #if defined(__APPLE__)
     // Errors only, unless MVK_CONFIG_LOG_LEVEL is already set.

@@ -59,14 +59,21 @@ void main() {
         vec2 uv = push.texture_params.x > 1.5 ? sharp_bilinear(frag_texcoord) : frag_texcoord;
         vec4 texel = texture(guest_texture, clamp(uv, frag_uv_rect.xy, frag_uv_rect.zw));
         int function = int(push.texture_params.y + 0.5);
+        // Plus 8: the texture's alpha is ignored (TCC off), and the fragment
+        // keeps the vertex alpha.
+        bool texture_alpha = function < 8;
+        function &= 7;
+        float alpha = texture_alpha ? color.a * texel.a : color.a;
         if (function == 0) {          // modulate
-            color *= texel;
+            color = vec4(color.rgb * texel.rgb, alpha);
         } else if (function == 1) {   // decal
-            color = vec4(mix(color.rgb, texel.rgb, texel.a), color.a);
-        } else if (function == 2) {   // blend
-            color = vec4(mix(color.rgb, texel.rgb, texel.rgb), color.a * texel.a);
-        } else {                      // replace and everything else
-            color = texel;
+            color = vec4(texture_alpha ? mix(color.rgb, texel.rgb, texel.a) : texel.rgb, color.a);
+        } else if (function == 2) {   // blend (with the texture environment colour, taken as the texel)
+            color = vec4(mix(color.rgb, texel.rgb, texel.rgb), alpha);
+        } else if (function == 3) {   // replace
+            color = vec4(texel.rgb, texture_alpha ? texel.a : color.a);
+        } else {                      // add
+            color = vec4(min(color.rgb + texel.rgb, vec3(1.0)), alpha);
         }
     }
 

@@ -3,8 +3,9 @@
 Native recompilation work for **Saru! Get You! SaruSaru Daisakusen** (Japan),
 disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 
-**Initial macOS arm64 diagnostic bootstrap only. Not playable yet.** No renderer,
-audio, PSP kernel, save support or enhanced controls have been implemented.
+**Early macOS arm64 build: the game boots, renders and plays sound in a
+window, but is not verified playable end to end.** Settings, rebinding,
+the launcher and translation are not implemented yet.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
 ## Requirements
@@ -39,6 +40,27 @@ Exit **3** from the diagnostic host means execution stopped at incomplete
 runtime functionality or the dispatch budget. It is **not** successful gameplay.
 Exit 1 means an input, build or execution error. The bootstrap script preserves
 the host's diagnostic exit code.
+
+## Play in a window
+
+After the bootstrap script has generated the game code once:
+
+```sh
+cmake --build out/macos-arm64 --target sarusaru
+out/macos-arm64/bin/sarusaru profiles/sarusaru/game/BOOT.elf \
+  '../Saru! Get You! SaruSaru Daisakusen (Japan).iso'
+```
+
+`--scale N` sets the internal resolution (1-8 times 480x272, default 2).
+Keys: arrows d-pad, Z circle (confirm in this Japanese release), X cross,
+A square, S triangle, Q/W L/R, Enter start, Backspace select, I/J/K/L the
+analog stick, Tab (held) fast-forward, Escape quit. Gamepads map by button
+position. Saves go to the same per-user memory stick as the bootstrap's.
+
+For unattended checks, `SARUSARU_CAPTURE=<directory>` saves the picture as
+BMP files every `SARUSARU_CAPTURE_EVERY` seconds of game time (default 5),
+`SARUSARU_INPUT` scripts the pad as for the bootstrap, and
+`SARUSARU_TRACE_DRAWS=<seconds>` prints the draw calls of two vblanks.
 
 ### Framework and input tests without an ISO
 
@@ -249,6 +271,19 @@ The pinned upstream is recorded in `config/supported_game.json`.
   hash-checked (see `THIRD_PARTY.md`). Vulkan is never linked; functions are
   loaded through SDL (`shell/vulkan_loader.*`). `sarusaru_vulkan_probe`
   lists the GPUs Vulkan sees. `-DSARUSARU_RENDERER=OFF` builds headless only.
+- Added the windowed shell, `sarusaru` (`shell/`): an SDL window and Vulkan
+  swapchain (`vulkan_context.*`), a GE renderer (`ge_renderer.*`) for the
+  draws GeState decodes, using the adopted GE shaders compiled to SPIR-V at
+  build time and embedded; audio through one SDL stream per `sceAudio`
+  channel (`audio_output.*`); and keyboard and gamepad input (`input.*`).
+  The kernel's frame observer drives it: at every guest vblank the shell
+  polls events, presents the displayed framebuffer and sleeps until real
+  time catches up with guest time. Findings while bringing it up: the
+  game's CULL bit keeps the faces Vulkan sees as clockwise; its fog end
+  and scale registers hold infinity and NaN, taken as +/-65535 (as
+  PPSSPP does); the adopted fragment shader now honours the texture's
+  colour-component setting (TCC) and the `add` texture function, and the
+  GE's alpha-test codes 0 (never) and 1 (always) are swapped for it.
 - Added scripted controller input for unattended runs: timed pad states
   that controller samples follow at their own virtual timestamps.
 - `sceKernelUnloadModule` returns the module ID on success, as on the PSP;
@@ -312,10 +347,10 @@ These are game-neutral fixes; game identity and bootstrap choices stay here.
 
 ## Next work
 
-Implement the observed startup requirements with a real PSP kernel and tested
-HLE behavior, adapting audited Yakumo code where appropriate. Then reach title
-screen and representative gameplay before camera, timing, saves or translation
-enhancements. See [`YAKUMO_REUSE.md`](YAKUMO_REUSE.md).
+The acceptance run with real input (new game, a level, save and reload),
+then writing GPU results back to guest memory, the GE registers GeState does
+not model yet, and the settings, launcher and translation milestones. See
+[`../../PLAN.md`](../../PLAN.md) and [`YAKUMO_REUSE.md`](YAKUMO_REUSE.md).
 
 The desired prebuilt release model still requires review of distribution of
 translated game code. No permission to redistribute the original game is

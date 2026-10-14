@@ -143,28 +143,33 @@ networking (`sceNet*`, 21 in total).
 
 ### Presentation and media (milestone 2, interactive)
 
-10. [~] Host shell: pinned SDL3, Vulkan headers, glslang and (macOS)
-       MoltenVK build with the project; Vulkan is loaded at run time through
-       SDL (verified on Apple M4). Still to come: window, event loop,
-       real-time pacing on top of the virtual event queue, host input feeding
-       `sceCtrl`, audio output.
+10. [x] Host shell (`sarusaru`): pinned SDL3, Vulkan headers, glslang and
+       (macOS) MoltenVK build with the project; Vulkan is loaded at run time
+       through SDL. A window with a Vulkan swapchain, the game paced to real
+       time at each vblank of the virtual clock (Tab fast-forwards),
+       keyboard and gamepad input into `sceCtrl`, and `sceAudio` output
+       through SDL audio streams. Fixed bindings for now; rebinding and
+       settings come with milestone 4.
 11. [~] GE rendering: Yakumo's GeState now decodes every draw (vertices,
         textures, blend, depth, lighting, fog, matrices) behind the headless
-        GE, and GE block transfers are carried out in guest memory. Still to
-        come: the Vulkan draw path and framebuffer presentation; registers
-        GeState does not model yet (stencil, dithering, morph weights, some
-        texture-mapping modes) are counted as unhandled.
+        GE, and GE block transfers are carried out in guest memory. A Vulkan
+        renderer (`shell/ge_renderer.*`) draws them into per-framebuffer
+        targets at an adjustable internal resolution (`--scale`), with
+        cached textures, render-to-texture and presentation of the displayed
+        framebuffer (uploaded from guest memory when the CPU drew it). Still
+        to come: writing GPU results back to guest memory for games that read
+        them, and registers GeState does not model yet (stencil, dithering,
+        morph weights, some texture-mapping modes; Bezier/spline patches).
 12. [~] Audio: `sceAudio` output channels are modeled headless on the
         virtual clock (blocking output paces the audio thread; samples are
         counted, not played). `sceSasCore` synthesizes VAG voices with
         envelopes and mixes grains (reverb recorded, not applied).
         `sceAtrac3plus` decodes streamed or in-memory ATRAC3/ATRAC3plus
         tracks with FFmpeg (LGPL, dynamically linked, built from a pinned
-        source). Still to come: reverb and host output through SDL3 audio.
+        source). Output plays through SDL. Still to come: SAS reverb.
 13. [x] Movies: `scePsmfPlayer` plays PSMF movies from the disc (Yakumo's
         demuxer, H.264 and ATRAC3plus on FFmpeg), timed on the virtual clock,
-        into the game's buffers in its configured pixel format. Headless:
-        nothing is shown or heard until the host shell exists.
+        into the game's buffers in its configured pixel format.
 14. [~] Utility dialogs: savedata is modeled (load/save/list/delete/sizes on
         a per-user PSP-layout memory stick, PSP save encryption with the
         public keys, mode 3 for this game). No dialog UI is drawn yet. Still
@@ -202,10 +207,15 @@ and audio. With a scripted pad (`SARUSARU_INPUT`, alternating Start and
 Circle) it leaves the title, loads stage 1-1 with its sound banks and music,
 and keeps running there: a 400-million-dispatch run reaches 8,191 s of guest
 time (245,504 GE display lists, 14.5 million primitives) without meeting an
-unmodeled import. Nothing is drawn or heard yet: the next milestone is the
-host shell and GE renderer (chunks 10 and 11).
+unmodeled import.
 
-Twenty-six CTest suites pass. With generated code at `-O1` and AOT call
+The windowed shell now shows and plays the game at real time: the developer
+logos, loading screens, the title over its 3D beach scene, the attract demo,
+the save menu and the stage hub all render correctly at 2x internal
+resolution on an Apple M4. Next: the acceptance run with real input, GPU
+write-back, and the remaining GE registers.
+
+Twenty-seven CTest suites pass. With generated code at `-O1` and AOT call
 chaining enabled, the headless run reaches stage 1 at about 28 times real time. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
