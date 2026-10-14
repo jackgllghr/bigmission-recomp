@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <fstream>
 #include <set>
+#include <optional>
 #include <stdexcept>
 
 namespace sarusaru::translation {
@@ -68,7 +69,8 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     in.seekg(0);
     if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) invalid("short read");
     Reader reader(bytes);
-    if (reader.text(8) != "SSTEXPK1") invalid("unsupported format/version");
+    const auto magic = reader.text(8);
+    if (magic != "SSTEXPK1" && magic != "SSTEXPK2") invalid("unsupported format/version");
     if (disc_id.size() != 9 || reader.text(9) != disc_id || reader.digest() != executable_hash) invalid("incompatible game");
     TexturePack pack;
     pack.locale_ = reader.text(2);
@@ -100,6 +102,24 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             entry.width > entry.ge_width || entry.height > entry.ge_height || entry.buffer_width < entry.width || entry.buffer_width > 512)
             invalid("invalid texture dimensions");
         entry.source_hash = reader.digest();
+        if (magic == "SSTEXPK2") {
+            const auto regions = reader.integer(2);
+            if (regions == 0 || regions > 64) invalid("invalid replacement region count");
+            for (std::uint32_t r = 0; r < regions; ++r) {
+                Region region;
+                region.x = static_cast<std::uint16_t>(reader.integer(2));
+                region.y = static_cast<std::uint16_t>(reader.integer(2));
+                region.width = static_cast<std::uint16_t>(reader.integer(2));
+                region.height = static_cast<std::uint16_t>(reader.integer(2));
+                if (region.width == 0 || region.height == 0 || region.x + region.width > entry.width || region.y + region.height > entry.height)
+                    invalid("replacement region outside image");
+                for (const auto &other : entry.regions)
+                    if (region.x < other.x + other.width && other.x < region.x + region.width &&
+                        region.y < other.y + other.height && other.y < region.y + region.height)
+                        invalid("overlapping replacement regions");
+                entry.regions.push_back(region);
+            }
+        } else entry.regions.push_back({0, 0, entry.width, entry.height});
         const auto identity = std::to_string(entry.width) + ":" + std::to_string(entry.height) + ":" +
             std::to_string(entry.ge_width) + ":" + std::to_string(entry.ge_height) + ":" + std::to_string(entry.buffer_width) + ":" + entry.source_hash;
         if (!identities.insert(identity).second) invalid("ambiguous replacement identity");
@@ -109,8 +129,91 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
         entry.rgba.assign(rgba.begin(), rgba.end());
         pack.entries_.push_back(std::move(entry));
     }
+    if (magic == "SSTEXPK2") {
+        const auto string_count = reader.integer(4);
+        if (string_count > 256) invalid("too many string replacements");
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> ranges;
+        for (std::uint32_t i = 0; i < string_count; ++i) {
+            StringEntry entry;
+            entry.id = reader.name(128);
+            if (!ids.insert(entry.id).second) invalid("duplicate entry ID");
+            entry.offset = reader.integer(4);
+            entry.capacity = reader.integer(4);
+            if (entry.capacity < 2 || entry.capacity > 2048 || entry.offset > 4u * 1024u * 1024u - entry.capacity)
+                invalid("invalid string slot");
+            entry.source_hash = reader.digest();
+            const auto length = reader.integer(2);
+            if (length == 0 || length >= entry.capacity) invalid("string exceeds its source slot");
+            entry.replacement = reader.text(length);
+            if (std::ranges::any_of(entry.replacement, [](unsigned char c) { return (c < 32 && c != 10) || c > 126; }))
+                invalid("string must use printable guest ASCII");
+            ranges.emplace_back(entry.offset, entry.offset + entry.capacity);
+            pack.strings_.push_back(std::move(entry));
+        }
+        std::ranges::sort(ranges);
+        for (std::size_t i = 1; i < ranges.size(); ++i)
+            if (ranges[i].first < ranges[i - 1].second) invalid("overlapping string slots");
+    }
     if (!reader.empty()) invalid("trailing data");
     return pack;
+}
+
+namespace {
+// Preserve printf conversion order/types. No new conversions may be introduced.
+std::vector<std::string> placeholders(std::string_view text) {
+    std::vector<std::string> result;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] != '%') continue;
+        const auto start = i++;
+        if (i < text.size() && text[i] == '%') continue;
+        while (i < text.size() && std::string_view("-+ #0.123456789hlz").find(text[i]) != std::string_view::npos) ++i;
+        if (i == text.size() || std::string_view("sdiuXxfc").find(text[i]) == std::string_view::npos)
+            invalid("unsupported formatting token");
+        result.emplace_back(text.substr(start, i - start + 1));
+    }
+    return result;
+}
+}
+
+void TexturePack::apply_strings(psprecomp::GuestMemory &memory, const psprecomp::Elf32Image &elf,
+                                std::uint32_t load_base) const {
+    std::vector<std::uint32_t> addresses;
+    for (const auto &entry : strings_) {
+        // Restrict the adapter to immutable, non-executable .rodata strings.
+        bool rodata = false;
+        for (const auto &section : elf.sections()) {
+            if (section.name == ".rodata" && section.type == 1 && section.flags == 2 &&
+                entry.offset >= section.offset &&
+                static_cast<std::uint64_t>(entry.offset) + entry.capacity <= static_cast<std::uint64_t>(section.offset) + section.size)
+                rodata = true;
+        }
+        if (!rodata) invalid("string outside read-only text data: " + entry.id);
+        std::optional<std::uint32_t> address;
+        for (std::size_t index = 0; index < elf.segments().size(); ++index) {
+            const auto &segment = elf.segments()[index];
+            if (segment.type != 1 || entry.offset < segment.offset ||
+                static_cast<std::uint64_t>(entry.offset) + entry.capacity > static_cast<std::uint64_t>(segment.offset) + segment.file_size) continue;
+            const auto target = static_cast<std::uint64_t>(elf.segment_runtime_address(index, load_base)) + entry.offset - segment.offset;
+            if (target > UINT32_MAX || !memory.contains(static_cast<std::uint32_t>(target), entry.capacity) || address)
+                invalid("ambiguous or unmapped string slot");
+            address = static_cast<std::uint32_t>(target);
+        }
+        if (!address) invalid("unmapped string slot");
+        std::vector<std::uint8_t> original(entry.capacity);
+        for (std::uint32_t i = 0; i < entry.capacity; ++i) original[i] = memory.load8(*address + i);
+        if (original.back() != 0 || std::find(original.begin(), original.end() - 1, 0) != original.end() - 1 ||
+            psprecomp::sha256(original) != entry.source_hash)
+            invalid("string source mismatch: " + entry.id);
+        const std::string_view source(reinterpret_cast<const char *>(original.data()), original.size() - 1);
+        if (placeholders(source) != placeholders(entry.replacement)) invalid("formatting tokens changed: " + entry.id);
+        addresses.push_back(*address);
+    }
+    // Validation is transactional: a bad later entry cannot leave earlier slots changed.
+    for (std::size_t index = 0; index < strings_.size(); ++index) {
+        const auto &entry = strings_[index];
+        for (std::uint32_t i = 0; i < entry.capacity; ++i)
+            memory.store8(addresses[index] + i, i < entry.replacement.size() ? static_cast<std::uint8_t>(entry.replacement[i]) : 0);
+    }
 }
 
 bool TexturePack::apply(const gpu::TextureState &texture, std::vector<std::uint32_t> &pixels) const {
@@ -119,7 +222,9 @@ bool TexturePack::apply(const gpu::TextureState &texture, std::vector<std::uint3
         if (texture.width != entry.ge_width || texture.height != entry.ge_height || texture.buffer_width != entry.buffer_width) continue;
         std::vector<std::uint8_t> source;
         source.reserve(entry.rgba.size());
-        for (std::size_t y = 0; y < entry.height; ++y) for (std::size_t x = 0; x < entry.width; ++x) {
+        for (const auto &region : entry.regions)
+        for (std::size_t y = region.y; y < region.y + region.height; ++y)
+        for (std::size_t x = region.x; x < region.x + region.width; ++x) {
             const auto value = pixels[y * texture.width + x];
             for (unsigned shift = 0; shift < 32; shift += 8) source.push_back(static_cast<std::uint8_t>(value >> shift));
         }

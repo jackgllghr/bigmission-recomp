@@ -111,7 +111,7 @@ def build(iso_path, logo_path, catalog_path, output):
     canvas = images['i_g_titl_l.lzs']
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
     render_labels(catalog, images)
-    result = bytearray(b'SSTEXPK1')
+    result = bytearray(b'SSTEXPK2')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', 1) + name(SOURCE_PATH) + digest(source)
     result += struct.pack('<I', len(ASSETS))
@@ -119,6 +119,45 @@ def build(iso_path, logo_path, catalog_path, output):
         rgba = images[asset].tobytes()
         result += name(key) + struct.pack('<5H', *size, *ge) + digest(textures[asset].rgba)
         result += struct.pack('<I', len(rgba)) + rgba
+    strings = catalog.get('strings', [])
+    if len(strings) > 256:
+        raise ValueError('Too many dialog strings')
+    result += struct.pack('<I', len(strings))
+    occupied = []
+    string_ids = set()
+    import re
+    token = re.compile(r'%(?:%|[-+ #0.0-9hlz]*[sdiuXxfc])')
+    for entry in strings:
+        key, offset, text = entry['id'], entry['offset'], entry['text']
+        if key in string_ids or not isinstance(key, str) or not key:
+            raise ValueError('Invalid/duplicate string ID')
+        string_ids.add(key)
+        if type(offset) is not int or not 0 <= offset < len(boot) or (offset and boot[offset - 1] != 0):
+            raise ValueError('String offset must begin at a NUL-delimited slot')
+        end = boot.find(b'\0', offset)
+        if end < 0 or not 1 <= end - offset < 2048:
+            raise ValueError('Invalid original string slot')
+        source_string = boot[offset:end + 1]
+        if not isinstance(text, str) or not text or any(ord(c) < 32 and c != '\n' or ord(c) > 126 for c in text):
+            raise ValueError('Dialog translation supports ASCII and line breaks')
+        lines = text.split('\n')
+        if len(lines) > entry['max_lines'] or any(len(line) > entry['max_columns'] for line in lines):
+            raise ValueError(f'{key}: dialog exceeds its layout budget')
+        replacement = text.encode('ascii')
+        if len(replacement) >= len(source_string):
+            raise ValueError(f'{key}: translation exceeds its original byte slot')
+        def placeholders(raw):
+            matches = list(token.finditer(raw))
+            if raw.count('%') != sum(len(m.group().replace('%', '')) == 0 and 2 or 1 for m in matches):
+                raise ValueError('Unsupported printf placeholder')
+            return [m.group() for m in matches if m.group() != '%%']
+        if placeholders(source_string[:-1].decode('cp932')) != placeholders(replacement.decode('ascii')):
+            raise ValueError(f'{key}: formatting tokens differ')
+        if any(offset < b and a < end + 1 for a, b in occupied):
+            raise ValueError('Overlapping dialog string slots')
+        occupied.append((offset, end + 1))
+        result += name(key) + struct.pack('<II', offset, len(source_string)) + digest(source_string)
+        result += struct.pack('<H', len(replacement)) + replacement
     # Atomic replacement of this explicit output file; no ISO writes or asset extraction.
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix='.translation-', delete=False) as temporary:

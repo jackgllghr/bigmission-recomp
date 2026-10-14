@@ -177,9 +177,11 @@ int main(int argc, char **argv) {
                             throw std::runtime_error("translation pack: missing or oversized source " + std::string(path));
                         return game.disc.read_file(*entry, 32u * 1024u * 1024u);
                     });
+                translation_pack->apply_strings(game.runtime.memory(), game.elf, sarusaru::load_base);
                 renderer.set_translation_pack(&*translation_pack);
                 std::cout << "Translation: " << translation_pack->locale() << " (" << translation_pack->size()
-                          << " menu textures); untranslated screens retain Japanese\n";
+                          << " menu textures, " << translation_pack->string_count()
+                          << " dialog strings); untranslated screens retain Japanese\n";
             }
             auto &memory = game.runtime.memory();
             // Frame interpolation: each draw is also blended with its match in
