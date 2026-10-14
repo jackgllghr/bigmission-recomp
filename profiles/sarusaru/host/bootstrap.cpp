@@ -1,9 +1,12 @@
 #include "game_identity.hpp"
+#include "startup_hle.hpp"
+#include "kernel/early_kernel.hpp"
 #include "psprecomp/common.hpp"
 #include "psprecomp/elf32.hpp"
 #include "psprecomp/runtime.hpp"
 #include "psprecomp/sha256.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -54,11 +57,28 @@ int main(int argc, char **argv) {
             throw psprecomp::Error("Expected SARU-P2 module metadata");
         }
         psprecomp::register_generated_functions(runtime);
+        sarusaru::StartupHle startup_hle;
+        startup_hle.install(runtime);
+        sarusaru::kernel::EarlyKernel early_kernel;
+        std::uint32_t image_end = sarusaru::load_base;
+        for (std::size_t index = 0; index < elf.segments().size(); ++index) {
+            const auto &segment = elf.segments()[index];
+            if (segment.type != 1u) continue;
+            const auto segment_end = static_cast<std::uint64_t>(elf.segment_runtime_address(index, sarusaru::load_base)) +
+                segment.memory_size;
+            if (segment_end > 0x0A000000u) throw psprecomp::Error("Image exceeds PSP user RAM");
+            image_end = std::max(image_end, static_cast<std::uint32_t>(segment_end));
+        }
+        // Keep the bootstrap stack and its guard area outside guest allocations.
+        early_kernel.install(runtime, image_end, 0x09FF6000u);
+        sarusaru::kernel::register_early_threadman(early_kernel, runtime);
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.
         constexpr std::uint32_t stack = 0x09FFE000u;
-        constexpr std::uint32_t arguments = 0x09FFF000u;
+        // Kernel scratch lies below the module image and cannot be overwritten
+        // by a user thread stack allocated from the high end of RAM.
+        constexpr std::uint32_t arguments = 0x08100000u;
         constexpr std::string_view launch_path = "disc0:/PSP_GAME/SYSDIR/EBOOT.BIN";
         for (std::size_t i = 0; i < launch_path.size(); ++i) {
             runtime.memory().store8(arguments + static_cast<std::uint32_t>(i),
@@ -70,7 +90,11 @@ int main(int argc, char **argv) {
         cpu.set_gpr(5u, arguments);
         cpu.set_gpr(28u, module->gp);
         cpu.set_gpr(29u, stack);
-        cpu.set_gpr(31u, 0u);
+        // Module startup returns through the kernel's thread-exit stub. This
+        // keeps an unsupported scheduler transition explicit instead of
+        // dispatching guest PC zero as though it were executable code.
+        cpu.set_gpr(31u, sarusaru::kernel::kThreadExitStub);
+        early_kernel.begin_main_thread(cpu, "module_start", 0x20u);
 
         const auto entry = elf.runtime_entry(sarusaru::load_base);
         std::cout << "SaruSaru diagnostic AOT bootstrap (not playable)\n"
@@ -78,8 +102,14 @@ int main(int argc, char **argv) {
                   << "; registered entries: " << runtime.function_count() << '\n' << std::flush;
         runtime.run(entry, 100'000u);
         std::cout << "Stopped at " << psprecomp::hex32(cpu.pc) << ": "
-                  << runtime.stop_reason() << '\n'
-                  << "No missing PSP imports are stubbed as success.\n";
+                   << runtime.stop_reason() << '\n'
+                   << "Stop arguments: a0=" << psprecomp::hex32(cpu.gpr[4])
+                   << " a1=" << psprecomp::hex32(cpu.gpr[5])
+                   << " a2=" << psprecomp::hex32(cpu.gpr[6])
+                   << " a3=" << psprecomp::hex32(cpu.gpr[7]) << '\n'
+                   << "Observed startup values: compiled SDK " << psprecomp::hex32(startup_hle.compiled_sdk_version())
+                   << ", compiler " << psprecomp::hex32(startup_hle.compiler_version()) << '\n'
+                   << "Only explicitly modeled imports are bound; every other missing call stops execution.\n";
         return 3;
     } catch (const std::exception &error) {
         std::cerr << "sarusaru_bootstrap: " << error.what() << '\n';

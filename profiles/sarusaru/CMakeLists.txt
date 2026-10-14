@@ -3,8 +3,18 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 if(PSPRECOMP_BUILD_PROFILE_TESTS)
     enable_testing()
     add_test(NAME sarusaru_prepare_tests
-        COMMAND "${Python3_EXECUTABLE}" -m unittest discover
+            COMMAND "${Python3_EXECUTABLE}" -m unittest discover
             -s "${CMAKE_CURRENT_SOURCE_DIR}/tests" -v)
+    add_executable(sarusaru_startup_hle_tests
+        tests/startup_hle_tests.cpp host/startup_hle.cpp)
+    target_include_directories(sarusaru_startup_hle_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_startup_hle_tests PRIVATE psprecomp_core)
+    add_test(NAME sarusaru_startup_hle_tests COMMAND sarusaru_startup_hle_tests)
+    add_executable(sarusaru_early_kernel_tests
+        tests/early_kernel_tests.cpp host/kernel/early_kernel.cpp)
+    target_include_directories(sarusaru_early_kernel_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_early_kernel_tests PRIVATE psprecomp_core)
+    add_test(NAME sarusaru_early_kernel_tests COMMAND sarusaru_early_kernel_tests)
 endif()
 
 option(SARUSARU_BUILD_BOOTSTRAP "Build the diagnostic host with locally generated AOT code" OFF)
@@ -26,8 +36,8 @@ if(SARUSARU_BUILD_BOOTSTRAP)
         target_compile_options(sarusaru_aot PRIVATE -O0)
     endif()
 
-    add_executable(sarusaru_bootstrap host/bootstrap.cpp)
-    target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    add_executable(sarusaru_bootstrap host/bootstrap.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp)
+    target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot)
     set_target_properties(sarusaru_bootstrap PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

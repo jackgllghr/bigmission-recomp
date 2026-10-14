@@ -99,8 +99,12 @@ is untouched. Implementation and verification results are recorded in
 `profiles/sarusaru/README.md`; game-derived details remain in ignored analysis.
 
 The native arm64 AOT bootstrap compiles all 163 generated source units and
-executes startup until the first missing HLE import,
-`SysMemUserForUser::sceKernelSetCompiledSdkVersion`. Five CTest suites pass,
+executes startup through the modeled SDK/compiler configuration imports and
+creates and starts guest threads, and services the first partition allocation.
+Correct thread control-block setup and bootstrap-stack reservation resolve the
+earlier guest fault. Startup now reaches an unidentified `ThreadManForUser` NID
+(`0x9ACE131E`), which remains deliberately unbound pending contract research.
+Seven CTest suites pass,
 including 17 input/preparation cases and seven generated-native-code cases.
 Repeat generation rewrites zero source units. Three game-neutral generator
 defects discovered during this work were reproduced with synthetic fixtures,

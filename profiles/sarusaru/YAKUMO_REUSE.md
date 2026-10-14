@@ -33,6 +33,17 @@ dynamic linking, notices, corresponding-source and replacement obligations; MIT
 on the host does not remove LGPL obligations. Shipping fonts requires retaining
 their OFL notices. Vulkan/MoltenVK packaging also needs dependency-specific review.
 
+## Current kernel decision
+
+The full Yakumo kernel and ThreadMan HLE were inspected as behavioral reference,
+but are not copied at this stage: their implementation spans virtual-clock pacing,
+renderer hooks, fast-loading/fast-forward policies, interrupt delivery, tracing,
+and a Monster Hunter text-loader notification. This profile's `host/kernel/early_kernel.*`
+is independently written and intentionally only owns validated thread construction
+and stack allocation. It implements the observed `sceKernelCreateThread` contract
+and is covered by synthetic tests. It is not yet a scheduler, and does not assert
+compatibility for starting, delaying, waiting, or exiting threads.
+
 Sources:
 
 - [Profile build](https://github.com/TeamGDB/Yakumo/blob/39ac05f1a166703430d18826bc5877f4feb6b511/profiles/mhp3rd/CMakeLists.txt)

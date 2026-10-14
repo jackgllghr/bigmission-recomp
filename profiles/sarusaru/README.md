@@ -82,10 +82,16 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   correct code coverage. Runtime traces must guide further work.
 - Two encrypted media-module candidates are present. Their runtime loading
   behavior, and any game code overlays, have not been established.
-- Native Mach-O arm64 bootstrap compiles and executes startup, stopping at
-  `SysMemUserForUser::sceKernelSetCompiledSdkVersion`, the first missing PSP call.
-  No PSP imports are implemented yet; the stop is expected and returns exit 3.
-- All five CTest suites pass, including 17 ISO/preparation cases and seven
+- Native Mach-O arm64 bootstrap compiles and executes startup through the
+  explicitly modeled SDK/compiler configuration, early thread calls and the
+  first partition allocation (`UserSbrk`, type 3, 0x01300000 bytes, aligned to
+  0x1000 at 0x08AAA000). PSP control-block initialization (`$k0`) and bootstrap
+  stack reservation have been verified; they resolve the earlier guest fault.
+  Interrupt-mask state is modeled. Startup currently stops at unknown
+  `ThreadManForUser` NID `0x9ACE131E`. It is
+  deliberately unbound until its public PSP contract is identified. Thread
+  waits, delays and synchronization remain unimplemented.
+- All seven CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -97,6 +103,20 @@ The pinned upstream is recorded in `config/supported_game.json`.
   labels as well, preserving HLE dispatch rather than executing stub code.
 - Added byte-buffer SHA-256 to the existing framework helper so the host hashes
   the exact executable bytes it loads, not a second filesystem read.
+- Added the narrow `StartupHle` module for the observed SDK/compiler configuration
+  imports. It records the guest-provided values and returns documented success;
+  all other unmodeled imports still stop execution.
+- Added a self-contained early kernel module for validated `sceKernelCreateThread`
+  and `sceKernelStartThread` construction. It performs bounded name reads,
+  validates entry/priority/stack inputs, owns aligned guest stacks and switches
+  to higher-priority initial threads. It schedules the next ready thread on
+  exit, but deliberately stops only when none remain; wait/delay scheduling is
+  not implemented yet.
+- Extended the early kernel with deterministic ready-thread handoff, thread
+  control-block initialization, bounded partition allocation/free, callback and
+  exit-callback creation/registration, power-callback slot registration, and
+  interrupt-mask state. It does **not** deliver callbacks, power events or
+  guest interrupts.
 - Preserved checked VFPU scalar access for invalid register encodings instead
   of emitting uncompilable compile-time template operands.
 - Used normal runtime dispatch for direct targets outside the generated entry
