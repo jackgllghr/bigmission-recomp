@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
         sarusaru::umd::UmdDrive umd_drive(disc);
         sarusaru::umd::register_umd(umd_drive, runtime);
         sarusaru::ctrl::Controller controller;
-        sarusaru::ctrl::register_ctrl(controller, runtime);
+        sarusaru::ctrl::register_ctrl(controller, early_kernel, runtime);
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.
@@ -129,6 +129,7 @@ int main(int argc, char **argv) {
         runtime.run(entry, 100'000u);
         std::cout << "Stopped at " << psprecomp::hex32(cpu.pc) << ": "
                    << runtime.stop_reason() << '\n'
+                   << "Guest time: " << early_kernel.now_us() << " us (virtual)\n"
                    << "Stop arguments: a0=" << psprecomp::hex32(cpu.gpr[4])
                    << " a1=" << psprecomp::hex32(cpu.gpr[5])
                    << " a2=" << psprecomp::hex32(cpu.gpr[6])

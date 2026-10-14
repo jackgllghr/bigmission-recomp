@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -27,11 +28,17 @@ inline constexpr std::uint32_t kUnknownThread = 0x80020198u;
 inline constexpr std::uint32_t kDormant = 0x800201A2u;
 
 // Thread construction, stack ownership and cooperative scheduling: priority
-// preemption on start/wakeup, sleep/wakeup and exit. Delays, timed waits and
-// synchronization objects are deliberately not modeled yet.
+// preemption on start/wakeup, sleep/wakeup, timed waits and exit.
+//
+// Guest time is virtual and deterministic. Guest code runs in zero time; the
+// clock only advances when no thread is ready, jumping to the earliest timed
+// wait. A thread that never blocks therefore never sees time pass.
+// Synchronization objects are deliberately not modeled yet.
 class EarlyKernel {
 public:
-    enum class ThreadState { Dormant, Ready, Running, Sleeping, Exited };
+    enum class ThreadState { Dormant, Ready, Running, Sleeping, Waiting, Exited };
+    // Produces the blocked call's return value when a timed wait ends.
+    using WakeHandler = std::function<std::uint32_t()>;
     void install(psprecomp::Runtime &runtime, std::uint32_t user_memory_start, std::uint32_t user_memory_top);
     void begin_main_thread(psprecomp::AllegrexContext &context, std::string name,
                            std::uint32_t priority);
@@ -45,6 +52,9 @@ public:
     // Called from inside an import: a blocked caller resumes at its return address.
     void sleep_current_thread(psprecomp::AllegrexContext &context);
     [[nodiscard]] std::int32_t wakeup_thread(psprecomp::AllegrexContext &context, ThreadUid uid);
+    void wait_current_until(psprecomp::AllegrexContext &context, std::uint64_t deadline_us, WakeHandler on_wake);
+    void delay_current_thread(psprecomp::AllegrexContext &context, std::uint32_t micros);
+    [[nodiscard]] std::uint64_t now_us() const noexcept { return now_us_; }
     [[nodiscard]] std::int32_t allocate_partition_memory(const std::string &name, std::uint32_t type,
                                                          std::uint32_t size, std::uint32_t address_or_alignment);
     [[nodiscard]] std::int32_t free_partition_memory(std::int32_t uid);
@@ -64,6 +74,9 @@ public:
         ThreadState state{ThreadState::Dormant};
         std::uint64_t ready_sequence{};
         std::uint32_t wakeup_count{};
+        std::uint64_t wake_at_us{};
+        std::uint64_t wait_sequence{};
+        WakeHandler on_wake;
     };
     [[nodiscard]] const ThreadInfo *thread(ThreadUid uid) const noexcept;
     [[nodiscard]] ThreadUid current_uid() const noexcept { return current_uid_; }
@@ -91,6 +104,7 @@ private:
     ThreadUid next_uid_{0x100};
     ThreadUid current_uid_{};
     std::uint64_t next_ready_sequence_{1u};
+    std::uint64_t now_us_{};
     std::map<ThreadUid, ThreadInfo> threads_;
 
     struct FreeRange { std::uint32_t address{}; std::uint32_t size{}; };
@@ -109,6 +123,7 @@ private:
     void save_blocked_context(ThreadInfo &thread, const psprecomp::AllegrexContext &context,
                               std::uint32_t result) noexcept;
     void run_next_ready(psprecomp::AllegrexContext &context, const char *idle_reason);
+    void wake_due_threads();
     void prepare_thread_stack(ThreadInfo &thread);
     [[nodiscard]] std::int32_t allocate_block(const std::string &name, std::uint32_t type,
                                               std::uint32_t size, std::uint32_t address_or_alignment);

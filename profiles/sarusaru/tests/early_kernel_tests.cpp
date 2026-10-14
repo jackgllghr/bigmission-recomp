@@ -7,9 +7,67 @@ namespace {
 void require(bool condition, const char *message) {
     if (!condition) { std::cerr << "FAIL: " << message << '\n'; std::exit(1); }
 }
+
+// Simulates being inside an import called from `return_address`.
+void at_call(psprecomp::AllegrexContext &cpu, std::uint32_t return_address) {
+    cpu.pc = 0x08A00000u;
+    cpu.set_gpr(31u, return_address);
+}
+
+void test_timed_waits() {
+    using sarusaru::kernel::EarlyKernel;
+    psprecomp::Runtime runtime;
+    EarlyKernel kernel;
+    kernel.install(runtime, 0x08804000u, 0x0A000000u);
+    auto &cpu = runtime.cpu();
+    cpu.pc = 0x08804444u;
+    kernel.begin_main_thread(cpu, "main", 0x20u);
+    const auto main_uid = kernel.current_uid();
+    const auto worker = kernel.create_thread("worker", 0x08805000u, 0x30u, 0x200u, 0u, 0u);
+    require(kernel.start_thread(cpu, worker, 0u, 0u) == 0 && kernel.current_uid() == main_uid,
+            "lower-priority worker preempted main");
+
+    // Guest code takes no time: blocking hands over at the same instant.
+    at_call(cpu, 0x08804600u);
+    kernel.delay_current_thread(cpu, 1000u);
+    require(kernel.current_uid() == worker && cpu.pc == 0x08805000u && kernel.now_us() == 0u,
+            "delay did not yield to ready worker");
+
+    // Idle advances straight to the earliest deadline and applies its result.
+    at_call(cpu, 0x08805100u);
+    kernel.wait_current_until(cpu, 500u, [] { return 7u; });
+    require(kernel.current_uid() == worker && cpu.pc == 0x08805100u && cpu.gpr[2] == 7u && kernel.now_us() == 500u,
+            "earliest timed wait did not complete first");
+
+    // A zero delay with nothing else ready resumes at once without advancing time.
+    at_call(cpu, 0x08805200u);
+    kernel.delay_current_thread(cpu, 0u);
+    require(kernel.current_uid() == worker && cpu.pc == 0x08805200u && kernel.now_us() == 500u,
+            "zero delay did not resume immediately");
+
+    at_call(cpu, 0x08805300u);
+    kernel.delay_current_thread(cpu, 2000u);
+    require(kernel.current_uid() == main_uid && cpu.pc == 0x08804600u && cpu.gpr[2] == 0u && kernel.now_us() == 1000u,
+            "main did not resume after its delay");
+
+    // Simultaneous deadlines: both wake, and priority decides who runs.
+    at_call(cpu, 0x08804700u);
+    kernel.delay_current_thread(cpu, 1500u);
+    require(kernel.current_uid() == main_uid && kernel.now_us() == 2500u &&
+                kernel.thread(worker)->state == EarlyKernel::ThreadState::Ready,
+            "simultaneous wakeups not ordered by priority");
+
+    sarusaru::kernel::register_early_threadman(kernel, runtime);
+    cpu.set_gpr(4u, 100u);
+    at_call(cpu, 0x08804800u);
+    runtime.invoke_import("ThreadManForUser", 0xCEADEB47u, cpu);
+    require(!runtime.stopped() && kernel.current_uid() == worker && cpu.pc == 0x08805300u,
+            "HLE delay did not switch threads");
+}
 }
 
 int main() {
+    test_timed_waits();
     constexpr std::uint32_t name_address = 0x08806000u;
     psprecomp::Runtime runtime;
     sarusaru::kernel::EarlyKernel kernel;

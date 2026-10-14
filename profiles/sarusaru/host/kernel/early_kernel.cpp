@@ -49,6 +49,7 @@ void EarlyKernel::install(psprecomp::Runtime &runtime, std::uint32_t user_memory
     next_uid_ = 0x100;
     current_uid_ = 0;
     next_ready_sequence_ = 1u;
+    now_us_ = 0u;
     active_kernel = this;
     runtime.register_function(kThreadExitStub, &thread_exit, "sarusaru_thread_exit");
 }
@@ -96,8 +97,41 @@ void EarlyKernel::save_blocked_context(ThreadInfo &thread, const psprecomp::Alle
     thread.context.set_gpr(2u, result);
 }
 
+void EarlyKernel::wake_due_threads() {
+    std::vector<ThreadInfo *> due;
+    for (auto &[uid, thread] : threads_) {
+        (void)uid;
+        if (thread.state == ThreadState::Waiting && thread.wake_at_us <= now_us_) due.push_back(&thread);
+    }
+    std::ranges::sort(due, [](const ThreadInfo *left, const ThreadInfo *right) {
+        return left->wake_at_us != right->wake_at_us ? left->wake_at_us < right->wake_at_us
+                                                     : left->wait_sequence < right->wait_sequence;
+    });
+    for (ThreadInfo *thread : due) {
+        if (thread->on_wake) thread->context.set_gpr(2u, thread->on_wake());
+        thread->on_wake = nullptr;
+        make_ready(*thread);
+    }
+}
+
 void EarlyKernel::run_next_ready(psprecomp::AllegrexContext &context, const char *idle_reason) {
-    if (ThreadInfo *next = best_ready_thread(); next != nullptr) {
+    wake_due_threads();
+    ThreadInfo *next = best_ready_thread();
+    if (next == nullptr) {
+        // Idle: advance virtual time to the earliest timed wait, if any.
+        std::optional<std::uint64_t> earliest;
+        for (const auto &[uid, thread] : threads_) {
+            (void)uid;
+            if (thread.state == ThreadState::Waiting && (!earliest || thread.wake_at_us < *earliest))
+                earliest = thread.wake_at_us;
+        }
+        if (earliest) {
+            now_us_ = std::max(now_us_, *earliest);
+            wake_due_threads();
+            next = best_ready_thread();
+        }
+    }
+    if (next != nullptr) {
         switch_to(context, next->uid, *next);
         return;
     }
@@ -329,6 +363,27 @@ void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context) {
                             "interrupts, timers and scheduler idle are not implemented");
 }
 
+void EarlyKernel::wait_current_until(psprecomp::AllegrexContext &context, std::uint64_t deadline_us,
+                                     WakeHandler on_wake) {
+    const auto current = threads_.find(current_uid_);
+    if (current == threads_.end()) {
+        runtime_->stop("Timed wait with no current early-kernel thread");
+        return;
+    }
+    ThreadInfo &thread = current->second;
+    save_blocked_context(thread, context, 0u);
+    thread.state = ThreadState::Waiting;
+    thread.wake_at_us = deadline_us;
+    thread.wait_sequence = next_ready_sequence_++;
+    thread.on_wake = std::move(on_wake);
+    run_next_ready(context, "Timed wait with no runnable thread");
+}
+
+void EarlyKernel::delay_current_thread(psprecomp::AllegrexContext &context, std::uint32_t micros) {
+    // A zero delay still yields to every other ready thread.
+    wait_current_until(context, now_us_ + micros, nullptr);
+}
+
 std::int32_t EarlyKernel::wakeup_thread(psprecomp::AllegrexContext &context, ThreadUid uid) {
     if (uid == 0) uid = current_uid_;
     const auto found = threads_.find(uid);
@@ -408,6 +463,12 @@ void register_early_threadman(EarlyKernel &kernel, psprecomp::Runtime &runtime) 
         });
     runtime.register_hle("ThreadManForUser", 0x9ACE131Eu,
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.sleep_current_thread(ctx); });
+    runtime.register_hle("ThreadManForUser", 0xCEADEB47u,  // sceKernelDelayThread
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.delay_current_thread(ctx, ctx.gpr[4]); });
+    // No callback notification is ever generated yet, so the CB variant has
+    // nothing extra to process.
+    runtime.register_hle("ThreadManForUser", 0x68DA9E36u,  // sceKernelDelayThreadCB
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.delay_current_thread(ctx, ctx.gpr[4]); });
     runtime.register_hle("ThreadManForUser", 0xD59EAD2Fu,
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
             const auto caller = kernel.current_uid();

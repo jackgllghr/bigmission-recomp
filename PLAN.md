@@ -92,6 +92,57 @@ before installation; constrain extraction paths and never silently replace an
 existing different executable. Diagnose missing imports honestly. No playable,
 save-compatible or enhanced-framerate claim without end-to-end verification.
 
+## Remaining work
+
+Ordered by what startup reaches first, then by milestone. Each chunk lands
+with synthetic tests, a bootstrap run against the user's ISO, updated notes in
+`profiles/sarusaru/README.md`, and its own commit. Imports are bound only when
+their PSP contract is identified; everything else keeps stopping execution.
+
+The executable imports 230 functions across 29 libraries. Beyond the kernel,
+notable ones are `sceGe_user` (10), `sceSasCore` (25), `sceAtrac` (10),
+`scePsmfPlayer` (12) and `sceMpeg` (2), `sceUtility` (19), and ad-hoc
+networking (`sceNet*`, 21 in total).
+
+### Diagnostic runtime (milestone 2, headless)
+
+1. [x] Virtual guest clock: deterministic time that advances only when no
+       thread is ready; vblank at 60000/1001 Hz; `sceKernelDelayThread[CB]`;
+       blocking `sceCtrlReadBufferPositive` with a neutral pad.
+2. [ ] Display state: mode, framebuffer address/format, vcount, `IsVblank`
+       and vblank waits on the virtual clock. No presentation yet.
+3. [ ] Kernel synchronization: semaphores, event flags, `WaitThreadEnd`,
+       thread queries/attributes, exit-and-delete, system time
+       (`GetSystemTime*`, `Libc*` time), plus timeouts on the virtual clock.
+4. [ ] Callback delivery: notify UMD/power/exit callbacks and run them from
+       `*CB` waits; `sceKernelCheckCallback`.
+5. [ ] File I/O: `IoFileMgrForUser` over `disc0:`/`umd0:` (read-only, backed
+       by `DiscImage`) including async I/O and directory listing; `ms0:` backed
+       by a per-user host directory with path confinement. Stdio output.
+6. [ ] Modules and overlays: `ModuleMgrForUser` load/start of on-disc modules.
+       Establish which modules and code overlays load at runtime, decide
+       AOT vs. HLE for each, and measure generated-code coverage.
+7. [ ] Remaining startup libraries as reached: `sceRtc`, `scePower`,
+       `sceSuspendForUser`, `InterruptManager`, `LoadExecForUser` exit.
+
+### Presentation and media (milestone 2, interactive)
+
+8. [ ] Host shell: SDL3 window, event loop, real-time pacing on top of the
+       virtual event queue, host input feeding `sceCtrl`.
+9. [ ] GE: display-list processing, EDRAM, and a Vulkan (MoltenVK on macOS)
+       renderer; framebuffer presentation. Largest single item.
+10. [ ] Audio: `sceAudio` output channels, then `sceSasCore` and `sceAtrac`
+        decoding, through SDL3 audio.
+11. [ ] Movies: `scePsmfPlayer`/`sceMpeg` playback, if the game uses them
+        on the path to gameplay.
+12. [ ] Utility dialogs: message dialog, OSK, savedata (feeds milestone 3).
+13. [ ] Ad-hoc networking: report "unavailable" faithfully so single-player
+        paths proceed; real multiplayer is out of scope for now.
+14. [ ] Acceptance run: title screen, new game, representative level,
+        save, restart and reload (milestone 2 gate).
+
+Milestones 3 to 7 follow as described above, once gameplay is reachable.
+
 ## Current progress
 
 Project created from the pinned PSPRecomp baseline. The parent directory's ISO
@@ -99,14 +150,13 @@ is untouched. Implementation and verification results are recorded in
 `profiles/sarusaru/README.md`; game-derived details remain in ignored analysis.
 
 The native arm64 AOT bootstrap compiles all 163 generated source units and
-executes startup through the modeled SDK/compiler configuration imports and
-creates and starts guest threads, and services the first partition allocation.
-Correct thread control-block setup and bootstrap-stack reservation resolve the
-earlier guest fault. Thread sleep/wakeup and UMD callback registration are
-modeled. A read-only ISO9660 UMD layer reads the user's own ISO in place,
-after binding it to the prepared executable; drive activation and controller
-configuration are modeled. Startup now stops at `sceCtrl::sceCtrlReadBufferPositive`,
-which blocks on vblank sampling and needs a guest time model first.
+runs startup on the early kernel: thread creation, priority scheduling,
+sleep/wakeup, timed waits on a deterministic virtual clock, partition memory,
+callback registration and interrupt masking. A read-only ISO9660 UMD layer
+reads the user's own ISO in place after binding it to the prepared
+executable. Controller configuration and blocking buffered reads (neutral pad)
+work. After one virtual vblank, startup now stops at the unidentified
+`sceDisplay` NID `0x4D4E10EC` (remaining-work chunk 2).
 Nine CTest suites pass,
 including 17 input/preparation cases and seven generated-native-code cases.
 Repeat generation rewrites zero source units. Three game-neutral generator

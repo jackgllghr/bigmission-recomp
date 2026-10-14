@@ -31,5 +31,12 @@ int main() {
     require(!runtime.stopped(), "compiler-version import stopped runtime");
     require(hle.compiler_version() == 0x12345678u, "compiler version was not retained");
     require(cpu.gpr[2] == 0u, "compiler-version import did not return zero");
+
+    cpu.set_gpr(4u, 0x1A5u);
+    runtime.invoke_import("UtilsForUser", 0x6AD345D7u, cpu);
+    require(!runtime.stopped() && hle.gpo() == 0xA5u && cpu.gpr[2] == 0u, "GPO value not retained");
+    cpu.set_gpr(2u, 0xFFFFFFFFu);
+    runtime.invoke_import("UtilsForUser", 0x3EE30821u, cpu);
+    require(!runtime.stopped() && cpu.gpr[2] == 0u, "cache writeback import failed");
     return 0;
 }

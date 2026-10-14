@@ -89,10 +89,10 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   stack reservation have been verified; they resolve the earlier guest fault.
   Interrupt-mask state, thread sleep/wakeup (`0x9ACE131E`/`0xD59EAD2F`, per
   the public PSPSDK stubs) and UMD callback registration are modeled. Startup
-  passes `sceUmdUser` drive activation and `sceCtrl` configuration, then stops
-  at `sceCtrl::sceCtrlReadBufferPositive`. That call blocks until the next
-  vblank sample on hardware; no guest clock or vblank exists yet. Delays,
-  timed waits and synchronization objects remain unimplemented.
+  passes `sceUmdUser` drive activation, `sceCtrl` configuration and its first
+  blocking controller read (one virtual vblank), then stops at the
+  unidentified `sceDisplay` NID `0x4D4E10EC`. Synchronization objects remain
+  unimplemented.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
@@ -131,7 +131,17 @@ The pinned upstream is recorded in `config/supported_game.json`.
   activate/deactivate of `disc0:`, drive/error status. A drive-status wait that
   can never be satisfied stops execution. Eject/swap are not modeled.
 - Added `sceCtrl` sampling mode, sampling cycle and idle-cancel threshold as
-  validated state. Controller reads are not bound yet.
+  validated state.
+- Added a deterministic virtual guest clock to the early kernel. Guest code
+  runs in zero guest time; when no thread is ready the clock jumps to the
+  earliest timed wait. Vblank occurs at 60000/1001 Hz. `sceKernelDelayThread`
+  and `sceKernelDelayThreadCB` (no callbacks are generated yet) are timed
+  waits. `sceCtrlReadBufferPositive` returns the samples taken since the last
+  read, or blocks until the next one; the pad is neutral until host input
+  exists. A thread that never blocks never sees time pass.
+- Recorded `sceKernelSetGPO`, and bound the data-cache writeback calls as
+  no-ops: host memory is coherent and nothing yet reads guest memory behind
+  the CPU's back.
 - Preserved checked VFPU scalar access for invalid register encodings instead
   of emitting uncompilable compile-time template operands.
 - Used normal runtime dispatch for direct targets outside the generated entry
