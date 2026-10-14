@@ -72,8 +72,11 @@ bool VagDecoder::decode_block(const psprecomp::GuestMemory &memory) {
     }
     index_ = 0u;
     if ((flags & 1u) != 0u) {
-        // Last block: loop back (to the marked start, else the beginning) or end after it.
-        if (loop_) block_ = has_loop_start_ ? loop_block_ : 0u;
+        // Last block. Only a repeating end (bit 1 too, flag 3) loops, and only
+        // on a looping voice, back to the marked start, else the beginning; a
+        // plain end (flag 1) stops even a looping voice. This game keys its
+        // one-shot effects on looping voices and relies on that.
+        if (loop_ && (flags & 2u) != 0u) block_ = has_loop_start_ ? loop_block_ : 0u;
         else end_after_block_ = true;
     } else {
         ++block_;

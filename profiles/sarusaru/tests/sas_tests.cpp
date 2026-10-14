@@ -41,7 +41,14 @@ int main() {
     require(!decoder.next(memory) && decoder.ended(), "end flag did not stop the decoder");
     decoder.start(0x08811000u, 32u, true);
     for (int i = 0; i < 56; ++i) (void)decoder.next(memory);
-    require(decoder.next(memory).has_value() && !decoder.ended(), "loop flag did not return to the loop start");
+    require(!decoder.next(memory) && decoder.ended(), "a plain end flag looped a looping voice");
+    vag_block(memory, 0x08811010u, 0x10u, 0x03u, 0x00u);
+    decoder.start(0x08811000u, 32u, true);
+    for (int i = 0; i < 56; ++i) (void)decoder.next(memory);
+    require(decoder.next(memory).has_value() && !decoder.ended(), "repeat flag did not return to the loop start");
+    decoder.start(0x08811000u, 32u, false);
+    for (int i = 0; i < 56; ++i) (void)decoder.next(memory);
+    require(!decoder.next(memory) && decoder.ended(), "repeat flag looped a voice without looping");
 
     // Envelope: three attack steps to the maximum, decay to the sustain level, linear release.
     Envelope envelope;

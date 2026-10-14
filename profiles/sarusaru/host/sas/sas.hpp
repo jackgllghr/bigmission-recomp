@@ -39,8 +39,8 @@ enum class Curve : std::uint32_t {
 };
 
 // VAG ADPCM: 16-byte blocks of 28 samples. Flags: bit 2 marks the loop
-// start, bit 0 the end of the data (with looping enabled it jumps back to
-// the loop start), and 7 an unconditional end.
+// start, bit 0 the end of the data, bit 1 with it (3) an end that jumps back
+// to the loop start when the voice loops, and 7 an unconditional end.
 class VagDecoder {
 public:
     void start(std::uint32_t address, std::uint32_t size, bool loop) noexcept;
