@@ -26,6 +26,14 @@ inline constexpr std::uint32_t kPowerInvalidSlot = 0x80000102u;
 inline constexpr std::uint32_t kPowerSlotsFull = 0x80000022u;
 inline constexpr std::uint32_t kUnknownThread = 0x80020198u;
 inline constexpr std::uint32_t kDormant = 0x800201A2u;
+inline constexpr std::uint32_t kIllegalAttribute = 0x80020191u;
+inline constexpr std::uint32_t kIllegalThread = 0x80020197u;
+inline constexpr std::uint32_t kNotDormant = 0x800201A4u;
+inline constexpr std::uint32_t kWaitTimeout = 0x800201A8u;
+inline constexpr std::uint32_t kThreadTerminated = 0x800201ACu;
+inline constexpr std::uint32_t kWaitDelete = 0x800201B5u;
+inline constexpr std::uint32_t kThreadAttrVfpu = 0x00004000u;
+inline constexpr std::uint64_t kNoDeadline = ~std::uint64_t{0};
 
 // Thread construction, stack ownership and cooperative scheduling: priority
 // preemption on start/wakeup, sleep/wakeup, timed waits and exit.
@@ -36,7 +44,7 @@ inline constexpr std::uint32_t kDormant = 0x800201A2u;
 // Synchronization objects are deliberately not modeled yet.
 class EarlyKernel {
 public:
-    enum class ThreadState { Dormant, Ready, Running, Sleeping, Waiting, Exited };
+    enum class ThreadState { Dormant, Ready, Running, Sleeping, Waiting };
     // Produces the blocked call's return value when a timed wait ends.
     using WakeHandler = std::function<std::uint32_t()>;
     void install(psprecomp::Runtime &runtime, std::uint32_t user_memory_start, std::uint32_t user_memory_top);
@@ -48,13 +56,41 @@ public:
                                           std::uint32_t attributes, std::uint32_t gp);
     [[nodiscard]] std::int32_t start_thread(psprecomp::AllegrexContext &context, ThreadUid uid,
                                             std::uint32_t argument_size, std::uint32_t argument_address);
-    void exit_current_thread(psprecomp::AllegrexContext &context);
+    // Ends the current thread with `status` (it becomes dormant) and runs the next one.
+    void exit_current_thread(psprecomp::AllegrexContext &context, std::uint32_t status, bool delete_thread = false);
+    [[nodiscard]] std::int32_t delete_thread(ThreadUid uid);
+    [[nodiscard]] std::int32_t terminate_thread(psprecomp::AllegrexContext &context, ThreadUid uid);
+    [[nodiscard]] std::int32_t thread_exit_status(ThreadUid uid) const noexcept;
+    void wait_thread_end(psprecomp::AllegrexContext &context, ThreadUid uid, std::uint32_t timeout_address);
+    [[nodiscard]] std::int32_t change_current_thread_attributes(std::uint32_t clear, std::uint32_t set) noexcept;
+
     // Called from inside an import: a blocked caller resumes at its return address.
     void sleep_current_thread(psprecomp::AllegrexContext &context);
     [[nodiscard]] std::int32_t wakeup_thread(psprecomp::AllegrexContext &context, ThreadUid uid);
     void wait_current_until(psprecomp::AllegrexContext &context, std::uint64_t deadline_us, WakeHandler on_wake);
     void delay_current_thread(psprecomp::AllegrexContext &context, std::uint32_t micros);
     [[nodiscard]] std::uint64_t now_us() const noexcept { return now_us_; }
+
+    // Waits on kernel objects. A non-null timeout address holds microseconds;
+    // on timeout it is zeroed, `on_timeout` runs and the call fails with
+    // kWaitTimeout. On release it receives the time left.
+    struct WaitRequest {
+        std::string label;
+        std::uint64_t deadline_us{kNoDeadline};
+        std::uint32_t timeout_address{};
+        WakeHandler on_timeout;
+        ThreadUid end_of{};
+    };
+    [[nodiscard]] WaitRequest object_wait(std::string label, std::uint32_t timeout_address,
+                                          std::function<void()> on_timeout = nullptr) const;
+    void block_current(psprecomp::AllegrexContext &context, WaitRequest request);
+    // Ends `uid`'s object wait with `result`; false if it is no longer waiting.
+    bool release_wait(ThreadUid uid, std::uint32_t result);
+    // Completes the current call with `result`, first switching to a released
+    // thread of higher priority if there is one.
+    void return_with_preemption(psprecomp::AllegrexContext &context, std::uint32_t result);
+    [[nodiscard]] std::int32_t allocate_uid() noexcept { return next_uid_++; }
+    [[nodiscard]] psprecomp::Runtime &runtime() noexcept { return *runtime_; }
     [[nodiscard]] std::int32_t allocate_partition_memory(const std::string &name, std::uint32_t type,
                                                          std::uint32_t size, std::uint32_t address_or_alignment);
     [[nodiscard]] std::int32_t free_partition_memory(std::int32_t uid);
@@ -77,6 +113,11 @@ public:
         std::uint64_t wake_at_us{};
         std::uint64_t wait_sequence{};
         WakeHandler on_wake;
+        std::uint32_t exit_status{kDormant};
+        std::int32_t stack_block{};
+        std::uint32_t timeout_address{};
+        ThreadUid end_of{};
+        std::string wait_label;
     };
     [[nodiscard]] const ThreadInfo *thread(ThreadUid uid) const noexcept;
     [[nodiscard]] ThreadUid current_uid() const noexcept { return current_uid_; }
@@ -124,6 +165,8 @@ private:
                               std::uint32_t result) noexcept;
     void run_next_ready(psprecomp::AllegrexContext &context, const char *idle_reason);
     void wake_due_threads();
+    void end_thread(ThreadInfo &thread, std::uint32_t status);
+    [[nodiscard]] std::string describe_blocked() const;
     void prepare_thread_stack(ThreadInfo &thread);
     [[nodiscard]] std::int32_t allocate_block(const std::string &name, std::uint32_t type,
                                               std::uint32_t size, std::uint32_t address_or_alignment);

@@ -12,7 +12,6 @@ constexpr std::uint32_t kMinimumStackSize = 0x200u;
 constexpr std::uint32_t kStackAlignment = 0x100u;
 constexpr std::uint32_t kArgumentHome = 0x40u;
 constexpr std::uint32_t kThreadControlBlockSize = 0x100u;
-constexpr std::uint32_t kNotDormant = 0x800201A4u;
 
 std::uint32_t align_up(std::uint32_t value, std::uint32_t alignment = kStackAlignment) noexcept {
     return (value + alignment - 1u) & ~(alignment - 1u);
@@ -28,7 +27,7 @@ void thread_exit(psprecomp::Runtime &runtime, psprecomp::AllegrexContext &contex
         thread_exit_without_scheduler(runtime, context);
         return;
     }
-    active_kernel->exit_current_thread(context);
+    active_kernel->exit_current_thread(context, context.gpr[2]);
 }
 }
 
@@ -110,6 +109,9 @@ void EarlyKernel::wake_due_threads() {
     for (ThreadInfo *thread : due) {
         if (thread->on_wake) thread->context.set_gpr(2u, thread->on_wake());
         thread->on_wake = nullptr;
+        thread->timeout_address = 0u;
+        thread->end_of = 0;
+        thread->wait_label.clear();
         make_ready(*thread);
     }
 }
@@ -122,7 +124,8 @@ void EarlyKernel::run_next_ready(psprecomp::AllegrexContext &context, const char
         std::optional<std::uint64_t> earliest;
         for (const auto &[uid, thread] : threads_) {
             (void)uid;
-            if (thread.state == ThreadState::Waiting && (!earliest || thread.wake_at_us < *earliest))
+            if (thread.state == ThreadState::Waiting && thread.wake_at_us != kNoDeadline &&
+                (!earliest || thread.wake_at_us < *earliest))
                 earliest = thread.wake_at_us;
         }
         if (earliest) {
@@ -137,7 +140,18 @@ void EarlyKernel::run_next_ready(psprecomp::AllegrexContext &context, const char
     }
     current_uid_ = 0;
     psprecomp::set_runtime_thread_identity(-1, "idle");
-    runtime_->stop(idle_reason);
+    runtime_->stop(std::string(idle_reason) + describe_blocked());
+}
+
+std::string EarlyKernel::describe_blocked() const {
+    std::string result;
+    for (const auto &[uid, thread] : threads_) {
+        if (thread.state != ThreadState::Sleeping && thread.state != ThreadState::Waiting) continue;
+        result += result.empty() ? " [blocked: " : ", ";
+        result += thread.name + " (" + std::to_string(uid) + ") " +
+                  (thread.state == ThreadState::Sleeping ? std::string("sleeping") : thread.wait_label);
+    }
+    return result.empty() ? result : result + "]";
 }
 
 void EarlyKernel::prepare_thread_stack(ThreadInfo &thread) {
@@ -167,6 +181,7 @@ ThreadUid EarlyKernel::create_thread(const std::string &name, std::uint32_t entr
     const ThreadUid uid = next_uid_++;
     auto [it, inserted] = threads_.emplace(uid, ThreadInfo{uid, name, entry, priority, stack_bottom, aligned_size, attributes, gp});
     (void)inserted;
+    it->second.stack_block = block;
     prepare_thread_stack(it->second);
     return uid;
 }
@@ -335,14 +350,136 @@ std::int32_t EarlyKernel::start_thread(psprecomp::AllegrexContext &context, Thre
     return 0;
 }
 
-void EarlyKernel::exit_current_thread(psprecomp::AllegrexContext &context) {
+void EarlyKernel::end_thread(ThreadInfo &thread, std::uint32_t status) {
+    thread.state = ThreadState::Dormant;
+    thread.exit_status = status;
+    thread.on_wake = nullptr;
+    for (auto &[uid, waiter] : threads_) {
+        if (waiter.state == ThreadState::Waiting && waiter.end_of == thread.uid) release_wait(uid, status);
+    }
+}
+
+void EarlyKernel::exit_current_thread(psprecomp::AllegrexContext &context, std::uint32_t status, bool delete_thread) {
     const auto current = threads_.find(current_uid_);
     if (current == threads_.end()) {
         runtime_->stop("Thread exit with no current early-kernel thread");
         return;
     }
-    current->second.state = ThreadState::Exited;
-    run_next_ready(context, "All early-kernel guest threads exited; waits and scheduler idle are not implemented");
+    const ThreadUid exiting = current_uid_;
+    end_thread(current->second, status);
+    run_next_ready(context, "Every early-kernel guest thread has ended or is blocked with no deadline");
+    if (delete_thread) {
+        const auto block = threads_.at(exiting).stack_block;
+        if (block != 0) (void)free_partition_memory(block);
+        threads_.erase(exiting);
+    }
+}
+
+std::int32_t EarlyKernel::delete_thread(ThreadUid uid) {
+    const auto found = threads_.find(uid);
+    if (found == threads_.end()) return static_cast<std::int32_t>(kUnknownThread);
+    if (found->second.state != ThreadState::Dormant) return static_cast<std::int32_t>(kNotDormant);
+    if (found->second.stack_block != 0) (void)free_partition_memory(found->second.stack_block);
+    threads_.erase(found);
+    return 0;
+}
+
+std::int32_t EarlyKernel::terminate_thread(psprecomp::AllegrexContext &context, ThreadUid uid) {
+    if (uid == 0 || uid == current_uid_) return static_cast<std::int32_t>(kIllegalThread);
+    const auto found = threads_.find(uid);
+    if (found == threads_.end()) return static_cast<std::int32_t>(kUnknownThread);
+    if (found->second.state == ThreadState::Dormant) return static_cast<std::int32_t>(kDormant);
+    end_thread(found->second, kThreadTerminated);
+    return_with_preemption(context, 0u);
+    return 0;
+}
+
+std::int32_t EarlyKernel::thread_exit_status(ThreadUid uid) const noexcept {
+    const auto found = threads_.find(uid);
+    if (found == threads_.end()) return static_cast<std::int32_t>(kUnknownThread);
+    if (found->second.state != ThreadState::Dormant) return static_cast<std::int32_t>(kNotDormant);
+    return static_cast<std::int32_t>(found->second.exit_status);
+}
+
+void EarlyKernel::wait_thread_end(psprecomp::AllegrexContext &context, ThreadUid uid, std::uint32_t timeout_address) {
+    const auto found = threads_.find(uid);
+    if (found == threads_.end()) { context.set_gpr(2u, kUnknownThread); return; }
+    if (uid == current_uid_) { context.set_gpr(2u, kIllegalThread); return; }
+    if (found->second.state == ThreadState::Dormant) { context.set_gpr(2u, found->second.exit_status); return; }
+    auto request = object_wait("end of thread " + found->second.name, timeout_address);
+    request.end_of = uid;
+    block_current(context, std::move(request));
+}
+
+std::int32_t EarlyKernel::change_current_thread_attributes(std::uint32_t clear, std::uint32_t set) noexcept {
+    if (((clear | set) & ~kThreadAttrVfpu) != 0u) return static_cast<std::int32_t>(kIllegalAttribute);
+    const auto current = threads_.find(current_uid_);
+    if (current == threads_.end()) return static_cast<std::int32_t>(kIllegalThread);
+    current->second.attributes = (current->second.attributes & ~clear) | set;
+    return 0;
+}
+
+EarlyKernel::WaitRequest EarlyKernel::object_wait(std::string label, std::uint32_t timeout_address,
+                                                  std::function<void()> on_timeout) const {
+    WaitRequest request;
+    request.label = std::move(label);
+    if (timeout_address != 0u) {
+        request.timeout_address = timeout_address;
+        request.deadline_us = now_us_ + runtime_->memory().load32(timeout_address);
+        request.on_timeout = [this, timeout_address, cleanup = std::move(on_timeout)] {
+            runtime_->memory().store32(timeout_address, 0u);
+            if (cleanup) cleanup();
+            return kWaitTimeout;
+        };
+    }
+    return request;
+}
+
+void EarlyKernel::block_current(psprecomp::AllegrexContext &context, WaitRequest request) {
+    const auto current = threads_.find(current_uid_);
+    if (current == threads_.end()) {
+        runtime_->stop("Wait with no current early-kernel thread");
+        return;
+    }
+    ThreadInfo &thread = current->second;
+    save_blocked_context(thread, context, 0u);
+    thread.state = ThreadState::Waiting;
+    thread.wake_at_us = request.deadline_us;
+    thread.wait_sequence = next_ready_sequence_++;
+    thread.on_wake = std::move(request.on_timeout);
+    thread.timeout_address = request.timeout_address;
+    thread.end_of = request.end_of;
+    thread.wait_label = std::move(request.label);
+    run_next_ready(context, "Every early-kernel guest thread has ended or is blocked with no deadline");
+}
+
+bool EarlyKernel::release_wait(ThreadUid uid, std::uint32_t result) {
+    const auto found = threads_.find(uid);
+    if (found == threads_.end() || found->second.state != ThreadState::Waiting) return false;
+    ThreadInfo &thread = found->second;
+    if (thread.timeout_address != 0u) {
+        const auto left = thread.wake_at_us > now_us_ ? thread.wake_at_us - now_us_ : 0u;
+        runtime_->memory().store32(thread.timeout_address, static_cast<std::uint32_t>(left));
+    }
+    thread.context.set_gpr(2u, result);
+    thread.on_wake = nullptr;
+    thread.timeout_address = 0u;
+    thread.end_of = 0;
+    thread.wait_label.clear();
+    make_ready(thread);
+    return true;
+}
+
+void EarlyKernel::return_with_preemption(psprecomp::AllegrexContext &context, std::uint32_t result) {
+    const auto current = threads_.find(current_uid_);
+    ThreadInfo *next = best_ready_thread();
+    if (current != threads_.end() && next != nullptr && next->priority < current->second.priority) {
+        save_blocked_context(current->second, context, result);
+        make_ready(current->second);
+        switch_to(context, next->uid, *next);
+        return;
+    }
+    context.set_gpr(2u, result);
 }
 
 void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context) {
@@ -359,24 +496,12 @@ void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context) {
     }
     save_blocked_context(thread, context, 0u);
     thread.state = ThreadState::Sleeping;
-    run_next_ready(context, "Every early-kernel guest thread is sleeping or exited; "
-                            "interrupts, timers and scheduler idle are not implemented");
+    run_next_ready(context, "Every early-kernel guest thread has ended or is blocked with no deadline");
 }
 
 void EarlyKernel::wait_current_until(psprecomp::AllegrexContext &context, std::uint64_t deadline_us,
                                      WakeHandler on_wake) {
-    const auto current = threads_.find(current_uid_);
-    if (current == threads_.end()) {
-        runtime_->stop("Timed wait with no current early-kernel thread");
-        return;
-    }
-    ThreadInfo &thread = current->second;
-    save_blocked_context(thread, context, 0u);
-    thread.state = ThreadState::Waiting;
-    thread.wake_at_us = deadline_us;
-    thread.wait_sequence = next_ready_sequence_++;
-    thread.on_wake = std::move(on_wake);
-    run_next_ready(context, "Timed wait with no runnable thread");
+    block_current(context, WaitRequest{"timed wait", deadline_us, 0u, std::move(on_wake), 0});
 }
 
 void EarlyKernel::delay_current_thread(psprecomp::AllegrexContext &context, std::uint32_t micros) {
@@ -389,8 +514,7 @@ std::int32_t EarlyKernel::wakeup_thread(psprecomp::AllegrexContext &context, Thr
     const auto found = threads_.find(uid);
     if (found == threads_.end()) return static_cast<std::int32_t>(kUnknownThread);
     ThreadInfo &thread = found->second;
-    if (thread.state == ThreadState::Dormant || thread.state == ThreadState::Exited)
-        return static_cast<std::int32_t>(kDormant);
+    if (thread.state == ThreadState::Dormant) return static_cast<std::int32_t>(kDormant);
     if (thread.state != ThreadState::Sleeping) {
         ++thread.wakeup_count;
         return 0;
@@ -463,6 +587,51 @@ void register_early_threadman(EarlyKernel &kernel, psprecomp::Runtime &runtime) 
         });
     runtime.register_hle("ThreadManForUser", 0x9ACE131Eu,
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.sleep_current_thread(ctx); });
+    runtime.register_hle("ThreadManForUser", 0xAA73C935u,  // sceKernelExitThread
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.exit_current_thread(ctx, ctx.gpr[4]); });
+    runtime.register_hle("ThreadManForUser", 0x809CE29Bu,  // sceKernelExitDeleteThread
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.exit_current_thread(ctx, ctx.gpr[4], true); });
+    runtime.register_hle("ThreadManForUser", 0x9FA03CD3u,  // sceKernelDeleteThread
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            const auto uid = static_cast<ThreadUid>(ctx.gpr[4]);
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(uid == 0 || uid == kernel.current_uid()
+                ? static_cast<std::int32_t>(kIllegalThread) : kernel.delete_thread(uid)));
+        });
+    runtime.register_hle("ThreadManForUser", 0x616403BAu,  // sceKernelTerminateThread
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            const auto result = kernel.terminate_thread(ctx, static_cast<ThreadUid>(ctx.gpr[4]));
+            if (result != 0) ctx.set_gpr(2u, static_cast<std::uint32_t>(result));
+        });
+    runtime.register_hle("ThreadManForUser", 0x3B183E26u,  // sceKernelGetThreadExitStatus
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.thread_exit_status(static_cast<ThreadUid>(ctx.gpr[4]))));
+        });
+    runtime.register_hle("ThreadManForUser", 0x278C0DF5u,  // sceKernelWaitThreadEnd
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            kernel.wait_thread_end(ctx, static_cast<ThreadUid>(ctx.gpr[4]), ctx.gpr[5]);
+        });
+    runtime.register_hle("ThreadManForUser", 0x293B45B8u,  // sceKernelGetThreadId
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.current_uid()));
+        });
+    runtime.register_hle("ThreadManForUser", 0x94AA61EEu,  // sceKernelGetThreadCurrentPriority
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            const auto *current = kernel.thread(kernel.current_uid());
+            ctx.set_gpr(2u, current != nullptr ? current->priority : kIllegalThread);
+        });
+    runtime.register_hle("ThreadManForUser", 0xEA748E31u,  // sceKernelChangeCurrentThreadAttr
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.change_current_thread_attributes(ctx.gpr[4], ctx.gpr[5])));
+        });
+    runtime.register_hle("ThreadManForUser", 0x369ED59Du,  // sceKernelGetSystemTimeLow
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.now_us()));
+        });
+    runtime.register_hle("ThreadManForUser", 0x82BC5777u,  // sceKernelGetSystemTimeWide
+        [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {
+            ctx.set_gpr(2u, static_cast<std::uint32_t>(kernel.now_us()));
+            ctx.set_gpr(3u, static_cast<std::uint32_t>(kernel.now_us() >> 32u));
+        });
     runtime.register_hle("ThreadManForUser", 0xCEADEB47u,  // sceKernelDelayThread
         [&kernel](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) { kernel.delay_current_thread(ctx, ctx.gpr[4]); });
     // No callback notification is ever generated yet, so the CB variant has

@@ -90,13 +90,12 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   Interrupt-mask state, thread sleep/wakeup (`0x9ACE131E`/`0xD59EAD2F`, per
   the public PSPSDK stubs) and UMD callback registration are modeled. Startup
   passes `sceUmdUser` drive activation, `sceCtrl` configuration and its first
-  blocking controller read (one virtual vblank) and display setup, then stops
-  at `ThreadManForUser::sceKernelChangeCurrentThreadAttr`. Synchronization
-  objects remain unimplemented.
+  blocking controller read (one virtual vblank), display setup and its thread
+  and synchronization setup, then stops at `sceGe_user::sceGeEdramGetAddr`.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All ten CTest suites pass, including 17 ISO/preparation cases and seven
+- All eleven CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -144,6 +143,17 @@ The pinned upstream is recorded in `config/supported_game.json`.
   next-vblank latching, vcount, accumulated hcount (286 lines per frame),
   `IsVblank` (a 731 us blanking interval) and the vblank waits. Nothing is
   presented yet.
+- Added thread lifecycle to the early kernel: exit (also by returning from
+  the entry point), exit-and-delete, delete, terminate, exit status, wait for
+  thread end, current thread ID/priority and the VFPU attribute, and system
+  time. An ended thread is dormant and can be restarted.
+- Added generic object waits: optional timeouts on the virtual clock (zeroed
+  on timeout, time left written back on release), release by another thread
+  with priority preemption, and a stop message naming every blocked thread
+  when nothing can run.
+- Added semaphores and event flags (`kernel/sync.cpp`): FIFO or priority wait
+  queues, AND/OR waits with clear-all/clear-pattern, single or multiple
+  waiters, overflow and count validation, and `WAIT_DELETE` on deletion.
 - Recorded `sceKernelSetGPO`, and bound the data-cache writeback calls as
   no-ops: host memory is coherent and nothing yet reads guest memory behind
   the CPU's back.

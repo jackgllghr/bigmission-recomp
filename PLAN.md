@@ -111,11 +111,13 @@ networking (`sceNet*`, 21 in total).
        blocking `sceCtrlReadBufferPositive` with a neutral pad.
 2. [x] Display state: mode, framebuffer address/format, vcount, `IsVblank`
        and vblank waits on the virtual clock. No presentation yet.
-3. [ ] Kernel synchronization: semaphores, event flags, `WaitThreadEnd`,
-       thread queries/attributes, exit-and-delete, system time
-       (`GetSystemTime*`, `Libc*` time), plus timeouts on the virtual clock.
-4. [ ] Callback delivery: notify UMD/power/exit callbacks and run them from
-       `*CB` waits; `sceKernelCheckCallback`.
+3. [x] Kernel synchronization: semaphores, event flags, `WaitThreadEnd`,
+       thread queries/attributes, exit/delete/terminate, system time, with
+       timeouts on the virtual clock. Deferred until reached: thread and
+       dispatch suspend/resume, `GetThreadStackFreeSize`, `Libc*` time.
+4. [ ] Callback and interrupt delivery: notify UMD/power/exit callbacks and
+       run them from `*CB` waits and `sceKernelCheckCallback`; run vblank
+       sub-interrupt handlers (`InterruptManager`) on the virtual clock.
 5. [ ] File I/O: `IoFileMgrForUser` over `disc0:`/`umd0:` (read-only, backed
        by `DiscImage`) including async I/O and directory listing; `ms0:` backed
        by a per-user host directory with path confinement. Stdio output.
@@ -155,10 +157,10 @@ sleep/wakeup, timed waits on a deterministic virtual clock, partition memory,
 callback registration and interrupt masking. A read-only ISO9660 UMD layer
 reads the user's own ISO in place after binding it to the prepared
 executable. Controller configuration and blocking buffered reads (neutral pad)
-work, as does display state and vblank timing. After one virtual vblank,
-startup now stops at `ThreadManForUser::sceKernelChangeCurrentThreadAttr`
-(remaining-work chunk 3).
-Ten CTest suites pass,
+work, as do display state, vblank timing, semaphores, event flags and thread
+lifecycle. After one virtual vblank, startup now stops at
+`sceGe_user::sceGeEdramGetAddr`, the first graphics-engine call.
+Eleven CTest suites pass,
 including 17 input/preparation cases and seven generated-native-code cases.
 Repeat generation rewrites zero source units. Three game-neutral generator
 defects discovered during this work were reproduced with synthetic fixtures,

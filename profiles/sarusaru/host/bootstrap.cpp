@@ -3,6 +3,7 @@
 #include "ctrl/controller.hpp"
 #include "display/display.hpp"
 #include "kernel/early_kernel.hpp"
+#include "kernel/sync.hpp"
 #include "umd/disc_image.hpp"
 #include "umd/umd_drive.hpp"
 #include "psprecomp/common.hpp"
@@ -95,6 +96,8 @@ int main(int argc, char **argv) {
         // Keep the bootstrap stack and its guard area outside guest allocations.
         early_kernel.install(runtime, image_end, 0x09FF6000u);
         sarusaru::kernel::register_early_threadman(early_kernel, runtime);
+        sarusaru::kernel::SyncObjects sync_objects(early_kernel);
+        sarusaru::kernel::register_sync(sync_objects, runtime);
         sarusaru::umd::UmdDrive umd_drive(disc);
         sarusaru::umd::register_umd(umd_drive, runtime);
         sarusaru::ctrl::Controller controller;

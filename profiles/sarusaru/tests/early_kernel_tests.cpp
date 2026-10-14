@@ -149,7 +149,7 @@ int main() {
     // exit must hand execution to the earliest ready thread, never guest PC 0.
     const auto next_uid = kernel.create_thread("next", 0x08808000u, 0x20u, 0x200u, 0u, 0u);
     require(kernel.start_thread(cpu, next_uid, 0u, 0u) == 0, "ready worker start failed");
-    kernel.exit_current_thread(cpu);
+    kernel.exit_current_thread(cpu, 0u);
     thread = kernel.thread(next_uid);
     require(!runtime.stopped() && thread != nullptr && thread->state == sarusaru::kernel::EarlyKernel::ThreadState::Running &&
                 cpu.pc == 0x08808000u,
