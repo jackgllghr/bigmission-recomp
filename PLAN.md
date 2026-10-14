@@ -129,7 +129,9 @@ networking (`sceNet*`, 21 in total).
        Still to come when reached: `ms0:` on a per-user host directory with
        path confinement, `umd0:` raw access, Devctl and further Ioctl
        commands, relative paths.
-8. [ ] Modules and overlays: `ModuleMgrForUser` load/start of on-disc modules.
+8. [~] Modules and overlays: `sceUtilityLoadModule`/`UnloadModule` record
+       state for HLE-provided system libraries. Still to come:
+       `ModuleMgrForUser` load/start of on-disc modules.
        Establish which modules and code overlays load at runtime, decide
        AOT vs. HLE for each, and measure generated-code coverage.
 9. [ ] Remaining startup libraries as reached: `sceRtc`, `scePower`,
