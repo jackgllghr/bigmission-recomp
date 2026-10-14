@@ -1,0 +1,9 @@
+// Windows resource script for the sarusaru shell.
+//
+// Explorer, the task bar and Alt-Tab use the lowest numeric icon id in an
+// executable, so the application icon is id 1. sarusaru.ico is
+// include/image/logo.png at 16 to 256 pixels.
+
+#define SARUSARU_ICON 1
+
+SARUSARU_ICON ICON "sarusaru.ico"

@@ -197,8 +197,29 @@ if(SARUSARU_BUILD_BOOTSTRAP)
             DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_shaders.py" "${CMAKE_CURRENT_SOURCE_DIR}/host/gpu/shaders/ge.vert"
                 "${CMAKE_CURRENT_SOURCE_DIR}/host/gpu/shaders/ge.frag" ${SARUSARU_GLSLANG}
             COMMENT "Compiling the GE shaders")
+        # The logo is embedded too, as the window (and so task bar and Dock)
+        # icon; on Windows it is also the executable's file icon.
+        set(_sarusaru_logo "${PROJECT_SOURCE_DIR}/include/image/logo.png")
+        set(_sarusaru_icon "${CMAKE_CURRENT_BINARY_DIR}/window_icon.inc")
+        add_custom_command(OUTPUT "${_sarusaru_icon}"
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_file.py"
+                "${_sarusaru_icon}" "kWindowIconPng=${_sarusaru_logo}"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_file.py" "${_sarusaru_logo}"
+            COMMENT "Embedding the window icon")
+        set(_sarusaru_resources "")
+        if(WIN32)
+            enable_language(RC)
+            list(APPEND _sarusaru_resources resources/sarusaru.rc)
+            set_source_files_properties(resources/sarusaru.rc PROPERTIES
+                OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/sarusaru.ico")
+        endif()
         add_executable(sarusaru host/shell/main.cpp host/shell/vulkan_context.cpp host/shell/ge_renderer.cpp
-            host/shell/audio_output.cpp host/shell/input.cpp "${_sarusaru_shaders}")
+            host/shell/audio_output.cpp host/shell/input.cpp "${_sarusaru_shaders}" "${_sarusaru_icon}"
+            ${_sarusaru_resources})
+        if(WIN32)
+            target_include_directories(sarusaru PRIVATE
+                "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/resources>")
+        endif()
         target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_shell)
         sarusaru_use_ffmpeg(sarusaru)
         set_target_properties(sarusaru PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

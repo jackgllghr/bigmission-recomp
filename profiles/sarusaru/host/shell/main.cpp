@@ -36,6 +36,21 @@ constexpr const char *kUsage =
 // catching up (after a stall) and starts again from now.
 constexpr std::uint64_t kMaxLagNs = 100'000'000u;
 
+#include "window_icon.inc"
+
+// Gives the window the logo, which the task bar or Dock shows. A failure only
+// leaves the default icon.
+void set_window_icon(SDL_Window *window) {
+    SDL_IOStream *stream = SDL_IOFromConstMem(kWindowIconPng, sizeof(kWindowIconPng));
+    SDL_Surface *icon = stream != nullptr ? SDL_LoadPNG_IO(stream, true) : nullptr;
+    if (icon == nullptr) {
+        std::cerr << "sarusaru: cannot load the window icon: " << SDL_GetError() << '\n';
+        return;
+    }
+    SDL_SetWindowIcon(window, icon);
+    SDL_DestroySurface(icon);
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -83,6 +98,7 @@ int main(int argc, char **argv) {
         sarusaru::shell::Buffer capture;
         try {
             if (window == nullptr) throw psprecomp::Error(std::string("cannot create the window: ") + SDL_GetError());
+            set_window_icon(window);
             if (!vulkan.create(window, error) || !renderer.create(error)) throw psprecomp::Error(error);
             if (!audio.open(error)) std::cerr << "sarusaru: no sound: " << error << '\n';
 
