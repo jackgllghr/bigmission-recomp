@@ -1,7 +1,6 @@
 """Catalog layout checks using synthetic canvases (optional Pillow tooling)."""
 import copy
 import importlib.util
-import json
 from pathlib import Path
 import sys
 import unittest
@@ -9,6 +8,19 @@ import unittest
 PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
 from build_menu_translation import ASSETS, build, render_labels
+
+
+def synthetic_catalog():
+    """Invented labels in the five required title/main-menu slots."""
+    def label(key, text, asset, rect, size):
+        return {'id': key, 'text': text, 'asset': asset, 'rect': rect, 'font_size': size}
+    return {'schema': 1, 'locale': 'en', 'labels': [
+        label('title.press_start', 'Push a button', 'e_nabi_a0.lzs', [0, 0, 256, 16], 13),
+        label('menu.new_game', 'First', 'b_but_b0.lzs', [0, 0, 256, 24], 18),
+        label('menu.continue', 'Second', 'b_but_b0.lzs', [0, 24, 256, 24], 18),
+        label('menu.options', 'Third', 'b_but_b0.lzs', [0, 48, 256, 24], 18),
+        label('menu.gachi_king', 'Fourth', 'b_but_b0.lzs', [0, 72, 256, 24], 18),
+    ]}
 
 
 class OutputSafetyTests(unittest.TestCase):
@@ -22,10 +34,10 @@ class OutputSafetyTests(unittest.TestCase):
 class MenuCatalogTests(unittest.TestCase):
     def setUp(self):
         from PIL import Image
-        self.catalog = json.loads((PROFILE / 'resources/translations/english-menu.json').read_text())
+        self.catalog = synthetic_catalog()
         self.images = {asset: Image.new('RGBA', size) for asset, (_, size, _) in ASSETS.items()}
 
-    def test_default_catalog_renders_all_labels_within_original_slots(self):
+    def test_catalog_renders_all_labels_within_original_slots(self):
         render_labels(self.catalog, self.images)
         for y in range(0, 96, 24):
             self.assertIsNotNone(self.images['b_but_b0.lzs'].crop((0, y, 256, y + 24)).getbbox())

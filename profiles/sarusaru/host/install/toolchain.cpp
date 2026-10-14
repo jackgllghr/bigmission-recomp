@@ -1,17 +1,14 @@
 #include "install/toolchain.hpp"
 
+#include "install/download.hpp"
 #include "install/game_build_config.hpp"
 #include "platform/paths.hpp"
-#include "psprecomp/sha256.hpp"
 
 #include <SDL3/SDL.h>
 
-#include <atomic>
-#include <chrono>
 #include <cstdlib>
 #include <string_view>
 #include <system_error>
-#include <thread>
 
 namespace sarusaru::install {
 namespace {
@@ -35,27 +32,6 @@ std::vector<std::string> words(std::string_view text) {
 std::string trimmed(std::string text) {
     while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) text.pop_back();
     return text;
-}
-
-// A program on PATH, as the shell would find it.
-std::optional<std::filesystem::path> on_path(std::string_view name) {
-    const char *path = std::getenv("PATH");
-    if (path == nullptr) return std::nullopt;
-#if defined(_WIN32)
-    constexpr char kSeparator = ';';
-#else
-    constexpr char kSeparator = ':';
-#endif
-    std::string_view rest = path;
-    while (!rest.empty()) {
-        const std::size_t end = std::min(rest.find(kSeparator), rest.size());
-        const std::string_view directory = rest.substr(0u, end);
-        rest.remove_prefix(std::min(end + 1u, rest.size()));
-        if (directory.empty()) continue;
-        const auto candidate = std::filesystem::path(std::string(directory)) / std::string(name);
-        if (is_file(candidate)) return candidate;
-    }
-    return std::nullopt;
 }
 
 // Linux: $CXX, or the first of g++, clang++ and c++ on PATH.
@@ -82,11 +58,6 @@ std::filesystem::path llvm_mingw_compiler(const std::filesystem::path &directory
     return directory / "bin" / "x86_64-w64-mingw32-clang++.exe";
 }
 
-std::filesystem::path system_tool(const char *name) {
-    const char *root = std::getenv("SystemRoot");
-    return std::filesystem::path(root != nullptr ? root : "C:\\Windows") / "System32" / name;
-}
-
 // Downloads and unpacks the pinned llvm-mingw.
 bool download_llvm_mingw(ProcessGroup &processes, const std::filesystem::path &directory,
                          const std::function<void(std::uint64_t)> &downloaded, std::string &error) {
@@ -94,33 +65,7 @@ bool download_llvm_mingw(ProcessGroup &processes, const std::filesystem::path &d
     std::error_code ignored;
     std::filesystem::create_directories(root, ignored);
     const auto archive = root / (directory.filename().string() + ".zip");
-    const auto partial = root / (directory.filename().string() + ".zip.part");
-    std::filesystem::remove(partial, ignored);
-
-    std::atomic<bool> finished{false};
-    std::thread watcher([&] {
-        while (!finished) {
-            std::error_code size_error;
-            const auto size = std::filesystem::file_size(partial, size_error);
-            if (!size_error) downloaded(size);
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
-        }
-    });
-    const auto fetched = processes.run({path_argument(system_tool("curl.exe")), "--fail", "--location", "--silent",
-                                        "--show-error", "--output", path_argument(partial), std::string(kLlvmMingwUrl)});
-    finished = true;
-    watcher.join();
-    if (!fetched.ok()) {
-        std::filesystem::remove(partial, ignored);
-        error = "Cannot download " + std::string(kLlvmMingwUrl) + ": " + trimmed(fetched.output);
-        return false;
-    }
-    if (psprecomp::sha256_file(partial) != kLlvmMingwSha256) {
-        std::filesystem::remove(partial, ignored);
-        error = "The downloaded compiler is not the expected file (SHA-256 mismatch)";
-        return false;
-    }
-    std::filesystem::rename(partial, archive);
+    if (!download_verified(processes, kLlvmMingwUrl, kLlvmMingwSha256, archive, downloaded, error)) return false;
     std::filesystem::remove_all(directory, ignored);
     const auto unpacked = processes.run({path_argument(system_tool("tar.exe")), "-xf", path_argument(archive),
                                          "-C", path_argument(root)});

@@ -123,6 +123,13 @@ chunk).
       progress and cancellation; Play installs first when the game is missing
       or was built for another runtime interface. The module is built in a
       work directory and moved into place only when complete.
+- [x] English game text as an opt-in download: the catalogs live in a
+      separate repository (`sarusaru-translations`); the launcher's Game text
+      setting explains the unofficial machine translation, downloads the pack
+      a build is configured with (`SARUSARU_ENGLISH_PACK_*`, SHA-256 checked)
+      and selects it. Packages refuse translation files.
+- [ ] Publish the first English pack in `sarusaru-translations` and configure
+      release builds with its URL, hash and size.
 - [ ] Save management (import, export, backups), on-screen keyboard, in-game
       menu, chorded bindings.
 - [ ] Installation housekeeping: remove modules built for older runtime
@@ -407,7 +414,7 @@ player's machine. Launcher-only packages are produced for all four desktop
 hosts; the macOS arm64 package has installed the game and played to the boot
 screens.
 
-Thirty-four CTest suites pass. With generated code at `-O1` and AOT call
+Thirty-five CTest suites pass. With generated code at `-O1` and AOT call
 chaining enabled, the headless run reaches stage 1 at about 28 times real time. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 

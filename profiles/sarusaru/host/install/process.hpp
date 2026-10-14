@@ -1,10 +1,12 @@
 #pragma once
 
 // Running the build's tools (the code generator, the compiler, curl and tar
-// for the Windows toolchain) and collecting what they print.
+// for downloads) and collecting what they print.
 #include <filesystem>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct SDL_Process;
@@ -39,5 +41,11 @@ private:
 
 // Shows a command line in a log.
 [[nodiscard]] std::string command_line(const std::vector<std::string> &args);
+
+// A program on PATH, as the shell would find it.
+[[nodiscard]] std::optional<std::filesystem::path> on_path(std::string_view name);
+
+// A program Windows itself provides (System32), such as curl.exe or tar.exe.
+[[nodiscard]] std::filesystem::path system_tool(const char *name);
 
 } // namespace sarusaru::install

@@ -4,7 +4,7 @@ The English dialogue catalog contains machine translations of all 177 extracted
 source pages, covering 71 in-game advice/dialogue messages. Every entry remains
 `draft` with `origin=machine_translation`; human speaker, terminology and context
 review is pending. The English-only source is
-[`english-dialogue-v1.json`](../resources/translations/english-dialogue-v1.json).
+`english-dialogue-v1.json` (in the separate `sarusaru-translations` repository).
 These are coding-assistant translations, not official localization wording.
 
 The combined pack includes the existing English menus, logo, 193 gameplay labels
@@ -19,10 +19,10 @@ After normal game preparation and translation-tool setup, from the repo root:
 ```sh
 out/translation-tools/bin/python profiles/sarusaru/tools/build_menu_translation.py \
   '/path/to/SaruSaru.iso' \
-  --gameplay-catalog profiles/sarusaru/resources/translations/english-gameplay-v1.json \
-  --dialogue-catalog profiles/sarusaru/resources/translations/english-dialogue-v1.json \
+  --gameplay-catalog ../sarusaru-translations/english-gameplay-v1.json \
+  --dialogue-catalog ../sarusaru-translations/english-dialogue-v1.json \
   --output out/translations/english-dialogue-v1.sstp
-python3 profiles/sarusaru/scripts/build_and_run_macos.py -- \
+python3 profiles/sarusaru/scripts/build_and_run.py -- \
   --translation-pack out/translations/english-dialogue-v1.sstp
 ```
 

@@ -10,6 +10,7 @@ import struct
 
 from dialogue_assets import GlyphMap, decode_message, original_bytes, pointer_file_offset
 from extract_translation_labels import PROFILE, FIELDS, atomic_write, read_edits, rodata_range, sha
+from translation_catalogs import catalog
 
 DIALOGUE_FIELDS = FIELDS + ['message_key', 'message_id', 'page_index', 'page_count',
     'scene', 'speaker_status', 'mentioned_characters', 'source_encoding',
@@ -136,7 +137,7 @@ def export(elf_path, output):
         offset = int(table['offset'], 0) + int(record) * table['stride']
         names[key] = elf[offset:offset + table['name_bytes']].split(b'\0', 1)[0].decode('cp932')
     messages, rows, blanks = extract(elf, metadata, names)
-    draft = PROFILE / 'resources/translations/english-dialogue-v1.json'
+    draft = catalog('english-dialogue-v1.json')
     if draft.exists():
         from dialogue_drafts import seed_dialogue
         seed_dialogue(rows, json.loads(draft.read_text(encoding='utf-8')))
@@ -173,7 +174,7 @@ def main():
     check.add_argument('bundle', type=Path)
     ingest = sub.add_parser('import-drafts')
     ingest.add_argument('bundle', type=Path)
-    ingest.add_argument('--catalog', type=Path, default=PROFILE / 'resources/translations/english-dialogue-v1.json')
+    ingest.add_argument('--catalog', type=Path, default=catalog('english-dialogue-v1.json'))
     ingest.add_argument('--output', type=Path, default=PROFILE.parents[1] / 'out/translations/english-dialogue-human.json')
     args = parser.parse_args()
     try:

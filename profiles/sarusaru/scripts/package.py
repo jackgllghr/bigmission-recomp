@@ -5,7 +5,8 @@ The package holds the launcher, its libraries and resources, and what it needs
 to build the game on the player's machine from their own disc: the code
 generator and the runtime's headers (sdk/). It never holds anything derived
 from the game: no generated code and no game module, which the script refuses
-to package.
+to package. Nor does it hold a translation: the English game text is a separate,
+optional download the launcher offers (sarusaru-translations).
 """
 
 import argparse
@@ -47,6 +48,9 @@ few minutes. It needs:
 
 {run}
 
+The game's text is Japanese. Settings > Interface > Game text can switch it to
+an unofficial English machine translation, downloaded when first chosen.
+
 Not affiliated with or endorsed by Sony Interactive Entertainment. See
 LICENSE.txt and THIRD_PARTY.md for the licences of this port and of the
 libraries and fonts it includes.
@@ -64,6 +68,11 @@ RUN = {
 def is_game_derived(path):
     name = path.name
     return name.startswith("sarusaru_game") or name.startswith("generated_") or name == "BOOT.elf"
+
+
+def is_translation(path):
+    """A translation pack or catalog: published apart from the port, never in it."""
+    return path.suffix == ".sstp" or (path.suffix == ".json" and path.name.startswith("english-"))
 
 
 def player_files(bin_dir, windows):
@@ -94,6 +103,8 @@ def player_files(bin_dir, windows):
                 raise ValueError(f"{source} contains the build directory {bin_dir.parent}")
         if is_game_derived(source) or any(part == "generated" for part in source.parts[len(bin_dir.parts):]):
             raise ValueError(f"refusing to package game-derived file {source}")
+        if is_translation(source) or any(part == "translations" for part in source.parts[len(bin_dir.parts):]):
+            raise ValueError(f"refusing to package translation file {source}; it is a separate download")
         if source.stem in DEVELOPER_ONLY:
             raise ValueError(f"unexpected developer file {source}")
     return picked

@@ -15,6 +15,8 @@ import struct
 import tempfile
 import unicodedata
 
+from translation_catalogs import catalog, required
+
 PROFILE = Path(__file__).resolve().parents[1]
 FIELDS = ['key', 'source_ja', 'translation_en', 'review_status', 'translator_note',
           'kind', 'screen', 'level_id', 'level_name_ja', 'level_candidates', 'area_id', 'character_id',
@@ -251,14 +253,14 @@ def export(elf_path, output):
     if sha(elf) != identity['executable_sha256']:
         raise ValueError('Executable does not match supported game; context offsets are version specific')
     metadata = json.loads((PROFILE / 'resources/translations/extraction-context.json').read_text())
-    menu = json.loads((PROFILE / 'resources/translations/english-menu.json').read_text())
+    menu = json.loads(required('english-menu.json').read_text())
     labels, candidates = extract(elf, metadata, menu)
     # Validate every existing file before replacing any, preserving external work.
     for name, rows in [('labels.csv', labels), ('candidates.csv', candidates)]:
         path = output / name
         if path.exists():
             rows[:] = read_edits(path, rows)
-    draft_path = PROFILE / 'resources/translations/english-gameplay-v1.json'
+    draft_path = catalog('english-gameplay-v1.json')
     if draft_path.exists():
         from translation_drafts import seed_drafts
         seed_drafts(labels, json.loads(draft_path.read_text(encoding='utf-8')))
@@ -286,7 +288,7 @@ def main():
     check.add_argument('bundle', type=Path)
     ingest = sub.add_parser('import-drafts', help='Convert human-edited label CSV into an English-only authoring catalog')
     ingest.add_argument('bundle', type=Path)
-    ingest.add_argument('--catalog', type=Path, default=PROFILE / 'resources/translations/english-gameplay-v1.json')
+    ingest.add_argument('--catalog', type=Path, default=catalog('english-gameplay-v1.json'))
     ingest.add_argument('--output', type=Path, default=PROFILE.parents[1] / 'out/translations/english-human-draft.json')
     args = parser.parse_args()
     try:

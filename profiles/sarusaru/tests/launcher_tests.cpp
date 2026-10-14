@@ -136,6 +136,13 @@ void rows() {
                 describe(SettingRow::GameFrameRate, settings).warning,
             "experimental rate clash not flagged");
 
+    require(describe(SettingRow::GameText, settings).value == "Japanese (original)", "game text not Japanese by default");
+    step(SettingRow::GameText, settings, 1);
+    require(settings.translation_language == "en" && describe(SettingRow::GameText, settings).value == "English (unofficial)",
+            "game text row did not step to English");
+    step(SettingRow::GameText, settings, -1);
+    require(settings.translation_language == "ja", "game text row did not step back to Japanese");
+
     settings.language = sarusaru::shell::Language::Auto;
     step(SettingRow::Language, settings, 1);
     require(settings.language == sarusaru::shell::Language::English &&
@@ -161,7 +168,7 @@ void rows() {
             const auto view = describe(row, settings);
             require(!view.label.empty() && !view.value.empty() && !view.description.empty(), "row without text");
         }
-    require(seen == 10, "settings rows missing from the tabs");
+    require(seen == 11, "settings rows missing from the tabs");
 }
 
 void bindings() {

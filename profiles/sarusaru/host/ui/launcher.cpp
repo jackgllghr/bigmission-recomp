@@ -200,6 +200,7 @@ void Launcher::frame() {
         case Screen::Install: install(); break;
         case Screen::Settings: settings(); break;
         case Screen::Bindings: bindings(); break;
+        case Screen::Pack: pack(); break;
         }
     }
     ImGui::End();
@@ -664,7 +665,21 @@ void Launcher::settings() {
     const float row_width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const RowView view = describe(rows[i], settings_);
-        if (const int change = setting_row(layer_, "row" + std::to_string(i), view, row_width); change != 0) {
+        const int change = setting_row(layer_, "row" + std::to_string(i), view, row_width);
+        if (change != 0 && rows[i] == SettingRow::GameText && settings_.translation_language != "en" && !pack_ready()) {
+            // English needs its pack: the one downloaded before, or the download screen.
+            const auto source = install::english_pack_source();
+            const auto kept = source ? install::english_pack_path(*source) : std::nullopt;
+            std::error_code missing;
+            if (kept && std::filesystem::is_regular_file(*kept, missing)) {
+                settings_.translation_pack = *kept;
+                settings_.translation_language = "en";
+                save();
+            } else {
+                pack_error_.clear();
+                go(Screen::Pack, "pack_download");
+            }
+        } else if (change != 0) {
             const shell::Settings before = settings_;
             step(rows[i], settings_, change);
             if (settings_.fullscreen != before.fullscreen) SDL_SetWindowFullscreen(layer_.window(), settings_.fullscreen);
@@ -697,6 +712,100 @@ void Launcher::settings() {
     if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Home, "settings");
     hints(layer_, {{Control::Change, tr(Text::HintChange)}, {Control::Tabs, tr(Text::HintTabs)},
                    {Control::Back, tr(Text::HintBack)}});
+}
+
+// --- The English game text -----------------------------------------------------
+
+namespace {
+
+// The host a URL names, to say where a download comes from.
+std::string url_host(std::string_view url) {
+    if (const auto scheme = url.find("://"); scheme != std::string_view::npos) url.remove_prefix(scheme + 3u);
+    return std::string(url.substr(0u, url.find('/')));
+}
+
+} // namespace
+
+bool Launcher::pack_ready() const {
+    if (settings_.translation_pack.empty()) return false;
+    auto path = settings_.translation_pack;
+    if (path.is_relative()) path = settings_path_.parent_path() / path;
+    std::error_code error;
+    return std::filesystem::is_regular_file(path, error);
+}
+
+void Launcher::pack() {
+    using Step = install::Progress::Step;
+    const float u = layer_.unit();
+    const float top = screen_title(layer_, tr(Text::PackTitle));
+    const ImRect inner = content_panel(layer_, top, 700.0f);
+    const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
+    const auto source = install::english_pack_source();
+
+    // A download that ended: English on and back to the settings, or the choice again with why.
+    if (pack_download_) {
+        const auto progress = pack_download_->progress();
+        if (progress.step == Step::Done) {
+            settings_.translation_language = "en";
+            settings_.translation_pack = pack_download_->destination();
+            pack_download_.reset();
+            save();
+            go(Screen::Settings, "row1");
+            return;
+        }
+        if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
+            pack_error_ = progress.step == Step::Failed ? format(Text::PackFailed, {progress.error}) : "";
+            pack_download_.reset();
+            focus_control("pack_download");
+        }
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, inner.Min.y + pad * 0.8f));
+    begin_list("##pack", ImVec2(inner.GetWidth() - 2.0f * pad, inner.GetHeight() - 1.6f * pad));
+    paragraph(layer_, tr(Text::PackIntro), width, colors::kInkDim);
+    ImGui::Dummy(ImVec2(0, 8.0f * u));
+    if (!source) {
+        paragraph(layer_, tr(Text::PackUnavailable), width, colors::kRed);
+    } else if (pack_download_) {
+        const auto progress = pack_download_->progress();
+        paragraph(layer_, format(Text::PackDownloading, {megabytes(progress.done), megabytes(progress.total)}), width);
+        ImGui::Dummy(ImVec2(0, 4.0f * u));
+        std::optional<float> fraction;
+        if (progress.total != 0u) fraction = static_cast<float>(progress.done) / static_cast<float>(progress.total);
+        progress_bar(layer_, width, fraction);
+        ImGui::Dummy(ImVec2(0, 8.0f * u));
+        if (action_row(layer_, "pack_cancel", tr(Text::InstallCancel), "", width)) pack_download_->cancel();
+    } else {
+        paragraph(layer_, format(Text::PackSource, {url_host(source->url), megabytes(source->bytes)}), width);
+        ImGui::Dummy(ImVec2(0, 4.0f * u));
+        if (action_row(layer_, "pack_download", tr(Text::PackDownload), "", width)) {
+            if (const auto destination = install::english_pack_path(*source)) {
+                pack_error_.clear();
+                pack_download_ = std::make_unique<install::PackDownload>(*source, *destination);
+                focus_control("pack_cancel");
+            } else {
+                pack_error_ = format(Text::PackFailed, {"there is no per-user data directory"});
+            }
+        }
+    }
+    if (!pack_error_.empty()) {
+        ImGui::Dummy(ImVec2(0, 6.0f * u));
+        paragraph(layer_, pack_error_, width, colors::kRed);
+    }
+    end_list(layer_);
+
+    // Back stops a download under way rather than leaving it running.
+    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) {
+        if (pack_download_)
+            pack_download_->cancel();
+        else
+            go(Screen::Settings, "row1");
+    }
+    if (source)
+        hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
+                       {Control::Back, tr(pack_download_ ? Text::HintCancel : Text::HintBack)}});
+    else
+        hints(layer_, {{Control::Back, tr(Text::HintBack)}});
 }
 
 // --- A problem -----------------------------------------------------------------

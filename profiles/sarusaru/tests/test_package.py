@@ -44,6 +44,21 @@ class PlayerFilesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "game-derived"):
             self.packaged()
 
+    def test_refuses_a_translation_pack(self):
+        (self.bin / "resources/english-menu.sstp").write_bytes(b"invented")
+        with self.assertRaisesRegex(ValueError, "translation"):
+            self.packaged()
+
+    def test_refuses_translation_catalogs(self):
+        for name in ("resources/english-dialogue-v1.json", "resources/translations/glossary.json"):
+            with self.subTest(name=name):
+                path = self.bin / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"{}")
+                with self.assertRaisesRegex(ValueError, "translation"):
+                    self.packaged()
+                path.unlink()
+
     def test_refuses_a_binary_naming_the_build_directory(self):
         (self.bin / "sarusaru").write_bytes(b"rpath " + str(self.bin.parent).encode() + b"/bin/lib")
         with self.assertRaisesRegex(ValueError, "build directory"):

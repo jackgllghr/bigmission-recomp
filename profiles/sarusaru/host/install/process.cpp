@@ -3,6 +3,8 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cstdlib>
+#include <system_error>
 
 namespace sarusaru::install {
 
@@ -72,6 +74,32 @@ std::string command_line(const std::vector<std::string> &args) {
         line += quote ? '"' + arg + '"' : arg;
     }
     return line;
+}
+
+std::optional<std::filesystem::path> on_path(std::string_view name) {
+    const char *path = std::getenv("PATH");
+    if (path == nullptr) return std::nullopt;
+#if defined(_WIN32)
+    constexpr char kSeparator = ';';
+#else
+    constexpr char kSeparator = ':';
+#endif
+    std::string_view rest = path;
+    while (!rest.empty()) {
+        const std::size_t end = std::min(rest.find(kSeparator), rest.size());
+        const std::string_view directory = rest.substr(0u, end);
+        rest.remove_prefix(std::min(end + 1u, rest.size()));
+        if (directory.empty()) continue;
+        const auto candidate = std::filesystem::path(std::string(directory)) / std::string(name);
+        std::error_code error;
+        if (std::filesystem::is_regular_file(candidate, error)) return candidate;
+    }
+    return std::nullopt;
+}
+
+std::filesystem::path system_tool(const char *name) {
+    const char *root = std::getenv("SystemRoot");
+    return std::filesystem::path(root != nullptr ? root : "C:\\Windows") / "System32" / name;
 }
 
 } // namespace sarusaru::install

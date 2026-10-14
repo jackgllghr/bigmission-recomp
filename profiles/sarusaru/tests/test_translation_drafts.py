@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from extract_translation_labels import csv_text, extract
 from translation_drafts import import_handoff, merge_gameplay_catalog, seed_drafts, validated_drafts
 from test_translation_label_extraction import fixture
+from translation_catalogs import catalog
 
 
 class TranslationDraftTests(unittest.TestCase):
@@ -61,10 +62,11 @@ class TranslationDraftTests(unittest.TestCase):
         merged = merge_gameplay_catalog(self.elf, self.menu, self.drafts, self.metadata)
         self.assertEqual(next(e for e in merged['strings'] if e['id'] == entry['id'])['text'], 'Short name')
 
-    def test_shipped_v1_has_complete_unique_english_authoring_entries(self):
-        profile = Path(__file__).resolve().parents[1]
-        catalog = json.loads((profile / 'resources/translations/english-gameplay-v1.json').read_text())
-        entries = catalog['strings']
+    # The catalog is in the separate sarusaru-translations repository.
+    @unittest.skipUnless(catalog('english-gameplay-v1.json').is_file(), 'sarusaru-translations is not checked out')
+    def test_v1_has_complete_unique_english_authoring_entries(self):
+        catalog_json = json.loads(catalog('english-gameplay-v1.json').read_text())
+        entries = catalog_json['strings']
         self.assertEqual(len(entries), 193)
         self.assertEqual(len({entry['id'] for entry in entries}), 193)
         self.assertTrue(all(e['origin'] in ('machine_translation', 'human_translation') and

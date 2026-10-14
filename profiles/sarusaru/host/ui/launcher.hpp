@@ -4,10 +4,12 @@
 // Settings, Game disc, Quit), choosing the player's disc image (with the
 // launcher's own browser, the system's file picker, or by dropping it on the
 // window), installing the game from it (building it on this machine the
-// first time), the settings, and the keyboard and gamepad bindings. Every screen works with a gamepad, a keyboard, a
+// first time), the settings, the keyboard and gamepad bindings, and
+// downloading the optional English game text. Every screen works with a gamepad, a keyboard, a
 // mouse or a touch screen alone.
 #include "game_disc.hpp"
 #include "install/game_builder.hpp"
+#include "install/pack_download.hpp"
 #include "install/toolchain.hpp"
 #include "ui/bindings.hpp"
 #include "shell/settings.hpp"
@@ -45,7 +47,7 @@ public:
     Outcome run(UiScript *script = nullptr);
 
 private:
-    enum class Screen { Home, Disc, Browser, Install, Settings, Bindings };
+    enum class Screen { Home, Disc, Browser, Install, Settings, Bindings, Pack };
 
     Layer &layer_;
     shell::Settings &settings_;
@@ -92,6 +94,10 @@ private:
     std::string install_error_;
     bool xcode_requested_{};
 
+    // Downloading the English game text, and why the last download failed.
+    std::unique_ptr<install::PackDownload> pack_download_;
+    std::string pack_error_;
+
     ImTextureID title_art_{};
     ImVec2 title_size_{};
 
@@ -103,6 +109,7 @@ private:
     void settings();
     void problem();
     void bindings();
+    void pack();
     void capture_overlay();
     bool capture_event(const SDL_Event &event);
 
@@ -113,6 +120,8 @@ private:
     void open_folder(const std::filesystem::path &folder);
     void open_system_dialog();
     void save();
+    // Whether the translation pack in the settings is there to play with.
+    [[nodiscard]] bool pack_ready() const;
     void load_title_art();
 };
 

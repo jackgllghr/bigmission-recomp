@@ -17,7 +17,8 @@ played. See the [project plan](PLAN.md) and the
 
 Releases contain only the launcher: the first time you press **Play**, it
 builds the game on your machine from your own disc. No game files or game code
-are distributed.
+are distributed. An unofficial English machine translation of the game's text
+is an optional download from the launcher's settings, published separately.
 
 ## Roadmap
 

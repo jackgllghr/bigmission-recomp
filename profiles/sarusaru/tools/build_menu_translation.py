@@ -14,6 +14,7 @@ import os
 
 from prepare_game import IsoImage
 from translation_assets import archive_members, decode_lzs, decode_tim2
+from translation_catalogs import catalog
 
 PROFILE = Path(__file__).resolve().parents[1]
 ROOT = PROFILE.parents[1]
@@ -254,7 +255,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('iso', type=Path)
     parser.add_argument('--logo', type=Path, default=ROOT / 'include/image/SaruSaruBigMission.png')
-    parser.add_argument('--catalog', type=Path, default=PROFILE / 'resources/translations/english-menu.json')
+    parser.add_argument('--catalog', type=Path, default=catalog('english-menu.json'))
     parser.add_argument('--gameplay-catalog', type=Path, help='Include contextual English gameplay label drafts')
     parser.add_argument('--dialogue-catalog', type=Path, help='Include compact English dialogue drafts')
     parser.add_argument('--output', type=Path, default=ROOT / 'out/translations/english-menu.sstp')

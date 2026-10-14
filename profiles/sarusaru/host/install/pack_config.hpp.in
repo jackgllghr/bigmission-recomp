@@ -1,0 +1,11 @@
+#pragma once
+
+// The English translation pack this build offers, set when the port is
+// configured (SARUSARU_ENGLISH_PACK_*). Empty: the build offers none.
+#include <string_view>
+
+namespace sarusaru::install {
+inline constexpr std::string_view kEnglishPackUrl = "@SARUSARU_ENGLISH_PACK_URL@";
+inline constexpr std::string_view kEnglishPackSha256 = "@SARUSARU_ENGLISH_PACK_SHA256@";
+inline constexpr std::string_view kEnglishPackSize = "@SARUSARU_ENGLISH_PACK_SIZE@";
+} // namespace sarusaru::install

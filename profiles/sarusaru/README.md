@@ -43,6 +43,12 @@ scene topics, character mentions and protected controller tokens. See the
 for all 177 pages through the compact-message lookup adapter. Speaker/level
 verification and human review remain pending.
 
+The English catalogs are not in this repository: they are translations of the
+game's text, so they live in a separate one, `sarusaru-translations`, which the
+tools expect beside this checkout (or at `SARUSARU_TRANSLATIONS`). Players get
+English as an [optional download](#english-game-text) from the launcher; the
+port's packages never contain it.
+
 ## Requirements
 
 - One of these hosts, with CMake 3.20+, Ninja and Python 3.10+:
@@ -149,7 +155,8 @@ yellow and wears Pipo's red siren lamp.
 - **Settings** has Graphics, Window, Controls and Interface tabs: resolution, 60 FPS
   motion, the frame rate cap, FOV, the experimental update rate (flagged in
   red, as is interpolation it switches off), fullscreen, window size, the
-  stick dead zone, the language and the confirm button. Values step with left/right, the
+  stick dead zone, the launcher's language, the game's text (below) and the
+  confirm button. Values step with left/right, the
   row's arrows, or by activating it; each is saved at once.
 - **Controls** (from Settings' Controls tab) lists every PSP control with
   its keyboard and gamepad inputs, drawn as keycaps and the pad's own glyphs.
@@ -192,6 +199,30 @@ shell's Vulkan context, in Luckiest Guy (titles, with M PLUS Rounded 1c Black
 for Japanese) and M PLUS Rounded 1c (text, including Japanese file names); see [`THIRD_PARTY.md`](THIRD_PARTY.md). They
 are downloaded at configure time, pinned and hash-checked, into
 `bin/resources/` beside the executable with their licences.
+
+### English game text
+
+**Game text** on the Interface tab chooses the game's own language: Japanese
+(the original) or English. The port carries no translation; the first time a
+player chooses English, the launcher explains that it is an unofficial,
+unreviewed machine translation, not made or endorsed by Sony, and downloads
+the pack this build was configured with. The pack is kept only if its SHA-256
+matches, in `<user data>/translations/english-<hash>.sstp`, and `[translation]`
+in `settings.ini` then points at it; switching back and forth needs no second
+download. A pack already set in `settings.ini` (one built locally) is used as
+it is.
+
+A build offers the pack only when configured with it:
+
+```sh
+cmake -S . -B out/macos-arm64 \
+  -DSARUSARU_ENGLISH_PACK_URL=https://github.com/<owner>/sarusaru-translations/releases/download/<tag>/english.sstp \
+  -DSARUSARU_ENGLISH_PACK_SHA256=<sha256> -DSARUSARU_ENGLISH_PACK_SIZE=<bytes>
+```
+
+Without them the launcher says English is not offered by this build. The pack
+is built from the catalogs and the maintainer's own disc (see the
+`sarusaru-translations` README) and published there, apart from the port.
 
 `SARUSARU_UI_SCRIPT` drives the launcher without a person, for checks with
 each device: keys through SDL, buttons through an SDL virtual gamepad (which
@@ -397,7 +428,8 @@ for the shaders).
 `scripts/package.py` packages a build: a `.app` in a `.zip` on macOS (not
 notarised: right-click and Open the first time), a `.zip` on Windows and a
 `.tar.gz` on Linux, each with a player README and the licences. It refuses to
-package anything game-derived or any binary that names the build directory.
+package anything game-derived, any translation pack or catalog (English is a
+separate download) or any binary that names the build directory.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds, tests
 and packages every host (Linux on Ubuntu 22.04 for older glibc, macOS for 13.0
 and later) and attaches the packages and `SHA256SUMS.txt` to a **draft**
@@ -452,7 +484,7 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All thirty-four CTest suites pass, including 17 ISO/preparation cases and seven
+- All thirty-five CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes

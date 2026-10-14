@@ -113,8 +113,26 @@ X(DescConfirm, "The face button that confirms in these menus. The game itself co
   "このメニューで決定に使うボタンです。ゲーム本編では日本版と同じく ○（右）で決定します。")
 X(RowLanguage, "Language", "言語 (Language)")
 X(ValueAutomatic, "Automatic ({0})", "自動（{0}）")
-X(DescLanguage, "The language of these menus. Automatic follows the system's language. The game's own text stays Japanese.",
-  "このメニューの言語です。「自動」はシステムの言語に合わせます。ゲーム本編の文章は日本語のままです。")
+X(DescLanguage, "The language of these menus. Automatic follows the system's language. Game text sets the game's own.",
+  "このメニューの言語です。「自動」はシステムの言語に合わせます。ゲーム本編の言語は「ゲームの文章」で選びます。")
+X(RowGameText, "Game text", "ゲームの文章")
+X(ValueGameJapanese, "Japanese (original)", "日本語（オリジナル）")
+X(ValueGameEnglish, "English (unofficial)", "英語（非公式）")
+X(DescGameText,
+  "The language of the game's own menus, names and tutorials. English is an unofficial machine translation, downloaded the first time it is chosen.",
+  "ゲーム本編のメニュー・名前・チュートリアルの言語です。英語は非公式の機械翻訳で、はじめて選んだときにダウンロードします。")
+
+// The English game text (an optional download)
+X(PackTitle, "English Game Text", "英語のゲーム文章")
+X(PackIntro,
+  "The English text is an unofficial fan translation, made by machine and not yet reviewed. It is not made or endorsed by Sony Interactive Entertainment. It covers the main menus, names and tutorials; the rest stays Japanese.",
+  "英語の文章は非公式のファン翻訳で、機械翻訳のため、まだ人の手で確認されていません。ソニー・インタラクティブエンタテインメントが作成・承認したものではありません。おもなメニュー・名前・チュートリアルが英語になり、それ以外は日本語のままです。")
+X(PackSource, "It is downloaded from {0} ({1} MB).", "{0} からダウンロードします（{1} MB）。")
+X(PackDownload, "Download and use English", "ダウンロードして英語にする")
+X(PackDownloading, "Downloading: {0} of {1} MB", "ダウンロード中：{0} / {1} MB")
+X(PackFailed, "The download did not finish: {0}", "ダウンロードが完了しませんでした：{0}")
+X(PackUnavailable, "This build of the port does not offer the English text.",
+  "このビルドでは英語の文章を利用できません。")
 
 // The bindings screen
 X(BindingsTitle, "Controls", "操作設定")

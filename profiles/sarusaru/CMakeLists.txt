@@ -41,7 +41,8 @@ if(SARUSARU_HAS_RENDERER)
     add_library(sarusaru_ui STATIC host/ui/layer.cpp host/ui/ui_renderer.cpp host/ui/theme.cpp host/ui/widgets.cpp
         host/ui/launcher.cpp host/ui/ui_script.cpp)
     target_link_libraries(sarusaru_ui PUBLIC sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install)
-    add_library(sarusaru_install STATIC host/install/process.cpp host/install/toolchain.cpp host/install/game_builder.cpp)
+    add_library(sarusaru_install STATIC host/install/process.cpp host/install/download.cpp host/install/toolchain.cpp
+        host/install/game_builder.cpp host/install/pack_download.cpp)
     target_link_libraries(sarusaru_install PUBLIC sarusaru_game_module sarusaru_disc SDL3::SDL3)
     add_dependencies(sarusaru_install psp_recomp)
 endif()
@@ -273,6 +274,23 @@ foreach(option PSPRECOMP_AOT_ASSUME_NO_WRITE_WATCH PSPRECOMP_AOT_PRODUCTION_FAST
     endif()
 endforeach()
 configure_file(host/install/game_build_config.hpp.in install/game_build_config.hpp @ONLY)
+# The optional English translation pack a player can download from the
+# launcher. It is published apart from the port (sarusaru-translations), so a
+# build offers it only when given its URL, SHA-256 and size.
+set(SARUSARU_ENGLISH_PACK_URL "" CACHE STRING "URL of the English translation pack the launcher offers (empty: none)")
+set(SARUSARU_ENGLISH_PACK_SHA256 "" CACHE STRING "SHA-256 of the English translation pack")
+set(SARUSARU_ENGLISH_PACK_SIZE "0" CACHE STRING "Size in bytes of the English translation pack")
+if(NOT SARUSARU_ENGLISH_PACK_URL STREQUAL "")
+    if(NOT SARUSARU_ENGLISH_PACK_URL MATCHES "^https://" OR NOT SARUSARU_ENGLISH_PACK_SHA256 MATCHES "^[0-9a-f]+$"
+       OR NOT SARUSARU_ENGLISH_PACK_SIZE MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR "SARUSARU_ENGLISH_PACK_URL needs an https URL, a lowercase SHA-256 and a size in bytes")
+    endif()
+    string(LENGTH "${SARUSARU_ENGLISH_PACK_SHA256}" _sarusaru_pack_hash_length)
+    if(NOT _sarusaru_pack_hash_length EQUAL 64)
+        message(FATAL_ERROR "SARUSARU_ENGLISH_PACK_SHA256 must be 64 hexadecimal digits")
+    endif()
+endif()
+configure_file(host/install/pack_config.hpp.in install/pack_config.hpp @ONLY)
 # llvm-mingw links its C++ runtime as DLLs; they go beside the executables,
 # and the module a player builds uses the same ones.
 if(MINGW)

@@ -15,7 +15,7 @@ python3 -m venv out/translation-tools
 out/translation-tools/bin/pip install -r profiles/sarusaru/tools/requirements-translation.txt
 out/translation-tools/bin/python profiles/sarusaru/tools/build_menu_translation.py \
   '/path/to/SaruSaru.iso'
-python3 profiles/sarusaru/scripts/build_and_run_macos.py -- \
+python3 profiles/sarusaru/scripts/build_and_run.py -- \
   --translation-pack out/translations/english-menu.sstp
 ```
 
@@ -61,7 +61,7 @@ The [English dialogue v1 pack](english-dialogue-v1.md) also includes 71 compact
 messages, with source page counts and controller glyphs preserved.
 
 The UTF-8 authoring catalog is
-[`resources/translations/english-menu.json`](../resources/translations/english-menu.json).
+`english-menu.json` (in the separate `sarusaru-translations` repository).
 It currently contains 57 image labels, 39 read-only dialog string replacements
 and four prepared Options help-line replacements. These are supported strings,
 not a claim that every game message or error path has been exercised.
