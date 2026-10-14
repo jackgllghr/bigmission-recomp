@@ -16,8 +16,8 @@
 namespace sarusaru::ui {
 
 enum class SettingRow {
-    InternalResolution, Textures, FrameInterpolation, FrameRateCap, Fov, GameFrameRate,
-    CelShading, Fullscreen, WindowSize,
+    InternalResolution, Textures, FrameRate, Fov, CelShading, Fullscreen,
+    WindowSize,
     DeadZone,
     Language, GameText, ConfirmButton, SkipIntroLogos,
 };
@@ -35,6 +35,8 @@ struct RowView {
     std::string description;
     // The value clashes with another setting (description says how).
     bool warning{};
+    // Another setting makes this one moot (description says which); step() leaves it.
+    bool enabled{true};
     // A gamepad face button drawn before the value, as the player's pad labels it.
     SDL_GamepadButton face{SDL_GAMEPAD_BUTTON_INVALID};
 };

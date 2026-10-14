@@ -48,13 +48,11 @@ struct Settings {
     std::uint32_t window_width{960};
     std::uint32_t window_height{544};
     bool fullscreen{false};
-    // Presentation cap, 0 = every PSP vblank. Guest timing stays 60000/1001 Hz.
+    // 0 = every PSP vblank (the game's own frames), 1-59 = a presentation
+    // cap, 60 = 60 FPS motion: an in-between picture for each game frame,
+    // at the original game speed, one vblank later. The game always updates
+    // at its native rate; guest timing stays 60000/1001 Hz.
     std::uint32_t frame_rate{0};
-    // Native game cadence override: 0, 15, 20, 30 or 60. Changes fixed-step game speed.
-    std::uint32_t experimental_game_frame_rate{0};
-    // Draws an in-between picture for each native game frame and presents
-    // both: 60 FPS motion at the original game speed, one vblank later.
-    bool frame_interpolation{false};
     // 0 = native; otherwise the gameplay camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
     // An HD texture pack directory (textures/hd_pack.hpp), or empty for the
@@ -71,8 +69,13 @@ struct Settings {
     bool operator==(const Settings &) const = default;
 };
 
+// Whether `frame_rate` asks for 60 FPS motion (interpolated in-between pictures).
+[[nodiscard]] constexpr bool interpolates(const Settings &settings) { return settings.frame_rate == 60u; }
+
 [[nodiscard]] Settings default_settings();
 // Partial files inherit defaults. Unknown/duplicate keys and invalid bindings throw.
+// Files from earlier versions still load: experimental_game_frame_rate is
+// ignored, and frame_interpolation = 1 becomes frame_rate = 60.
 [[nodiscard]] Settings parse_settings(std::string_view text);
 [[nodiscard]] std::string serialize_settings(const Settings &settings);
 [[nodiscard]] std::filesystem::path default_settings_path();

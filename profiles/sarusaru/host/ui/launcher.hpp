@@ -1,8 +1,8 @@
 #pragma once
 
 // The launcher: what the game shows before it starts. The main menu (Play,
-// Settings, Game disc, Quit), choosing the player's disc image (with the
-// launcher's own browser, the system's file picker, or by dropping it on the
+// Settings, Quit; Locate game disc in place of Play until the player's disc
+// image is chosen, with the system's file picker or by dropping it on the
 // window), installing the game from it (building it on this machine the
 // first time), the settings, the keyboard and gamepad bindings, and
 // downloading the optional English game text. Every screen works with a gamepad, a keyboard, a
@@ -14,7 +14,6 @@
 #include "install/toolchain.hpp"
 #include "ui/bindings.hpp"
 #include "shell/settings.hpp"
-#include "ui/file_list.hpp"
 #include "ui/layer.hpp"
 
 #include <atomic>
@@ -48,7 +47,7 @@ public:
     Outcome run(UiScript *script = nullptr);
 
 private:
-    enum class Screen { Home, Disc, Browser, Install, Settings, Bindings, Pack, Textures };
+    enum class Screen { Home, Install, Settings, Bindings, Pack, Textures };
 
     Layer &layer_;
     shell::Settings &settings_;
@@ -59,19 +58,11 @@ private:
 
     // The disc in the settings, as last checked.
     std::optional<DiscCheck> disc_check_;
-    // What happened to the last disc the player chose.
+    // What is wrong with the last disc the player chose, if it was not kept.
     std::string disc_message_;
-    bool disc_message_good_{};
 
     // Why the game could not start, shown over everything until dismissed.
     std::string start_failure_;
-
-    // The file browser.
-    std::filesystem::path folder_;
-    std::vector<FileEntry> entries_;
-    std::vector<Place> places_;
-    std::string browser_message_;
-    bool all_files_{};
 
     // The settings screen.
     int tab_{};
@@ -109,8 +100,6 @@ private:
 
     void frame();
     void home();
-    void disc();
-    void browser();
     void install();
     void settings();
     void problem();
@@ -127,7 +116,6 @@ private:
     // Plays, or installs the game first if it is not installed.
     void play();
     void choose_disc(const std::filesystem::path &path);
-    void open_folder(const std::filesystem::path &folder);
     void open_system_dialog();
     void save();
     // Whether the translation pack in the settings is there to play with.

@@ -141,23 +141,23 @@ image itself, after the same SHA-256 check; no prepared `BOOT.elf` is needed.
 ### Launcher
 
 Started with no disc image, `sarusaru` opens the launcher in the game's
-window: **Play**, **Settings**, **Game disc** and **Quit** over the series'
+window: **Play**, **Settings** and **Quit** over the series'
 sky, sunburst and yellow swoosh, with the title art. The focused control turns
 yellow and wears Pipo's red siren lamp.
 
-- **Game disc** checks a disc image before keeping it in `settings.ini`
+- Until a usable disc image is chosen, **Locate game disc** takes Play's place
+  and opens the system file picker (dropping the file on the window works
+  too). The image is checked before it is kept in `settings.ini`
   (`[game] disc`): an ISO9660 image whose `UMD_DATA.BIN` names UCJS10060 and
   whose `BOOT.BIN` is the supported executable. Another PSP game, a damaged
-  image or a different executable gets a sentence saying so. The image is
-  found with the launcher's own browser (folders, `.iso` files and common
-  places such as home, downloads and mounted drives, all reachable with a
-  gamepad), the system file picker, or by dropping the file on the window.
-- **Settings** has Graphics, Window, Controls and Interface tabs: resolution, 60 FPS
-  motion, the frame rate cap, FOV, the experimental update rate (flagged in
-  red, as is interpolation it switches off), fullscreen, window size, the
-  stick dead zone, the launcher's language, the game's text (below) and the
-  confirm button. Values step with left/right, the
-  row's arrows, or by activating it; each is saved at once.
+  image or a different executable gets a sentence saying so above the
+  buttons, as does a kept image that has since moved or changed.
+- **Settings** has Graphics, Controls and Interface tabs: resolution,
+  HD textures, frame rate (Native, 30 or 60 FPS motion), FOV, cel shading,
+  fullscreen, window size (not while fullscreen), the stick dead zone, the
+  launcher's language, the game's text (below) and the confirm button. Values
+  step with left/right, the row's arrows, or by activating it; each is saved
+  at once.
 - **Controls** (from Settings' Controls tab) lists every PSP control with
   its keyboard and gamepad inputs, drawn as keycaps and the pad's own glyphs.
   On a focused cell, confirm (or a click or tap) sets a new input, the north
@@ -287,7 +287,6 @@ window_width = 1920
 window_height = 1080
 fullscreen = 0
 frame_rate = 60
-frame_interpolation = 1
 fov_degrees = 50
 cel_shading = 0
 
@@ -322,47 +321,31 @@ their unipolar range. Connected controllers contribute together, and normal
 hot-plugging remains supported. One source may intentionally trigger several
 actions. The launcher edits all of these, bindings included.
 
-`frame_rate` is a **presentation cap**, from 1 to 60; 0 presents at every native
-PSP vblank (about 59.94 Hz). It leaves guest vblank timing, input sampling,
-render submissions, audio and movie timing intact. It does not turn the game's
-roughly 29.97 Hz updates into 60 Hz gameplay. In fast-forward it still selects
-frames on guest time, so it is not a wall-clock cap.
+`frame_rate` sets how often pictures are shown. The game always updates at its
+native cadence (two PSP vblanks per frame, about 29.97 Hz), so guest vblank
+timing, input sampling, render submissions, audio and movie timing are never
+changed. 0 (Native) presents at every PSP vblank (about 59.94 Hz); 1 to 59 is a
+**presentation cap** (the launcher offers 30), which in fast-forward still
+selects frames on guest time, so it is not a wall-clock cap.
 
-`frame_interpolation = 1` gives **60 FPS motion at the original game speed**.
-The game keeps its native cadence of two vblanks per frame, so movement,
-animation, scripts, audio and movies keep their original timing; every frame the
-game draws is pixel-identical to native. Between two game frames the renderer
-draws one more picture: each draw call is matched with the same draw of the
-previous frame (by vertex source, texture and vertex type; instances by
-nearness), and its world/view/projection matrices, CPU-transformed vertices
-(skinning, 2D layout), normals, colours and texture scrolling are blended
-halfway. Draws without a match, or that moved too far to be one motion (cuts,
-recycled sprites), appear as in the newer frame. The in-between picture is shown
-at the vblank where the new frame first appears and the new frame one vblank
-later, so the picture is about 17 ms later than native. Full-motion video plays
-at its own rate. It requires `experimental_game_frame_rate = 0` (otherwise it is
-switched off with a warning) and has no effect with a `frame_rate` cap below 60.
-Measured on the title screen and the stage hub, about 99% of draws are matched.
+`frame_rate = 60` gives **60 FPS motion at the original game speed**.
+Movement, animation, scripts, audio and movies keep their original timing;
+every frame the game draws is pixel-identical to native. Between two game
+frames the renderer draws one more picture: each draw call is matched with the
+same draw of the previous frame (by vertex source, texture and vertex type;
+instances by nearness), and its world/view/projection matrices, CPU-transformed
+vertices (skinning, 2D layout), normals, colours and texture scrolling are
+blended halfway. Draws without a match, or that moved too far to be one motion
+(cuts, recycled sprites), appear as in the newer frame. The in-between picture
+is shown at the vblank where the new frame first appears and the new frame one
+vblank later, so the picture is about 17 ms later than native. Full-motion
+video plays at its own rate. Measured on the title screen and the stage hub,
+about 99% of draws are matched.
 
-`experimental_game_frame_rate` overrides the game's frame-wait interval. Use
-0 for the original behavior, or 15, 20, 30, or 60. These rates correspond to four,
-three, two or one PSP vblanks per game frame, so actual rates are approximately
-14.985, 19.980, 29.970 and 59.940 Hz. To try the 60 mode:
-
-```ini
-[graphics]
-frame_rate = 60
-experimental_game_frame_rate = 60
-```
-
-This increases **game updates**, not just swapchain presentations. Fixed-step
-movement, animation and frame-counted scripts are not compensated: 60 can run
-them faster, and 15/20 can run them slower. It is not yet a timing-correct 60 FPS
-gameplay mode; use `frame_interpolation` for that. The setting defaults to 0 and
-prints that limitation at startup.
-The original PSP clock, audio clock and movie timestamps remain unchanged.
-The presentation cap still applies independently; setting it below the game
-rate hides some updated frames without reducing game updates.
+Settings files from earlier versions still load: `frame_interpolation = 1`
+becomes `frame_rate = 60`, and `experimental_game_frame_rate` is ignored (the
+developer `sarusaru_bootstrap` still reads `SARUSARU_EXPERIMENTAL_GAME_FRAME_RATE`
+for experiments).
 
 For headless investigation, the bootstrap accepts the same experimental setting
 through `SARUSARU_EXPERIMENTAL_GAME_FRAME_RATE` and reports the number of

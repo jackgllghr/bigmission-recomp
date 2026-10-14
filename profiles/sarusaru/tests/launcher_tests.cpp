@@ -6,7 +6,6 @@
 #include "psprecomp/sha256.hpp"
 #include "synthetic_iso.hpp"
 #include "ui/bindings.hpp"
-#include "ui/file_list.hpp"
 #include "ui/settings_rows.hpp"
 #include "ui/text.hpp"
 
@@ -84,7 +83,8 @@ void texts() {
                 resolve_language(Language::English) == Language::English,
             "explicit language not kept");
     set_language(Language::English);
-    require(format(Text::FoundIt, {"a.iso"}) == "Found it! a.iso is ready to play.", "English text not formatted");
+    require(format(Text::StatusChoose, {"UCJS10060"}) == "Locate your disc image of UCJS10060 to play",
+            "English text not formatted");
 }
 
 void rows() {
@@ -152,21 +152,30 @@ void rows() {
     settings.window_width = 1000;
     step(SettingRow::WindowSize, settings, 1);
     require(settings.window_width == 1440 && settings.window_height == 816, "window size step wrong");
+    require(describe(SettingRow::WindowSize, settings).enabled, "window size disabled in a window");
+    settings.fullscreen = true;
+    step(SettingRow::WindowSize, settings, 1);
+    require(!describe(SettingRow::WindowSize, settings).enabled && settings.window_width == 1440,
+            "window size still steps while fullscreen");
+    settings.fullscreen = false;
 
     settings.controls.dead_zone = 0.2f;
     step(SettingRow::DeadZone, settings, 1);
     require(std::abs(settings.controls.dead_zone - 0.25f) < 1e-6f && describe(SettingRow::DeadZone, settings).value == "25%",
             "dead zone step wrong");
 
-    // Clashing settings are flagged.
-    settings.frame_interpolation = true;
-    settings.experimental_game_frame_rate = 0;
+    // Frame rate: native, 30, then 60 FPS motion.
     settings.frame_rate = 0;
-    require(!describe(SettingRow::FrameInterpolation, settings).warning, "interpolation flagged without a clash");
-    step(SettingRow::GameFrameRate, settings, 1);
-    require(settings.experimental_game_frame_rate == 15 && describe(SettingRow::FrameInterpolation, settings).warning &&
-                describe(SettingRow::GameFrameRate, settings).warning,
-            "experimental rate clash not flagged");
+    require(describe(SettingRow::FrameRate, settings).value == "Native" && !interpolates(settings), "frame rate not native");
+    step(SettingRow::FrameRate, settings, 1);
+    require(settings.frame_rate == 30 && describe(SettingRow::FrameRate, settings).value == "30 FPS", "frame rate after native is not 30");
+    step(SettingRow::FrameRate, settings, 1);
+    require(settings.frame_rate == 60 && interpolates(settings), "60 FPS is not 60 FPS motion");
+    step(SettingRow::FrameRate, settings, 1);
+    require(settings.frame_rate == 0, "frame rate did not wrap to native");
+    settings.frame_rate = 20;
+    step(SettingRow::FrameRate, settings, -1);
+    require(settings.frame_rate == 0, "hand-set frame rate not snapped down to native");
 
     settings.confirm_south = true;
     require(describe(SettingRow::ConfirmButton, settings).face == SDL_GAMEPAD_BUTTON_SOUTH &&
@@ -215,7 +224,11 @@ void rows() {
             "logo skip did not turn on");
     step(SettingRow::SkipIntroLogos, settings, -1);
     require(!settings.skip_intro_logos, "logo skip did not turn off");
-    require(seen == 14, "settings rows missing from the tabs");
+    require(seen == 12, "settings rows missing from the tabs");
+    const auto graphics = settings_tabs().front().rows;
+    require(settings_tabs().size() == 3u && graphics.size() >= 2u && graphics[graphics.size() - 2] == SettingRow::Fullscreen &&
+                graphics.back() == SettingRow::WindowSize,
+            "window size is not under fullscreen on the Graphics tab");
 }
 
 void bindings() {
@@ -331,31 +344,6 @@ void bindings() {
     require(capture.take() == Binding{Binding::Kind::Axis, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 1}, "trigger not bound");
 }
 
-void files(const std::filesystem::path &directory) {
-    using namespace sarusaru::ui;
-    const auto folder = directory / "browse";
-    std::filesystem::create_directories(folder / "b folder");
-    std::filesystem::create_directories(folder / "A folder");
-    std::filesystem::create_directories(folder / ".hidden");
-    for (const char *name : {"zeta.iso", "Alpha.ISO", "notes.txt", ".secret.iso"})
-        std::ofstream(folder / name) << "data";
-    auto listed = list_folder(folder, false);
-    require(listed.size() == 4u, "listing did not skip hidden and non-disc files");
-    require(listed[0].name == "A folder" && listed[1].name == "b folder" && listed[0].directory,
-            "folders not first or not sorted ignoring case");
-    require(listed[2].name == "Alpha.ISO" && listed[3].name == "zeta.iso" && listed[2].size == 4u,
-            "disc images not sorted or sized");
-    listed = list_folder(folder, true);
-    require(listed.size() == 5u && listed[4].name == "zeta.iso" && listed[3].name == "notes.txt",
-            "all-files listing wrong");
-    try {
-        (void)list_folder(folder / "missing", false);
-        require(false, "missing folder listed");
-    } catch (const std::filesystem::filesystem_error &) {}
-    require(format_size(512) == "512 bytes" && format_size(1'500'000) == "1.5 MB" && format_size(1'800'000'000) == "1.8 GB",
-            "sizes formatted wrongly");
-}
-
 void discs(const std::filesystem::path &directory) {
     using namespace sarusaru;
     std::vector<std::uint8_t> boot(3000u);
@@ -404,7 +392,6 @@ int main() {
     texts();
     rows();
     bindings();
-    files(directory);
     discs(directory);
     std::filesystem::remove_all(directory);
     std::cout << "Launcher texts, rows, bindings, file listing and disc recognition tests passed\n";

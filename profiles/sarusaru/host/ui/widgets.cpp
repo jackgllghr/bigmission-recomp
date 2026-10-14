@@ -398,14 +398,16 @@ int setting_row(const Layer &layer, std::string_view id, const RowView &row, flo
     ImFont *body = fonts().body, *strong = fonts().strong;
     const float size = 19.0f * u;
     const ImVec2 label_size = text_size(body, size, row.label);
-    draw->AddText(body, size, ImVec2(bb.Min.x + 40.0f * u, bb.GetCenter().y - label_size.y * 0.5f), colors::kInk,
+    // A disabled row still takes focus, so its description can say why.
+    const ImU32 ink = row.enabled ? colors::kInk : colors::kDisabled;
+    draw->AddText(body, size, ImVec2(bb.Min.x + 40.0f * u, bb.GetCenter().y - label_size.y * 0.5f), ink,
                   row.label.c_str());
 
     // The value between its arrows, in the right part of the row.
     const float value_width = std::min(300.0f * u, width * 0.48f);
     const ImRect value(ImVec2(bb.Max.x - value_width - 12.0f * u, bb.Min.y), ImVec2(bb.Max.x - 12.0f * u, bb.Max.y));
     const float arrow = 22.0f * u;
-    const ImU32 arrow_color = mix(colors::kBlueLight, colors::kBlue, focus);
+    const ImU32 arrow_color = row.enabled ? mix(colors::kBlueLight, colors::kBlue, focus) : colors::kDisabled;
     triangle(draw, ImVec2(value.Min.x + arrow * 0.5f, value.GetCenter().y), 9.0f * u, -1, arrow_color);
     triangle(draw, ImVec2(value.Max.x - arrow * 0.5f, value.GetCenter().y), 9.0f * u, 1, arrow_color);
     // A face button, when the row has one, leads the value and is centred with it.
@@ -419,9 +421,10 @@ int setting_row(const Layer &layer, std::string_view id, const RowView &row, flo
         face_button(draw, at, u, layer.pad_type(), row.face);
     }
     draw->AddText(strong, size, ImVec2(left + glyph.x, value.GetCenter().y - value_size.y * 0.5f),
-                  row.warning ? colors::kRed : colors::kInk, row.value.c_str());
+                  row.warning ? colors::kRed : ink, row.value.c_str());
 
     int change = 0;
+    if (!row.enabled) return change;
     if (item.pressed) {
         // A click or tap on the left arrow's side steps back; elsewhere, or
         // Enter or the confirm button, steps forward.

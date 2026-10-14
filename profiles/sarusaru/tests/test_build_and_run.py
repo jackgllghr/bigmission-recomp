@@ -24,9 +24,9 @@ class LauncherSettingsTests(unittest.TestCase):
         self.profile = Path(self.directory.name)
         (self.profile / "resources").mkdir()
         self.resource_settings = self.profile / "resources/settings.ini"
-        self.resource_settings.write_text("[graphics]\nexperimental_game_frame_rate = 60\n")
+        self.resource_settings.write_text("[graphics]\nframe_rate = 60\n")
         self.user_settings = self.profile / "user-settings.ini"
-        self.user_settings.write_text("[graphics]\nexperimental_game_frame_rate = 0\n")
+        self.user_settings.write_text("[graphics]\nframe_rate = 0\n")
         self.iso = self.profile / "game.iso"
         self.iso.touch()
 
@@ -48,8 +48,8 @@ class LauncherSettingsTests(unittest.TestCase):
         selected = Path(command[command.index("--settings") + 1]) if "--settings" in command else self.user_settings
         settings = configparser.ConfigParser()
         settings.read(selected)
-        self.assertEqual(settings.getint("graphics", "experimental_game_frame_rate"), 60,
-                         "launcher ignored the edited repository settings and kept native game cadence")
+        self.assertEqual(settings.getint("graphics", "frame_rate"), 60,
+                         "launcher ignored the edited repository settings and kept the native frame rate")
         self.assertEqual(selected, self.resource_settings.resolve())
 
     def test_explicit_settings_take_precedence(self):

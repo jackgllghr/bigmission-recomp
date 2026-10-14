@@ -56,17 +56,25 @@ int main() {
     rejects("[translation]\nlanguage = fr");
     rejects("[translation]\npack = ");
     const auto custom = parse_settings(
-        "[graphics]\r\ninternal_resolution = 4\r\nwindow_width = 1920\nwindow_height = 1080\nfullscreen = 1\nframe_rate = 30\nexperimental_game_frame_rate = 60\nframe_interpolation = 1\nfov_degrees = 75\n"
+        "[graphics]\r\ninternal_resolution = 4\r\nwindow_width = 1920\nwindow_height = 1080\nfullscreen = 1\nframe_rate = 30\nfov_degrees = 75\n"
         "[input]\ndead_zone = 0.3\n[keyboard]\ncircle = C, V\nquit = none\nfast_forward = F\n"
         "[gamepad]\nanalog_left = axis:rightx+\nanalog_right = axis:rightx-\nl = axis:righttrigger+\n");
-    require(custom.internal_resolution == 4 && custom.frame_rate == 30 && custom.fov_degrees == 75 && custom.experimental_game_frame_rate == 60 &&
-                custom.frame_interpolation && custom.window_width == 1920 && custom.window_height == 1080 &&
+    require(custom.internal_resolution == 4 && custom.frame_rate == 30 && custom.fov_degrees == 75 &&
+                custom.window_width == 1920 && custom.window_height == 1080 &&
                 custom.fullscreen,
             "graphics settings not parsed");
     require(parse_settings(serialize_settings(custom)) == custom, "custom bindings do not round-trip");
+    // Earlier versions' files: interpolation became frame_rate = 60, the game update rate is gone.
+    require(parse_settings("[graphics]\nframe_rate = 0\nexperimental_game_frame_rate = 60\nframe_interpolation = 1").frame_rate == 60,
+            "old interpolation not carried over");
+    require(parse_settings("[graphics]\nframe_interpolation = 0\nframe_rate = 60").frame_rate == 0,
+            "old cap of 60 without interpolation turned interpolation on");
+    require(parse_settings("[graphics]\nframe_rate = 30\nframe_interpolation = 0").frame_rate == 30, "old cap of 30 lost");
+    require(serialize_settings(default_settings()).find("frame_interpolation") == std::string::npos &&
+                serialize_settings(default_settings()).find("experimental_game_frame_rate") == std::string::npos,
+            "removed settings still written");
     for (const auto text : {
         "[graphics]\ninternal_resolution = 0", "[graphics]\nframe_rate = 61",
-        "[graphics]\nexperimental_game_frame_rate = 24", "[graphics]\nexperimental_game_frame_rate = 120",
         "[graphics]\nframe_rate = 30junk", "[graphics]\nframe_interpolation = 2", "[graphics]\nwindow_width = 100",
         "[graphics]\nwindow_height = 99999", "[graphics]\nfullscreen = yes", "[graphics]\nfov_degrees = 10",
         "[graphics]\nfov_degrees = nan", "[graphics]\nframe_rate = 30\nframe_rate = 60",

@@ -8,16 +8,15 @@
 namespace sarusaru::ui {
 namespace {
 
-constexpr SettingRow kGraphics[] = {SettingRow::InternalResolution, SettingRow::Textures, SettingRow::FrameInterpolation,
-    SettingRow::FrameRateCap, SettingRow::Fov, SettingRow::GameFrameRate, SettingRow::CelShading};
-constexpr SettingRow kWindow[] = {SettingRow::Fullscreen, SettingRow::WindowSize};
+constexpr SettingRow kGraphics[] = {SettingRow::InternalResolution, SettingRow::Textures, SettingRow::FrameRate,
+    SettingRow::Fov, SettingRow::CelShading, SettingRow::Fullscreen, SettingRow::WindowSize};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone};
 constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::ConfirmButton, SettingRow::SkipIntroLogos};
-constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabWindow, kWindow},
-                                 {Text::TabControls, kControls}, {Text::TabInterface, kInterface}};
+constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabControls, kControls},
+                                 {Text::TabInterface, kInterface}};
 
-constexpr double kGameRates[] = {0, 15, 20, 30, 60};
-constexpr double kFrameCaps[] = {0, 15, 20, 30, 60};
+// Native, a cap of 30 and 60 FPS motion (shell::interpolates).
+constexpr double kFrameRates[] = {0, 30, 60};
 // Window widths at the PSP's aspect (the height follows): 2, 3, 4 and 6 times 480.
 constexpr double kWindowWidths[] = {960, 1440, 1920, 2880};
 
@@ -103,35 +102,16 @@ RowView describe(SettingRow row, const shell::Settings &settings) {
         view.description = text(Text::DescTextures);
         break;
     }
-    case SettingRow::FrameInterpolation:
-        view.label = text(Text::RowInterpolation);
-        view.value = on_off(settings.frame_interpolation);
-        view.description = text(Text::DescInterpolation);
-        if (settings.frame_interpolation && settings.experimental_game_frame_rate != 0) {
-            view.warning = true;
-            view.description = text(Text::WarnInterpolationRate);
-        } else if (settings.frame_interpolation && settings.frame_rate != 0 && settings.frame_rate < 60) {
-            view.warning = true;
-            view.description = text(Text::WarnInterpolationCap);
-        }
-        break;
-    case SettingRow::FrameRateCap:
-        view.label = text(Text::RowFrameCap);
-        view.value = settings.frame_rate == 0 ? text(Text::Off) : ui::format(Text::ValueFps, {std::to_string(settings.frame_rate)});
-        view.description = text(Text::DescFrameCap);
+    case SettingRow::FrameRate:
+        view.label = text(Text::RowFrameRate);
+        view.value = settings.frame_rate == 0 ? text(Text::ValueFrameRateNative)
+                                              : ui::format(Text::ValueFps, {std::to_string(settings.frame_rate)});
+        view.description = text(shell::interpolates(settings) ? Text::DescFrameRate60 : Text::DescFrameRate);
         break;
     case SettingRow::Fov:
         view.label = text(Text::RowFov);
         view.value = settings.fov_degrees == 0.0f ? text(Text::ValueFovNative) : number("%.0f\u00B0", settings.fov_degrees);
         view.description = text(Text::DescFov);
-        break;
-    case SettingRow::GameFrameRate:
-        view.label = text(Text::RowGameRate);
-        view.value = settings.experimental_game_frame_rate == 0
-            ? text(Text::ValueGameRateNative)
-            : ui::format(Text::ValueExperimental, {std::to_string(settings.experimental_game_frame_rate)});
-        view.description = text(Text::DescGameRate);
-        view.warning = settings.experimental_game_frame_rate != 0;
         break;
     case SettingRow::Fullscreen:
         view.label = text(Text::RowFullscreen);
@@ -141,7 +121,8 @@ RowView describe(SettingRow row, const shell::Settings &settings) {
     case SettingRow::WindowSize:
         view.label = text(Text::RowWindowSize);
         view.value = std::to_string(settings.window_width) + "\u00D7" + std::to_string(settings.window_height);
-        view.description = text(Text::DescWindowSize);
+        view.enabled = !settings.fullscreen;
+        view.description = text(view.enabled ? Text::DescWindowSize : Text::DescWindowSizeFullscreen);
         break;
     case SettingRow::DeadZone:
         view.label = text(Text::RowDeadZone);
@@ -192,25 +173,19 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
     case SettingRow::Textures:
         if (next_texture_scale(texture_scale(settings), direction) == 0u) settings.texture_pack.clear();
         break;
-    case SettingRow::FrameInterpolation:
-        settings.frame_interpolation = !settings.frame_interpolation;
-        break;
-    case SettingRow::FrameRateCap:
-        settings.frame_rate = static_cast<std::uint32_t>(step_value(kFrameCaps, settings.frame_rate, direction));
+    case SettingRow::FrameRate:
+        settings.frame_rate = static_cast<std::uint32_t>(step_value(kFrameRates, settings.frame_rate, direction));
         break;
     case SettingRow::Fov: {
         const auto steps = fov_steps();
         settings.fov_degrees = static_cast<float>(step_value(steps, settings.fov_degrees, direction));
         break;
     }
-    case SettingRow::GameFrameRate:
-        settings.experimental_game_frame_rate =
-            static_cast<std::uint32_t>(step_value(kGameRates, settings.experimental_game_frame_rate, direction));
-        break;
     case SettingRow::Fullscreen:
         settings.fullscreen = !settings.fullscreen;
         break;
     case SettingRow::WindowSize: {
+        if (settings.fullscreen) break;
         const auto width = static_cast<std::uint32_t>(step_value(kWindowWidths, settings.window_width, direction));
         settings.window_width = width;
         settings.window_height = width * 272u / 480u;

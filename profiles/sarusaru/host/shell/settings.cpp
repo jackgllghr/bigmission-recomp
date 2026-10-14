@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -152,6 +153,7 @@ Settings parse_settings(std::string_view text) {
     std::string section, line;
     std::set<std::string> seen;
     std::size_t line_number = 0;
+    std::optional<bool> legacy_interpolation;
     while (std::getline(in, line)) {
         ++line_number;
         auto content = trim(std::string_view(line).substr(0, line.find('#')));
@@ -184,14 +186,12 @@ Settings parse_settings(std::string_view text) {
             } else if (full == "graphics.frame_rate") {
                 settings.frame_rate = static_cast<std::uint32_t>(integer(value, 0, 60));
             } else if (full == "graphics.experimental_game_frame_rate") {
-                const auto fps = integer(value, 0, 60);
-                if (fps != 0 && fps != 15 && fps != 20 && fps != 30 && fps != 60)
-                    throw std::runtime_error("game frame rate must be 0, 15, 20, 30 or 60");
-                settings.experimental_game_frame_rate = static_cast<std::uint32_t>(fps);
+                // No longer a setting: the game always updates at its native rate.
             } else if (full == "graphics.cel_shading") {
                 settings.cel_shading = static_cast<std::uint32_t>(integer(value, 0, 2));
             } else if (full == "graphics.frame_interpolation") {
-                settings.frame_interpolation = integer(value, 0, 1) != 0;
+                // Now frame_rate = 60; applied once frame_rate is read too.
+                legacy_interpolation = integer(value, 0, 1) != 0;
             } else if (full == "graphics.fov_degrees") {
                 settings.fov_degrees = number(value, 0.0f, 120.0f);
                 if (settings.fov_degrees != 0.0f && settings.fov_degrees < 30.0f)
@@ -224,6 +224,9 @@ Settings parse_settings(std::string_view text) {
             throw std::runtime_error("settings line " + std::to_string(line_number) + ": " + error.what());
         }
     }
+    // An earlier version's interpolation; its cap of 60 alone showed the game's own frames.
+    if (legacy_interpolation && *legacy_interpolation) settings.frame_rate = 60u;
+    else if (legacy_interpolation && settings.frame_rate == 60u) settings.frame_rate = 0u;
     return settings;
 }
 
@@ -240,12 +243,8 @@ std::string serialize_settings(const Settings &settings) {
         << "window_width = " << settings.window_width << "\nwindow_height = " << settings.window_height << '\n'
         << "# 1 = fullscreen at the desktop resolution (Alt+Enter or F11 toggles while playing).\n"
         << "fullscreen = " << (settings.fullscreen ? 1 : 0) << '\n'
-        << "# Presentation cap only: 0 = native; 1-60. Simulation speed is unchanged.\nframe_rate = " << settings.frame_rate << '\n'
-        << "# Experimental game update rate: 0 = native; 15, 20, 30 or 60. Changes fixed-step gameplay speed.\n"
-        << "experimental_game_frame_rate = " << settings.experimental_game_frame_rate << '\n'
-        << "# 1 = 60 FPS motion at native game speed: an interpolated picture between game frames.\n"
-        << "# Adds one vblank of latency; needs experimental_game_frame_rate = 0.\n"
-        << "frame_interpolation = " << (settings.frame_interpolation ? 1 : 0) << '\n'
+        << "# 0 = native; 30 = capped at 30; 60 = 60 FPS motion at native game speed, an interpolated\n"
+        << "# picture between game frames (adds one vblank of latency).\nframe_rate = " << settings.frame_rate << '\n'
         << "# Gameplay camera vertical FOV: 0 = native (about 36.5); 30-120. Menus, cutscenes and HUD stay native.\n"
         << "fov_degrees = " << decimal(settings.fov_degrees) << '\n'
         << "# HD texture pack directory, relative to this settings file, or none for the original textures.\n"

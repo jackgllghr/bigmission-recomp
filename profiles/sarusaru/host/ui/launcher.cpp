@@ -28,6 +28,11 @@ constexpr std::uint64_t kFrameNs = 16'666'667u;
 
 ImVec2 display() { return ImGui::GetIO().DisplaySize; }
 
+std::string utf8(const std::filesystem::path &path) {
+    const auto text = path.u8string();
+    return {text.begin(), text.end()};
+}
+
 // What is wrong with a disc image, in the player's language.
 std::string disc_problem(const DiscCheck &check, std::string_view supported) {
     switch (check.result) {
@@ -40,19 +45,6 @@ std::string disc_problem(const DiscCheck &check, std::string_view supported) {
     case DiscCheck::Result::OtherExecutable: return std::string(tr(Text::DiscOtherExecutable));
     }
     return {};
-}
-
-std::string place_name(const Place &place) {
-    switch (place.kind) {
-    case PlaceKind::Home: return std::string(tr(Text::PlaceHome));
-    case PlaceKind::Desktop: return std::string(tr(Text::PlaceDesktop));
-    case PlaceKind::Downloads: return std::string(tr(Text::PlaceDownloads));
-    case PlaceKind::Documents: return std::string(tr(Text::PlaceDocuments));
-    case PlaceKind::Storage: return std::string(tr(Text::PlaceStorage));
-    case PlaceKind::Computer: return std::string(tr(Text::PlaceComputer));
-    case PlaceKind::Drive: break;
-    }
-    return place.name;
 }
 
 // The panel most screens put their content in: centred, below the title,
@@ -195,8 +187,6 @@ void Launcher::frame() {
     } else {
         switch (screen_) {
         case Screen::Home: home(); break;
-        case Screen::Disc: disc(); break;
-        case Screen::Browser: browser(); break;
         case Screen::Install: install(); break;
         case Screen::Settings: settings(); break;
         case Screen::Bindings: bindings(); break;
@@ -220,7 +210,7 @@ void Launcher::home() {
     const bool ready = disc_check_ && disc_check_->supported();
     const ImVec2 button(300.0f * u, 48.0f * u);
     const float gap = 12.0f * u, status_height = 30.0f * u, bottom = 88.0f * u;
-    const float buttons_height = 4.0f * button.y + 3.0f * gap;
+    const float buttons_height = 3.0f * button.y + 2.0f * gap;
     float art_height = 0.0f, art_width = 0.0f;
     if (title_art_ != ImTextureID{}) {
         const float aspect = title_size_.x / title_size_.y;
@@ -240,8 +230,13 @@ void Launcher::home() {
     {
         ImFont *font = fonts().strong;
         const float text_px = 16.0f * u;
-        const std::string_view status = tr(ready ? Text::StatusReady : settings_.game_disc.empty()
-            ? Text::StatusChoose : Text::StatusAttention);
+        // Not ready: what is wrong with the disc last chosen (now, or before).
+        std::string status;
+        if (ready) status = tr(Text::StatusReady);
+        else if (!disc_message_.empty()) status = disc_message_;
+        else if (disc_check_)
+            status = format(Text::DiscProblemFor, {utf8(settings_.game_disc.filename()), disc_problem(*disc_check_, identity_.disc_id)});
+        else status = format(Text::StatusChoose, {identity_.disc_id});
         const ImVec2 extent = text_size(font, text_px, status);
         const ImVec2 min((size.x - extent.x) * 0.5f - 20.0f * u, y), max((size.x + extent.x) * 0.5f + 14.0f * u, y + status_height);
         draw->AddRectFilled(ImVec2(min.x - 3.0f * u, min.y - 3.0f * u), ImVec2(max.x + 3.0f * u, max.y + 3.0f * u),
@@ -256,20 +251,16 @@ void Launcher::home() {
     const float x = (size.x - button.x) * 0.5f;
     const auto place = [&](int index) { ImGui::SetCursorScreenPos(ImVec2(x, y + static_cast<float>(index) * (button.y + gap))); };
     place(0);
-    if (menu_button(layer_, "play", tr(Text::Play), button, true)) {
-        if (ready) {
-            play();
-        } else {
-            disc_message_ = settings_.game_disc.empty() ? std::string(tr(Text::ChooseDiscFirst)) : "";
-            disc_message_good_ = false;
-            go(Screen::Disc, "browse");
-        }
+    // Without a disc to play, the first button finds one with the system's file picker.
+    if (ready) {
+        if (menu_button(layer_, "play", tr(Text::Play), button, true)) play();
+    } else if (menu_button(layer_, "locate", tr(dialog_open_ ? Text::WaitingForPicker : Text::LocateDisc), button, true,
+                           !dialog_open_)) {
+        open_system_dialog();
     }
     place(1);
     if (menu_button(layer_, "settings", tr(Text::Settings), button)) go(Screen::Settings, "row0");
     place(2);
-    if (menu_button(layer_, "disc", tr(Text::GameDisc), button)) go(Screen::Disc, "browse");
-    place(3);
     if (menu_button(layer_, "quit", tr(Text::Quit), button)) outcome_ = Outcome::Quit;
 
     // The disclaimer along the bottom left, on the swoosh.
@@ -294,14 +285,11 @@ void Launcher::choose_disc(const std::filesystem::path &path) {
         settings_.game_disc = path;
         disc_check_ = check;
         save();
-        disc_message_ = format(Text::FoundIt, {name});
-        disc_message_good_ = true;
-        go(Screen::Disc, "play_now");
+        disc_message_.clear();
+        if (screen_ == Screen::Home) focus_control("play");
     } else {
         disc_message_ = format(Text::DiscProblemFor, {name, disc_problem(check, identity_.disc_id)});
-        disc_message_good_ = false;
-        browser_message_ = disc_message_;
-        if (screen_ == Screen::Home) go(Screen::Disc, "browse");
+        if (screen_ == Screen::Home) focus_control("locate");
     }
 }
 
@@ -324,181 +312,6 @@ void Launcher::open_system_dialog() {
             self->dialog_open_ = false;
         },
         this, layer_.window(), kFilters, 1, start.empty() ? nullptr : start.c_str(), false);
-}
-
-void Launcher::disc() {
-    const float u = layer_.unit();
-    const float top = screen_title(layer_, tr(Text::DiscTitle));
-    const ImRect inner = content_panel(layer_, top, 700.0f);
-    const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
-    ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, inner.Min.y + pad * 0.8f));
-    begin_list("##disc", ImVec2(inner.GetWidth() - 2.0f * pad, inner.GetHeight() - 1.6f * pad));
-    ImDrawList *draw = ImGui::GetWindowDrawList();
-    paragraph(layer_, format(Text::DiscIntro, {identity_.disc_id}), width, colors::kInkDim);
-    ImGui::Dummy(ImVec2(0, 4.0f * u));
-
-    // The disc in use and what was found.
-    {
-        const ImVec2 at = ImGui::GetCursorScreenPos();
-        const float height = 74.0f * u;
-        draw->AddRectFilled(at, ImVec2(at.x + width, at.y + height), IM_COL32(220, 232, 250, 255), 14.0f * u);
-        const bool ready = disc_check_ && disc_check_->supported();
-        const ImVec2 icon(at.x + 34.0f * u, at.y + height * 0.5f);
-        const float r = 22.0f * u;
-        draw->AddCircleFilled(icon, r + 3.0f * u, colors::kBlue);
-        draw->AddCircleFilled(icon, r, ready ? colors::kYellow : colors::kHelmet);
-        draw->AddCircleFilled(ImVec2(icon.x - r * 0.3f, icon.y - r * 0.3f), r * 0.35f, IM_COL32(255, 255, 255, 200));
-        draw->AddCircleFilled(icon, r * 0.25f, colors::kBlue);
-        ImFont *strong = fonts().strong, *body = fonts().body;
-        const float text_x = at.x + 70.0f * u;
-        const ImVec4 clip(text_x, at.y, at.x + width - 12.0f * u, at.y + height);
-        const std::string name = settings_.game_disc.empty() ? std::string(tr(Text::NoDiscChosen))
-                                                             : utf8(settings_.game_disc.filename());
-        draw->AddText(strong, 19.0f * u, ImVec2(text_x, at.y + 10.0f * u), colors::kInk, name.c_str(), nullptr, 0.0f, &clip);
-        std::string detail;
-        ImU32 detail_color = colors::kInkDim;
-        if (ready) {
-            detail = format(Text::ReadyIn, {utf8(settings_.game_disc.parent_path())});
-            detail_color = colors::kGood;
-        } else if (disc_check_) {
-            detail = disc_problem(*disc_check_, identity_.disc_id);
-            detail_color = colors::kRed;
-        } else {
-            detail = tr(Text::ChooseBelow);
-        }
-        draw->AddText(body, 15.0f * u, ImVec2(text_x, at.y + 40.0f * u), detail_color, detail.c_str(), nullptr, 0.0f, &clip);
-        ImGui::Dummy(ImVec2(width, height));
-    }
-    ImGui::Dummy(ImVec2(0, 2.0f * u));
-    if (!disc_message_.empty()) {
-        paragraph(layer_, disc_message_, width, disc_message_good_ ? colors::kGood : colors::kRed);
-        ImGui::Dummy(ImVec2(0, 2.0f * u));
-    }
-
-    const bool ready = disc_check_ && disc_check_->supported();
-    if (ready && action_row(layer_, "play_now", tr(Text::PlayNow), "", width)) play();
-    if (action_row(layer_, "browse", tr(Text::FindDisc), tr(Text::WorksWithController), width)) {
-        browser_message_.clear();
-        std::filesystem::path start;
-        if (!settings_.game_disc.empty()) start = settings_.game_disc.parent_path();
-        if (start.empty() || !std::filesystem::is_directory(start)) {
-            places_ = places();
-            start = places_.empty() ? std::filesystem::current_path() : places_.front().path;
-        }
-        open_folder(start);
-        go(Screen::Browser, "entry0");
-    }
-    if (action_row(layer_, "system_picker", tr(dialog_open_ ? Text::WaitingForPicker : Text::SystemPicker), "",
-                   width, !dialog_open_))
-        open_system_dialog();
-    if (layer_.device() == Device::Mouse) {
-        ImGui::Dummy(ImVec2(0, 4.0f * u));
-        paragraph(layer_, tr(Text::DropHint), width, colors::kInkDim);
-    }
-    end_list(layer_);
-
-    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Home, "disc");
-    hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Back, tr(Text::HintBack)}});
-}
-
-// --- The file browser ------------------------------------------------------
-
-void Launcher::open_folder(const std::filesystem::path &folder) {
-    try {
-        auto entries = list_folder(folder, all_files_);
-        folder_ = folder;
-        entries_ = std::move(entries);
-        places_ = places();
-        focus_control("entry0");
-    } catch (const std::exception &) {
-        browser_message_ = tr(Text::FolderUnreadable);
-    }
-}
-
-void Launcher::browser() {
-    const float u = layer_.unit();
-    const float top = screen_title(layer_, tr(Text::BrowserTitle));
-    const ImRect inner = content_panel(layer_, top, 900.0f);
-    const float pad = 16.0f * u;
-    ImDrawList *draw = ImGui::GetWindowDrawList();
-
-    // Where we are, cut from the left when long.
-    {
-        ImFont *font = fonts().body;
-        const std::string where = utf8(folder_);
-        const float size = 15.0f * u, room = inner.GetWidth() - 2.0f * pad;
-        std::string_view shown = where;
-        std::string clipped;
-        while (shown.size() > 4 && text_size(font, size, shown).x > room) {
-            shown.remove_prefix(1);
-            clipped = "…" + std::string(shown);
-        }
-        if (!clipped.empty() && text_size(font, size, shown).x <= room) shown = clipped;
-        draw->AddText(font, size, ImVec2(inner.Min.x + pad + 4.0f * u, inner.Min.y + 12.0f * u), colors::kInkDim,
-                      shown.data(), shown.data() + shown.size());
-    }
-
-    const float list_top = inner.Min.y + 40.0f * u;
-    const float message_room = browser_message_.empty() ? 0.0f : 34.0f * u;
-    const float list_height = inner.Max.y - list_top - pad - message_room;
-    const float places_width = std::min(220.0f * u, inner.GetWidth() * 0.3f);
-
-    // Places on the left; the filter toggle at their end.
-    ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, list_top));
-    begin_list("##places", ImVec2(places_width, list_height));
-    std::optional<std::filesystem::path> open;
-    for (std::size_t i = 0; i < places_.size(); ++i)
-        if (list_row(layer_, "place" + std::to_string(i), ListIcon::Place, place_name(places_[i]), "", places_width - 10.0f * u,
-                     places_[i].path == folder_))
-            open = places_[i].path;
-    if (list_row(layer_, "filter", ListIcon::Disc, tr(all_files_ ? Text::ShowingAll : Text::ShowingIso), "",
-                 places_width - 10.0f * u)) {
-        all_files_ = !all_files_;
-        open = folder_;
-    }
-    end_list(layer_);
-
-    draw->AddLine(ImVec2(inner.Min.x + pad + places_width + 6.0f * u, list_top),
-                  ImVec2(inner.Min.x + pad + places_width + 6.0f * u, list_top + list_height), IM_COL32(180, 196, 226, 255),
-                  2.0f * u);
-
-    // The folder's contents.
-    const float entries_x = inner.Min.x + pad + places_width + 14.0f * u;
-    const float entries_width = inner.Max.x - pad - entries_x;
-    ImGui::SetCursorScreenPos(ImVec2(entries_x, list_top));
-    begin_list("##entries", ImVec2(entries_width, list_height));
-    std::size_t index = 0;
-    const float row_width = entries_width - 14.0f * u;
-    if (folder_.has_parent_path() && folder_.parent_path() != folder_) {
-        if (list_row(layer_, "entry" + std::to_string(index++), ListIcon::Up, tr(Text::UpFolder), "", row_width))
-            open = folder_.parent_path();
-    }
-    std::optional<std::filesystem::path> chosen;
-    for (const auto &entry : entries_) {
-        const bool iso = !entry.directory;
-        if (list_row(layer_, "entry" + std::to_string(index++), entry.directory ? ListIcon::Folder : ListIcon::Disc,
-                     entry.name, iso ? format_size(entry.size) : "", row_width)) {
-            if (entry.directory) open = entry.path; else chosen = entry.path;
-        }
-    }
-    if (entries_.empty()) {
-        ImGui::Dummy(ImVec2(0, 8.0f * u));
-        paragraph(layer_, tr(all_files_ ? Text::FolderEmpty : Text::NothingHere), row_width, colors::kInkDim);
-    }
-    end_list(layer_);
-
-    if (!browser_message_.empty()) {
-        ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad + 4.0f * u, inner.Max.y - pad - message_room + 8.0f * u));
-        paragraph(layer_, browser_message_, inner.GetWidth() - 2.0f * pad, colors::kRed);
-    }
-    if (open) {
-        browser_message_.clear();
-        open_folder(*open);
-    }
-    if (chosen) choose_disc(*chosen);
-
-    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Disc, "browse");
-    hints(layer_, {{Control::Confirm, tr(Text::HintOpen)}, {Control::Back, tr(Text::HintBack)}});
 }
 
 // --- Installing the game -------------------------------------------------------

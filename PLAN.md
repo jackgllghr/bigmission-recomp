@@ -94,8 +94,9 @@ is distributed, never game pixels. Notes: `profiles/sarusaru/docs/hd-textures.md
 
 First-run ISO selection and installation (building the game module on the
 player's machine, with progress, cancellation and recovery), settings, save
-management, file browser and on-screen keyboard. Every screen supports gamepad,
-keyboard and mouse, including gamepad-only installation. Android additionally
+management and on-screen keyboard; the disc image is chosen with the system
+file picker. Every screen supports gamepad, keyboard and mouse, including
+gamepad-only installation. Android additionally
 needs document-picker integration, lifecycle handling and touch-accessible setup,
 and builds the game on the device with an in-process compiler (see the Android
 chunk).
@@ -130,7 +131,8 @@ chunk).
 - [x] One navigation model for gamepad, keyboard, mouse and touch (hover
       focus, tap, drag-to-scroll, Back pill), with device-specific hints.
 - [x] First-run disc selection: verification against the supported identity,
-      a gamepad-only file browser, the system file picker and drag and drop.
+      the system file picker (Locate game disc on the main menu) and drag and
+      drop.
       The game runs from the ISO alone; no Python preparation step.
 - [x] Settings screen backed by `settings.ini`, saved atomically on change.
 - [x] Scripted UI checks (`SARUSARU_UI_SCRIPT`) with a virtual gamepad.

@@ -81,21 +81,15 @@ void set_window_icon(SDL_Window *window) {
 int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::shell::Settings settings,
          const std::filesystem::path &executable, const std::filesystem::path &iso,
          const std::filesystem::path &texture_dump_directory, std::string &start_failure) {
-    if (settings.experimental_game_frame_rate != 0)
-        std::cerr << "sarusaru: experimental game frame rate " << settings.experimental_game_frame_rate
-                  << "; fixed-step gameplay/animation speed is not compensated\n";
-    if (settings.frame_interpolation && settings.experimental_game_frame_rate != 0) {
-        std::cerr << "sarusaru: frame_interpolation needs the native game rate "
-                     "(experimental_game_frame_rate = 0); interpolation is off\n";
-        settings.frame_interpolation = false;
-    }
     int status = 0;
     std::string error;
     sarusaru::shell::GeRenderer renderer(vulkan, settings.internal_resolution);
     renderer.set_cel_shading(settings.cel_shading);
     sarusaru::shell::AudioOutput audio;
     sarusaru::shell::Input input(settings.controls);
-    sarusaru::shell::PresentationClock presentation(settings.frame_rate);
+    // 60 FPS motion shows a picture at every vblank: the game's frames and those in between.
+    const bool interpolating = sarusaru::shell::interpolates(settings);
+    sarusaru::shell::PresentationClock presentation(interpolating ? 0u : settings.frame_rate);
     sarusaru::shell::Buffer capture;
     try {
         if (!renderer.create(error)) throw psprecomp::Error(error);
@@ -103,7 +97,6 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
 
         sarusaru::SessionOptions options;
         options.memory_stick = sarusaru::utility::default_memory_stick();
-        options.experimental_game_frame_rate = settings.experimental_game_frame_rate;
         options.skip_intro_logos = settings.skip_intro_logos;
         options.camera_control = true;
         const sarusaru::gpu::FovOverride fov(settings.fov_degrees);
@@ -169,7 +162,6 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
         // Frame interpolation: each draw is also blended with its match in
         // the previous game frame, for the in-between picture. A game frame
         // ends when the game hands the display its next framebuffer.
-        const bool interpolating = settings.frame_interpolation;
         sarusaru::gpu::FrameInterpolator interpolator;
         sarusaru::gpu::DrawCall between;
         std::uint64_t frame_requests = game.display.framebuffer_requests();
