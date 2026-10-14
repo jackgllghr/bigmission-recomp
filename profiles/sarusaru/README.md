@@ -44,7 +44,7 @@ for all 177 pages through the compact-message lookup adapter. Speaker/level
 verification and human review remain pending.
 
 The English catalogs are not in this repository: they are translations of the
-game's text, so they live in a separate one, `sarusaru-translations`, which the
+game's text, so they live in a separate one, [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations), which the
 tools expect beside this checkout (or at `SARUSARU_TRANSLATIONS`). Players get
 English as an [optional download](#english-game-text) from the launcher; the
 port's packages never contain it.
@@ -216,13 +216,13 @@ A build offers the pack only when configured with it:
 
 ```sh
 cmake -S . -B out/macos-arm64 \
-  -DSARUSARU_ENGLISH_PACK_URL=https://github.com/<owner>/sarusaru-translations/releases/download/<tag>/english.sstp \
+  -DSARUSARU_ENGLISH_PACK_URL=https://github.com/jackgllghr/sarusaru-translations/releases/download/<tag>/<pack>.sstp \
   -DSARUSARU_ENGLISH_PACK_SHA256=<sha256> -DSARUSARU_ENGLISH_PACK_SIZE=<bytes>
 ```
 
 Without them the launcher says English is not offered by this build. The pack
 is built from the catalogs and the maintainer's own disc (see the
-`sarusaru-translations` README) and published there, apart from the port.
+[`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) README) and published there, apart from the port.
 
 `SARUSARU_UI_SCRIPT` drives the launcher without a person, for checks with
 each device: keys through SDL, buttons through an SDL virtual gamepad (which

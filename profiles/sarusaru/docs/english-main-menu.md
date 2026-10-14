@@ -61,7 +61,7 @@ The [English dialogue v1 pack](english-dialogue-v1.md) also includes 71 compact
 messages, with source page counts and controller glyphs preserved.
 
 The UTF-8 authoring catalog is
-`english-menu.json` (in the separate `sarusaru-translations` repository).
+`english-menu.json` (in the separate [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) repository).
 It currently contains 57 image labels, 39 read-only dialog string replacements
 and four prepared Options help-line replacements. These are supported strings,
 not a claim that every game message or error path has been exercised.

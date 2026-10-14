@@ -4,7 +4,7 @@ The English dialogue catalog contains machine translations of all 177 extracted
 source pages, covering 71 in-game advice/dialogue messages. Every entry remains
 `draft` with `origin=machine_translation`; human speaker, terminology and context
 review is pending. The English-only source is
-`english-dialogue-v1.json` (in the separate `sarusaru-translations` repository).
+`english-dialogue-v1.json` (in the separate [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) repository).
 These are coding-assistant translations, not official localization wording.
 
 The combined pack includes the existing English menus, logo, 193 gameplay labels

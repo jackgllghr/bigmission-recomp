@@ -124,7 +124,7 @@ chunk).
       or was built for another runtime interface. The module is built in a
       work directory and moved into place only when complete.
 - [x] English game text as an opt-in download: the catalogs live in a
-      separate repository (`sarusaru-translations`); the launcher's Game text
+      separate repository ([`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations)); the launcher's Game text
       setting explains the unofficial machine translation, downloads the pack
       a build is configured with (`SARUSARU_ENGLISH_PACK_*`, SHA-256 checked)
       and selects it. Packages refuse translation files.
