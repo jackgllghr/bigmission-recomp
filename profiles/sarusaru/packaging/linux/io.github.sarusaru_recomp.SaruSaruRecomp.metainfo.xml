@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.sarusaru_recomp.SaruSaruRecomp</id>
+  <name>SaruSaru Recomp</name>
+  <summary>Native port of Saru! Get You! SaruSaru Daisakusen</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      An unofficial, fan-made native port of the PSP game Saru! Get You!
+      SaruSaru Daisakusen (UCJS10060). It contains no game files: choose your
+      own disc image of the Japanese UMD, and the launcher builds the game for
+      your computer from it the first time you play.
+    </p>
+    <p>Not affiliated with or endorsed by Sony Interactive Entertainment.</p>
+  </description>
+  <launchable type="desktop-id">io.github.sarusaru_recomp.SaruSaruRecomp.desktop</launchable>
+  <url type="homepage">https://github.com/jackgllghr/sarusaru-recomp</url>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>keyboard</control>
+    <control>gamepad</control>
+  </supports>
+</component>

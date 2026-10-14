@@ -1,6 +1,8 @@
 # Builds the launcher for every desktop host, tests it, packages it
-# (profiles/sarusaru/scripts/package.py) and, for a version tag, attaches the
-# packages to a draft GitHub release to review and publish by hand.
+# (profiles/sarusaru/scripts/package.py; on Linux also as an AppImage, and as a
+# Flatpak with profiles/sarusaru/packaging/linux/build_flatpak.sh) and, for a
+# version tag, attaches the packages to a draft GitHub release to review and
+# publish by hand.
 #
 # The packages contain no game code: the launcher builds the game on each
 # player's machine from their own disc. Windows is built with the same pinned
@@ -88,6 +90,10 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" != tag ]; then version="$(git describe --tags --always)"; fi
           python3 profiles/sarusaru/scripts/package.py --build out/${{ matrix.host }} \
             --host ${{ matrix.host }} --version "$version" --out out/dist
+          if [ "${{ runner.os }}" = Linux ]; then
+            python3 profiles/sarusaru/scripts/package.py --build out/${{ matrix.host }} \
+              --host ${{ matrix.host }} --version "$version" --out out/dist --format appimage
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -95,10 +101,45 @@ jobs:
           path: out/dist/*
           if-no-files-found: error
 
+  # The Flatpak builds from source inside the Freedesktop SDK, so it has its
+  # own job, in a container that can run flatpak-builder.
+  flatpak:
+    name: ${{ matrix.host }} flatpak
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: linux-x64
+            runner: ubuntu-24.04
+          - host: linux-arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build the Flatpak
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          version="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != tag ]; then version="$(git describe --tags --always)"; fi
+          profiles/sarusaru/packaging/linux/build_flatpak.sh "$version" out/dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.host }}-flatpak
+          path: out/dist/*
+          if-no-files-found: error
+
   release:
     name: Draft release
     if: github.ref_type == 'tag'
-    needs: package
+    needs: [package, flatpak]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -116,6 +157,8 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat > notes.md <<'EOF'
           Launcher packages for Windows x64, Linux x64 and arm64, and macOS arm64.
+          Linux has three: a .tar.gz, an AppImage, and a .flatpak bundle
+          (`flatpak install --user <file>.flatpak`; it brings its own compiler).
 
           They contain no game files or game code. Choose your own disc image
           (.iso) of the Japanese UMD (UCJS10060) in the launcher; the first
@@ -124,4 +167,4 @@ jobs:
           EOF
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
             --title "SaruSaru Recomp $GITHUB_REF_NAME" --notes-file notes.md \
-            ./*.zip ./*.tar.gz SHA256SUMS.txt
+            ./*.zip ./*.tar.gz ./*.AppImage ./*.flatpak SHA256SUMS.txt

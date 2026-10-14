@@ -1,0 +1,43 @@
+# The launcher as a Flatpak. Build it with build_flatpak.sh, which packs the
+# source tree for it first (source.tar.gz, without anything git ignores, so no
+# game data) and makes a .flatpak bundle.
+#
+# The runtime is the Freedesktop SDK, not the Platform: the launcher builds
+# the game on the player's machine with g++, and the SDK has it inside the
+# sandbox, with the same libstdc++ the launcher is built against here.
+app-id: io.github.sarusaru_recomp.SaruSaruRecomp
+runtime: org.freedesktop.Sdk
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: sarusaru
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  # The GPU (Vulkan) and gamepads.
+  - --device=all
+  # The optional English text and HD texture recipe downloads.
+  - --share=network
+modules:
+  - name: sarusaru
+    buildsystem: simple
+    build-options:
+      # CMake fetches the pinned dependencies (SDL3, FFmpeg, Dear ImGui, ...).
+      build-args:
+        - --share=network
+      # The Release flags of every other host, without flatpak-builder's -g:
+      # debug info would name the build directory, which package.py refuses.
+      cflags: ''
+      cflags-override: true
+      cxxflags: ''
+      cxxflags-override: true
+      no-debuginfo: true
+    build-commands:
+      - cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSPRECOMP_PROFILE=sarusaru
+        -DSARUSARU_GAME_MODULE=OFF -DPSPRECOMP_BUILD_TESTS=OFF -DPSPRECOMP_BUILD_PROFILE_TESTS=OFF
+      - cmake --build _build
+      - python3 profiles/sarusaru/scripts/package.py --build _build --host linux --format prefix --prefix "${FLATPAK_DEST}"
+    sources:
+      - type: archive
+        path: source.tar.gz

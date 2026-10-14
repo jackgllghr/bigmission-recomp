@@ -82,5 +82,25 @@ class PlayerFilesTests(unittest.TestCase):
             self.packaged()
 
 
+class LinuxInstallTests(unittest.TestCase):
+    def test_installs_the_launcher_and_its_desktop_files_under_the_prefix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory) / "build"
+            for name in ("sarusaru", "psp_recomp", "lib/libpsprecomp_runtime.so", "resources/title.png",
+                         "sdk/include/game_abi.hpp", "sdk/game_module_entry.cpp"):
+                path = build / "bin" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"invented")
+            prefix = Path(directory) / "app"
+            package.install_linux(build, prefix)
+            self.assertEqual(Path(prefix / "bin/sarusaru").resolve(), (prefix / "lib/sarusaru/sarusaru").resolve())
+            for name in ("lib/sarusaru/psp_recomp", "lib/sarusaru/lib/libpsprecomp_runtime.so",
+                         "lib/sarusaru/sdk/include/game_abi.hpp", f"share/applications/{package.APP_ID}.desktop",
+                         f"share/metainfo/{package.APP_ID}.metainfo.xml",
+                         f"share/icons/hicolor/256x256/apps/{package.APP_ID}.png",
+                         f"share/licenses/{package.APP_ID}/LICENSE"):
+                self.assertTrue((prefix / name).is_file(), name)
+
+
 if __name__ == "__main__":
     unittest.main()

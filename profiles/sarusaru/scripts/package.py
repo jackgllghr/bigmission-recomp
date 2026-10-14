@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Package a built launcher for players: a .zip (macOS app, Windows) or .tar.gz (Linux).
+"""Package a built launcher for players: a .zip (macOS app, Windows), or on Linux a
+.tar.gz, an AppImage (--format appimage) or an installed prefix (--format prefix,
+which the Flatpak in packaging/linux uses).
 
 The package holds the launcher, its libraries and resources, and what it needs
 to build the game on the player's machine from their own disc: the code
@@ -11,6 +13,7 @@ dumps and HD packs are the game's art, made on the player's device.
 """
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import plistlib
@@ -20,6 +23,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.error
+import urllib.request
 import zipfile
 
 PROFILE = Path(__file__).resolve().parents[1]
@@ -30,6 +35,21 @@ from bootstrap import BUILD, host_name  # noqa: E402
 NAME = "SaruSaruRecomp"
 APP_NAME = "SaruSaru Recomp"
 BUNDLE_ID = "io.github.sarusaru-recomp.launcher"
+# The Linux desktop ID, which is also the Flatpak's.
+APP_ID = "io.github.sarusaru_recomp.SaruSaruRecomp"
+LINUX = PROFILE / "packaging/linux"
+
+# appimagetool and the AppImage runtime it puts in front of the image, pinned.
+# The runtime is static (needs no libfuse2 on the player's system).
+APPIMAGETOOL = "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-{arch}.AppImage"
+APPIMAGE_RUNTIME = "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-{arch}"
+APPIMAGE_SHA256 = {
+    ("appimagetool", "x86_64"): "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+    ("appimagetool", "aarch64"): "f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158",
+    ("runtime", "x86_64"): "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+    ("runtime", "aarch64"): "00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444",
+}
+APPIMAGE_ARCH = {"linux-x64": "x86_64", "linux-arm64": "aarch64"}
 
 # Built files that are for developers only.
 DEVELOPER_ONLY = ("sarusaru_bootstrap", "sarusaru_vulkan_probe", "psp_analyze", "glslang", "glslangValidator")
@@ -223,6 +243,78 @@ def make_icns(resources):
     return "sarusaru.icns"
 
 
+def copy_file(source, target):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_symlink():
+        target.symlink_to(os.readlink(source))
+    else:
+        shutil.copy2(source, target, follow_symlinks=True)
+
+
+def install_linux(build, prefix):
+    """The launcher installed under a Linux prefix (/app in the Flatpak, usr/ in the AppImage).
+
+    Its files stay together in lib/sarusaru/, where platform/paths.cpp looks for
+    them beside the executable, with bin/sarusaru linking to it; the desktop
+    entry, icons, AppStream metadata and licences go under share/."""
+    home = prefix / "lib/sarusaru"
+    for source, relative in player_files(build / "bin", windows=False):
+        copy_file(source, home / relative)
+    (prefix / "bin").mkdir(parents=True, exist_ok=True)
+    launcher = prefix / "bin/sarusaru"
+    if launcher.is_symlink() or launcher.exists():
+        launcher.unlink()
+    launcher.symlink_to("../lib/sarusaru/sarusaru")
+    share = prefix / "share"
+    copy_file(LINUX / f"{APP_ID}.desktop", share / "applications" / f"{APP_ID}.desktop")
+    copy_file(LINUX / f"{APP_ID}.metainfo.xml", share / "metainfo" / f"{APP_ID}.metainfo.xml")
+    for pixels, png in sorted(ico_images(PROFILE / "resources/sarusaru.ico").items()):
+        icon = share / f"icons/hicolor/{pixels}x{pixels}/apps/{APP_ID}.png"
+        icon.parent.mkdir(parents=True, exist_ok=True)
+        icon.write_bytes(png)
+    copy_file(ROOT / "LICENSE", share / "licenses" / APP_ID / "LICENSE")
+    copy_file(PROFILE / "THIRD_PARTY.md", share / "licenses" / APP_ID / "THIRD_PARTY.md")
+
+
+def fetch_verified(url, sha256, path):
+    """`url` at `path`, downloaded unless a file with the SHA-256 is already there."""
+    if not (path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == sha256):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(url) as response:
+            data = response.read()
+        if hashlib.sha256(data).hexdigest() != sha256:
+            raise ValueError(f"{url} does not have the pinned SHA-256")
+        path.write_bytes(data)
+    path.chmod(0o755)
+    return path
+
+
+def make_appimage(build, version, host, out_dir):
+    """An AppImage of the launcher: install_linux's layout under usr/, run through AppRun."""
+    arch = APPIMAGE_ARCH.get(host)
+    if arch is None:
+        raise ValueError(f"no AppImage for {host}")
+    tools = build / "appimage"
+    tool = fetch_verified(APPIMAGETOOL.format(arch=arch), APPIMAGE_SHA256[("appimagetool", arch)],
+                          tools / f"appimagetool-{arch}.AppImage")
+    runtime = fetch_verified(APPIMAGE_RUNTIME.format(arch=arch), APPIMAGE_SHA256[("runtime", arch)],
+                             tools / f"runtime-{arch}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{NAME}-{version}-{host}.AppImage"
+    with tempfile.TemporaryDirectory(prefix="sarusaru-appimage-") as work:
+        appdir = Path(work) / "AppDir"
+        install_linux(build, appdir / "usr")
+        (appdir / "AppRun").symlink_to("usr/bin/sarusaru")
+        shutil.copy2(LINUX / f"{APP_ID}.desktop", appdir / f"{APP_ID}.desktop")
+        (appdir / f"{APP_ID}.png").symlink_to(f"usr/share/icons/hicolor/256x256/apps/{APP_ID}.png")
+        (appdir / ".DirIcon").symlink_to(f"{APP_ID}.png")
+        # appimagetool is an AppImage itself; extracting it needs no FUSE (containers, CI).
+        env = dict(os.environ, ARCH=arch, APPIMAGE_EXTRACT_AND_RUN="1")
+        subprocess.run([str(tool), "--no-appstream", "--runtime-file", str(runtime), str(appdir), str(path)],
+                       check=True, env=env, cwd=work)
+    return path
+
+
 def archive(work, top, out_dir, host):
     if host.startswith("linux"):
         path = out_dir / f"{top.name}.tar.gz"
@@ -256,13 +348,26 @@ def main():
     parser.add_argument("--host", help="Host the build is for (default: this machine's)")
     parser.add_argument("--version", default=None, help="Version in the name (default: git describe)")
     parser.add_argument("--out", type=Path, default=ROOT / "out/dist", help="Where the archive goes")
+    parser.add_argument("--format", choices=("archive", "appimage", "prefix"), default="archive",
+                        help="archive (default); on Linux also appimage, or prefix: install into --prefix")
+    parser.add_argument("--prefix", type=Path, help="Install prefix for --format prefix (/app in a Flatpak)")
     args = parser.parse_args()
     try:
         host = args.host or host_name()
         version = args.version or default_version()
-        work, top = stage(args.build.resolve(), version, host, args.out)
-        path = archive(work, top, args.out, host)
-    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        if args.format != "archive" and not host.startswith("linux"):
+            raise ValueError(f"--format {args.format} is for Linux hosts only")
+        if args.format == "prefix":
+            if args.prefix is None:
+                raise ValueError("--format prefix needs --prefix")
+            install_linux(args.build.resolve(), args.prefix)
+            path = args.prefix
+        elif args.format == "appimage":
+            path = make_appimage(args.build.resolve(), version, host, args.out.resolve())
+        else:
+            work, top = stage(args.build.resolve(), version, host, args.out)
+            path = archive(work, top, args.out, host)
+    except (OSError, ValueError, subprocess.CalledProcessError, urllib.error.URLError) as exc:
         parser.exit(1, f"package: {exc}\n")
     print(path)
     return 0

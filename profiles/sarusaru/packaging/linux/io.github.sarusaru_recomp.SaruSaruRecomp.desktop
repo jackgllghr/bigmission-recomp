@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=SaruSaru Recomp
+GenericName=Game launcher
+Comment=Native port of Saru! Get You! SaruSaru Daisakusen, built from your own disc
+Exec=sarusaru
+Icon=io.github.sarusaru_recomp.SaruSaruRecomp
+Terminal=false
+Categories=Game;ActionGame;
+Keywords=ape;escape;psp;recomp;

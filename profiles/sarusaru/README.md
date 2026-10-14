@@ -471,7 +471,15 @@ for the shaders).
 
 `scripts/package.py` packages a build: a `.app` in a `.zip` on macOS (not
 notarised: right-click and Open the first time), a `.zip` on Windows and a
-`.tar.gz` on Linux, each with a player README and the licences. It refuses to
+`.tar.gz` on Linux, each with a player README and the licences; on Linux
+`--format appimage` also makes an AppImage (with a pinned `appimagetool`, run
+without FUSE). `packaging/linux/build_flatpak.sh <version> <out>` builds the
+Flatpak (`io.github.sarusaru_recomp.SaruSaruRecomp`) from source with
+`flatpak-builder` and bundles it as a `.flatpak`. Its runtime is the
+Freedesktop SDK rather than the Platform, because the launcher compiles the game
+inside the sandbox with the SDK's `g++`; the game installs to
+`~/.var/app/io.github.sarusaru_recomp.SaruSaruRecomp/data/SaruSaruRecomp`, and
+the disc image is chosen through the desktop's file chooser portal. It refuses to
 package anything game-derived, any translation pack or catalog (English is a
 separate download) or any binary that names the build directory.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds, tests
