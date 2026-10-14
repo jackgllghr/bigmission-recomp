@@ -423,14 +423,25 @@ std::string emit_regular(const psprecomp::DecodedInstruction &d, std::uint32_t p
             << "      ctx.write_vfpu_vector_with_destination_prefix(vfpu_d, " << destination << "u, " << length << "u); }\n";
         break;
     }
+    case psprecomp::OpcodeKind::Vrnd: {
+        const std::uint32_t size_code = ((d.word >> 7u) & 1u) | (((d.word >> 15u) & 1u) << 1u);
+        out << "    ctx.execute_vfpu_vrnd(" << ((d.word >> 16u) & 3u) << "u, " << (d.word & 0x7Fu) << "u, "
+            << ((d.word >> 8u) & 0x7Fu) << "u, " << (size_code + 1u) << "u);\n";
+        break;
+    }
+    case psprecomp::OpcodeKind::Vcrs:
+        out << "    ctx.execute_vfpu_vcrs(" << (d.word & 0x7Fu) << "u, " << ((d.word >> 8u) & 0x7Fu) << "u, "
+            << ((d.word >> 16u) & 0x7Fu) << "u);\n";
+        break;
+    case psprecomp::OpcodeKind::Vi2x:
     case psprecomp::OpcodeKind::Vx2i: {
         const std::uint32_t size_code = ((d.word >> 7u) & 1u) | (((d.word >> 15u) & 1u) << 1u);
         const std::uint32_t source_length = size_code + 1u;
         const std::uint32_t destination = d.word & 0x7Fu;
         const std::uint32_t source = (d.word >> 8u) & 0x7Fu;
         const std::uint32_t operation = (d.word >> 16u) & 3u;
-        out << "    ctx.execute_vfpu_vx2i(" << destination << "u, " << source << "u, "
-            << source_length << "u, " << operation << "u);\n";
+        out << "    ctx.execute_vfpu_" << (d.kind == psprecomp::OpcodeKind::Vi2x ? "vi2x" : "vx2i") << "("
+            << destination << "u, " << source << "u, " << source_length << "u, " << operation << "u);\n";
         break;
     }
     case psprecomp::OpcodeKind::Mtv:

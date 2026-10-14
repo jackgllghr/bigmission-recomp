@@ -177,4 +177,6 @@ Repeat generation rewrites zero source units. Three game-neutral generator
 defects discovered during this work were reproduced with synthetic fixtures,
 fixed, and covered by native execution regression tests. The runtime's guest
 memory also lacked the PSP's 16 KiB scratchpad RAM, which this game uses; it is
-now mapped and covered by a framework test.
+now mapped and covered by a framework test. The generator gained VFPU
+`vi2uc/vi2c/vi2us/vi2s`, `vrnds/vrndi/vrndf1/vrndf2` and `vcrs.t`; the
+remaining unlowered sites all lie in data the analysis misreads as code.

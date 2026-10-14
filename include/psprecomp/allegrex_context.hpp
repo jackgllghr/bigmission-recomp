@@ -616,6 +616,89 @@ struct alignas(16) AllegrexContext {
         write_vfpu_vector_with_destination_prefix(result, destination_register, destination_length);
     }
 
+    // VRNDS seeds the VFPU random generator; VRNDI writes random words and
+    // VRNDF1/VRNDF2 random floats in [1, 2) and [2, 4). The hardware generator
+    // is undocumented: this is a xorshift32 whose state lives in RCX0, which
+    // the PSP saves per thread with the rest of the VFPU control registers.
+    void execute_vfpu_vrnd(std::uint32_t operation, std::uint32_t destination_register,
+                           std::uint32_t source_register, std::uint32_t length) noexcept {
+        if (operation == 0u) {
+            vfpu_ctrl[8] = vfpu_scalar_bits(source_register & 0x7Fu);
+            eat_vfpu_prefixes();
+            return;
+        }
+        if (length == 0u || length > 4u) return;
+        float result[4]{};
+        for (std::uint32_t lane = 0u; lane < length; ++lane) {
+            std::uint32_t bits = next_vfpu_random();
+            if (operation == 2u) bits = 0x3F800000u | (bits >> 9u);
+            else if (operation == 3u) bits = 0x40000000u | (bits >> 9u);
+            result[lane] = std::bit_cast<float>(bits);
+        }
+        write_vfpu_vector_with_destination_prefix(result, destination_register, length);
+    }
+
+    [[nodiscard]] std::uint32_t next_vfpu_random() noexcept {
+        std::uint32_t state = vfpu_ctrl[8] != 0u ? vfpu_ctrl[8] : 0x3F800001u;
+        state ^= state << 13u;
+        state ^= state >> 17u;
+        state ^= state << 5u;
+        vfpu_ctrl[8] = state;
+        return state;
+    }
+
+    // VCRS.T: the first half of a cross product (s.y*t.z, s.z*t.x, s.x*t.y).
+    void execute_vfpu_vcrs(std::uint32_t destination_register, std::uint32_t source_register,
+                           std::uint32_t target_register) noexcept {
+        float source[4]{};
+        float target[4]{};
+        read_vfpu_vector_with_source_prefix(source, source_register, 3u, 0u);
+        read_vfpu_vector_with_source_prefix(target, target_register, 3u, 1u);
+        const float result[3]{source[1] * target[2], source[2] * target[0], source[0] * target[1]};
+        write_vfpu_vector_with_destination_prefix(result, destination_register, 3u);
+    }
+
+    // VI2UC/VI2C pack lanes into bytes of one word; VI2US/VI2S pack lane pairs
+    // into halfwords. The unsigned forms clamp negative lanes to zero.
+    void execute_vfpu_vi2x(std::uint32_t destination_register,
+                            std::uint32_t source_register,
+                            std::uint32_t source_length,
+                            std::uint32_t operation) noexcept {
+        if (source_length == 0u || source_length > 4u || operation > 3u) return;
+
+        float source[4]{};
+        read_vfpu_vector(source, source_register, source_length);
+        apply_vfpu_source_prefix(source, source_length, 0u);
+        std::int32_t lanes[4]{};
+        for (std::uint32_t lane = 0u; lane < source_length; ++lane)
+            lanes[lane] = static_cast<std::int32_t>(std::bit_cast<std::uint32_t>(source[lane]));
+
+        std::uint32_t result_bits[2]{};
+        std::uint32_t destination_length = 1u;
+        if (operation <= 1u) { // VI2UC / VI2C
+            for (std::uint32_t lane = 0u; lane < 4u; ++lane) {
+                const std::uint32_t byte = operation == 0u
+                    ? static_cast<std::uint32_t>(std::max(lanes[lane], 0) >> 23)
+                    : static_cast<std::uint32_t>(lanes[lane]) >> 24u;
+                result_bits[0] |= (byte & 0xFFu) << (lane * 8u);
+            }
+        } else { // VI2US / VI2S
+            destination_length = source_length <= 2u ? 1u : 2u;
+            for (std::uint32_t pair = 0u; pair < destination_length; ++pair) {
+                std::uint32_t halves[2]{};
+                for (std::uint32_t half = 0u; half < 2u; ++half) {
+                    const std::int32_t value = lanes[pair * 2u + half];
+                    halves[half] = operation == 2u ? static_cast<std::uint32_t>(std::max(value, 0) >> 15)
+                                                   : static_cast<std::uint32_t>(value) >> 16u;
+                }
+                result_bits[pair] = (halves[0] & 0xFFFFu) | ((halves[1] & 0xFFFFu) << 16u);
+            }
+        }
+
+        const float result[2]{std::bit_cast<float>(result_bits[0]), std::bit_cast<float>(result_bits[1])};
+        write_vfpu_vector_with_destination_prefix(result, destination_register, destination_length);
+    }
+
     template <std::uint32_t DestinationScalarRegister, std::uint32_t SourceRegister,
               std::uint32_t TargetRegister, std::uint32_t Length>
     PSPRECOMP_CONTEXT_FORCEINLINE void execute_vfpu_vdot_ct() noexcept {

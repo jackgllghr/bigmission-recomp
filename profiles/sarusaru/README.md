@@ -92,8 +92,8 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
-  the unlowered VFPU instruction `vi2uc.q` after loading the AV codec
-  utility module and running its callbacks. `SARUSARU_TRACE_SCHED=1` logs
+  `sceAudio::sceAudioChReserve` after loading the AV codec utility module,
+  running its callbacks and initialising its sound system. `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
@@ -197,6 +197,12 @@ The pinned upstream is recorded in `config/supported_game.json`.
   IDs. The libraries they load are provided by HLE at their import interface,
   so this records state only, with bad-ID, already-loaded and not-loaded
   errors.
+- Lowered the VFPU integer packers `vi2uc`, `vi2c`, `vi2us` and `vi2s`, the
+  random-number instructions `vrnds`, `vrndi`, `vrndf1` and `vrndf2`, and
+  `vcrs.t` in the generator. The hardware random generator is undocumented;
+  a seeded xorshift32 kept in VFPU control register RCX0 (saved per thread,
+  as on the PSP) stands in. No unlowered instruction remains in the code
+  region; the rest lie in data the analysis misreads as code.
 - Mapped the PSP's 16 KiB scratchpad RAM (`0x00010000`) in the framework's
   `GuestMemory`, which previously faulted on it. Accesses use the checked
   slow paths; the main-RAM fast path is unchanged.

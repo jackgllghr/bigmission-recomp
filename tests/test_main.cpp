@@ -1463,6 +1463,68 @@ int main() {
                     std::bit_cast<std::uint32_t>(vx2i_result[3]) == 0x7FFFFFFFu,
                 "VUC2I packed byte expansion failed");
 
+        // VI2UC.Q / VI2C.Q / VI2US.Q / VI2S.P pack integer lanes.
+        const auto decoded_vi2uc = psprecomp::decode_allegrex(0xD03C8080u);
+        require(decoded_vi2uc.kind == psprecomp::OpcodeKind::Vi2x && decoded_vi2uc.mnemonic == "vi2uc",
+                "VI2UC.Q was not decoded");
+        vx2i_context.eat_vfpu_prefixes();
+        const float integer_lanes[4]{
+            std::bit_cast<float>(0x7FFFFFFFu), std::bit_cast<float>(0x80000000u),
+            std::bit_cast<float>(0x40000000u), std::bit_cast<float>(0x00800000u),
+        };
+        vx2i_context.write_vfpu_vector(integer_lanes, 12u, 4u);
+        vx2i_context.execute_vfpu_vi2x(16u, 12u, 4u, 0u);
+        require(vx2i_context.vfpu_scalar_bits(16u) == 0x018000FFu, "VI2UC.Q clamp and pack failed");
+        vx2i_context.execute_vfpu_vi2x(16u, 12u, 4u, 1u);
+        require(vx2i_context.vfpu_scalar_bits(16u) == 0x0040807Fu, "VI2C.Q pack failed");
+        vx2i_context.execute_vfpu_vi2x(16u, 12u, 4u, 2u);
+        float vi2x_result[2]{};
+        vx2i_context.read_vfpu_vector(vi2x_result, 16u, 2u);
+        require(std::bit_cast<std::uint32_t>(vi2x_result[0]) == 0x0000FFFFu &&
+                    std::bit_cast<std::uint32_t>(vi2x_result[1]) == 0x01008000u,
+                "VI2US.Q clamp and pack failed");
+        vx2i_context.execute_vfpu_vi2x(16u, 12u, 2u, 3u);
+        require(vx2i_context.vfpu_scalar_bits(16u) == 0x80007FFFu, "VI2S.P pack failed");
+
+        // VRND*: seeded, reproducible, and in range.
+        require(psprecomp::decode_allegrex(0xD0220000u).kind == psprecomp::OpcodeKind::Vrnd &&
+                    psprecomp::decode_allegrex(0xD0220000u).mnemonic == "vrndf1" &&
+                    psprecomp::decode_allegrex(0x6686830Cu).kind == psprecomp::OpcodeKind::Vcrs,
+                "VRNDF1/VCRS were not decoded");
+        psprecomp::AllegrexContext rng_a{};
+        psprecomp::AllegrexContext rng_b{};
+        rng_a.eat_vfpu_prefixes();
+        rng_b.eat_vfpu_prefixes();
+        rng_a.set_vfpu_scalar_bits(20u, 1234u);
+        rng_b.set_vfpu_scalar_bits(20u, 1234u);
+        rng_a.execute_vfpu_vrnd(0u, 0u, 20u, 1u);
+        rng_b.execute_vfpu_vrnd(0u, 0u, 20u, 1u);
+        rng_a.execute_vfpu_vrnd(2u, 24u, 0u, 4u);
+        rng_b.execute_vfpu_vrnd(2u, 24u, 0u, 4u);
+        float rnd_a[4]{};
+        float rnd_b[4]{};
+        rng_a.read_vfpu_vector(rnd_a, 24u, 4u);
+        rng_b.read_vfpu_vector(rnd_b, 24u, 4u);
+        for (std::uint32_t lane = 0u; lane < 4u; ++lane)
+            require(rnd_a[lane] == rnd_b[lane] && rnd_a[lane] >= 1.0f && rnd_a[lane] < 2.0f,
+                    "VRNDF1 not reproducible or out of range");
+        require(rnd_a[0] != rnd_a[1], "VRNDF1 lanes repeat");
+        rng_a.execute_vfpu_vrnd(3u, 24u, 0u, 1u);
+        require(std::bit_cast<float>(rng_a.vfpu_scalar_bits(24u)) >= 2.0f &&
+                    std::bit_cast<float>(rng_a.vfpu_scalar_bits(24u)) < 4.0f,
+                "VRNDF2 out of range");
+
+        psprecomp::AllegrexContext cross{};
+        cross.eat_vfpu_prefixes();
+        const float cross_s[3]{1.0f, 2.0f, 3.0f};
+        const float cross_t[3]{4.0f, 5.0f, 6.0f};
+        cross.write_vfpu_vector(cross_s, 0u, 3u);
+        cross.write_vfpu_vector(cross_t, 1u, 3u);
+        cross.execute_vfpu_vcrs(2u, 0u, 1u);
+        float cross_d[3]{};
+        cross.read_vfpu_vector(cross_d, 2u, 3u);
+        require(cross_d[0] == 12.0f && cross_d[1] == 12.0f && cross_d[2] == 5.0f, "VCRS.T products incorrect");
+
         vx2i_context.eat_vfpu_prefixes();
         const float preserved_vx2i[4]{1.0f, 2.0f, 3.0f, 4.0f};
         vx2i_context.write_vfpu_vector(preserved_vx2i, 0u, 4u);
