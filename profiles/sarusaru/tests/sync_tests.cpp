@@ -146,7 +146,7 @@ int main() {
             "resume did not let the ready thread preempt");
     h.call(kExitThread, 0x08806110u, {0u});
     require(h.kernel.current_uid() == main_uid, "main did not resume");
-    h.kernel.suspend_interrupts();
+    (void)h.kernel.suspend_interrupts();
     require(static_cast<std::uint32_t>(h.kernel.suspend_dispatch()) == kInterruptsDisabled, "suspend with interrupts off");
     h.kernel.resume_interrupts(true);
 

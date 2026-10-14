@@ -3,6 +3,8 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 # FFmpeg (LGPL, dynamically linked) decodes the game's ATRAC music.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FFmpeg.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Graphics.cmake")
+# The launcher's texts (Japanese included) are UTF-8 source.
+add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 # Recognising the player's disc image, for the launcher and the game session.
 add_library(sarusaru_disc STATIC host/game_disc.cpp host/umd/disc_image.cpp)
 target_include_directories(sarusaru_disc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
@@ -215,9 +217,18 @@ if(SARUSARU_BUILD_BOOTSTRAP)
     # SARUSARU_AOT_OPTIMIZATION trades build time for speed (-O0 for quick
     # diagnostic rebuilds, run with SARUSARU_CHAINING unset).
     set(SARUSARU_AOT_OPTIMIZATION "-O1" CACHE STRING "Optimisation flag for the generated game code")
-    if(NOT MSVC)
+    if(MSVC)
+        target_compile_options(sarusaru_aot PRIVATE /bigobj)
+    else()
         target_compile_options(sarusaru_aot PRIVATE ${SARUSARU_AOT_OPTIMIZATION})
     endif()
+    # The game runs on the main thread with deeply chained guest calls;
+    # Windows reserves only 1 MiB for it by default (macOS and Linux 8 MiB).
+    function(sarusaru_game_stack target)
+        if(MSVC)
+            target_link_options(${target} PRIVATE /STACK:67108864)
+        endif()
+    endfunction()
 
     # Everything one running game needs, shared by the bootstrap and the shell.
     add_library(sarusaru_session STATIC host/session.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
@@ -234,6 +245,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
     add_executable(sarusaru_bootstrap host/bootstrap.cpp)
     target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_session)
     sarusaru_use_ffmpeg(sarusaru_bootstrap)
+    sarusaru_game_stack(sarusaru_bootstrap)
     set_target_properties(sarusaru_bootstrap PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     if(SARUSARU_HAS_RENDERER)
@@ -273,6 +285,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
         endif()
         target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_ui)
         sarusaru_use_ffmpeg(sarusaru)
+        sarusaru_game_stack(sarusaru)
         set_target_properties(sarusaru PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
         if(PSPRECOMP_BUILD_PROFILE_TESTS)
