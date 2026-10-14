@@ -20,6 +20,29 @@ translation are still to come. Native game cadence overrides are available as
 an explicit experiment.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
+An optional English menu-screen pack uses the supplied English logo and covers
+the intro, main menu, name entry, save/load dialogs and Options screen.
+Gameplay and other screens retain Japanese. See [`docs/english-main-menu.md`](docs/english-main-menu.md)
+for building the pack and selecting it with `--translation-pack FILE` or settings.
+
+For external translation, `tools/extract_translation_labels.py export` creates
+local UTF-8 CSV/JSON files with character, level and area context. Structured
+labels and unresolved text candidates are separate. See
+[`docs/translation-handoff.md`](docs/translation-handoff.md) for editing,
+validation and the remaining context gaps.
+
+An optional [English v1 pack](docs/english-v1.md) adds 193 machine-translated
+gameplay labels. These are drafts awaiting human review; it also supports
+importing the later human-edited label CSV.
+
+Dialogue extraction is available with `tools/extract_dialogue.py export`:
+71 in-game advice/dialogue messages become 177 page records, with message IDs,
+scene topics, character mentions and protected controller tokens. See the
+[dialogue handoff guide](docs/dialogue-translation-handoff.md). The optional
+[English dialogue v1 pack](docs/english-dialogue-v1.md) now applies machine drafts
+for all 177 pages through the compact-message lookup adapter. Speaker/level
+verification and human review remain pending.
+
 ## Requirements
 
 - One of these hosts, with CMake 3.20+, Ninja and Python 3.10+:
@@ -32,9 +55,7 @@ The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
     system (`docker build -t sarusaru-linux -f profiles/sarusaru/scripts/linux.Dockerfile .`).
     A Vulkan driver is needed to play.
   - **Windows x86-64**: Visual Studio 2022 with the C++ workload, run from its
-    *x64 Native Tools Command Prompt* (which provides `cl`, `cmake` and `ninja`),
-    for development builds. A launcher that can install the game is built
-    with llvm-mingw instead (see [Releases](#releases-and-installing-the-game)).
+    _x64 Native Tools Command Prompt_ (which provides `cl`, `cmake` and `ninja`).
 - Your own legally obtained compatible ISO. Its name does not matter.
 
 No commercial game files or generated game code are included. The profile uses
@@ -352,11 +373,11 @@ from their own disc, with a progress bar and Cancel:
 4. the module is checked to load and replaces any earlier one in
    `<user data>/game/<version hash>/`, with `install.log` beside it.
 
-| Platform | Compiler | Install time measured |
-| --- | --- | --- |
-| macOS arm64 | Xcode's clang (the Command Line Tools; the launcher asks macOS to install them) | about 3½ minutes, M-series, 10 jobs |
-| Linux | the system's `g++` or `clang++` (`$CXX` first) | about 5½ minutes, 5 jobs in an 8 GB arm64 container |
-| Windows x64 | llvm-mingw 20260922, downloaded once (190 MB, hash-checked) | not measured yet |
+| Platform    | Compiler                                                                        | Install time measured                               |
+| ----------- | ------------------------------------------------------------------------------- | --------------------------------------------------- |
+| macOS arm64 | Xcode's clang (the Command Line Tools; the launcher asks macOS to install them) | about 3½ minutes, M-series, 10 jobs                 |
+| Linux       | the system's `g++` or `clang++` (`$CXX` first)                                  | about 5½ minutes, 5 jobs in an 8 GB arm64 container |
+| Windows x64 | llvm-mingw 20260922, downloaded once (190 MB, hash-checked)                     | not measured yet                                    |
 
 `<user data>` is `~/Library/Application Support/SaruSaruRecomp` on macOS,
 `$XDG_DATA_HOME/SaruSaruRecomp` (or `~/.local/share/SaruSaruRecomp`) on Linux
@@ -384,15 +405,15 @@ release to review and publish by hand.
 
 ## Local files (ignored by Git)
 
-| Path | Contents |
-| --- | --- |
-| `game/BOOT.elf` | Executable extracted from your own ISO |
-| `game/input.json` | Source ISO path, disc metadata and file inventory |
-| `analysis/main.json`, `analysis/*.csv` | Analysis, imports and candidate functions |
-| `analysis/bootstrap.log` | Startup result from the build script |
-| `generated/` | Game-derived C++ corpus; never commit or publish as source |
-| `progress/` | Local lock and scratch work |
-| `../../out/<host>/` | Native tools and diagnostic binary |
+| Path                                   | Contents                                                   |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `game/BOOT.elf`                        | Executable extracted from your own ISO                     |
+| `game/input.json`                      | Source ISO path, disc metadata and file inventory          |
+| `analysis/main.json`, `analysis/*.csv` | Analysis, imports and candidate functions                  |
+| `analysis/bootstrap.log`               | Startup result from the build script                       |
+| `generated/`                           | Game-derived C++ corpus; never commit or publish as source |
+| `progress/`                            | Local lock and scratch work                                |
+| `../../out/<host>/`                    | Native tools and diagnostic binary                         |
 
 The ISO is opened read-only. Preparation stages inputs before publishing them
 and refuses to overwrite an existing different executable or symlink target.

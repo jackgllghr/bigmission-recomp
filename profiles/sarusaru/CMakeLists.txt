@@ -72,6 +72,10 @@ add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cp
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_gpu PUBLIC psprecomp_runtime)
 
+add_library(sarusaru_translation STATIC host/translation/texture_pack.cpp host/translation/glyph_runs.cpp host/translation/dialogue.cpp)
+target_include_directories(sarusaru_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+target_link_libraries(sarusaru_translation PUBLIC sarusaru_gpu psprecomp_core)
+
 # PSP-format save data. aes.c is tiny-AES-c, compiled as C++ like the rest.
 add_library(sarusaru_savedata STATIC
     host/save_data/aes128.cpp host/save_data/param_sfo.cpp host/save_data/savedata_crypto.cpp
@@ -82,6 +86,9 @@ target_link_libraries(sarusaru_savedata PUBLIC psprecomp_runtime sarusaru_platfo
 
 if(PSPRECOMP_BUILD_PROFILE_TESTS)
     enable_testing()
+    add_executable(sarusaru_translation_pack_tests tests/translation_pack_tests.cpp)
+    target_link_libraries(sarusaru_translation_pack_tests PRIVATE sarusaru_translation)
+    add_test(NAME sarusaru_translation_pack_tests COMMAND sarusaru_translation_pack_tests)
     add_executable(sarusaru_frame_rate_tests tests/frame_rate_tests.cpp
         host/display/display.cpp host/kernel/early_kernel.cpp)
     target_link_libraries(sarusaru_frame_rate_tests PRIVATE sarusaru_frame_rate)

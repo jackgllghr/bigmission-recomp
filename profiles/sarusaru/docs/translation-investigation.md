@@ -137,6 +137,11 @@ characters in the executable.
 
 ## Recommended implementation
 
+An initial title/main-menu texture implementation now follows this plan; see
+[English main-menu prototype](english-main-menu.md) for its supported scope,
+resource mapping, usage and verification. The findings below remain the broader
+plan, not a claim that full translation infrastructure has been completed.
+
 Start with an optional English pack covering menus, gameplay instructions,
 dialogue and text-bearing graphics. Retain Japanese audio initially. Inventory
 movie dialogue too; add English timed subtitles if the relevant scenes need

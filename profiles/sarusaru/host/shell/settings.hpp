@@ -36,6 +36,9 @@ struct ControlSettings {
 enum class Language { Auto, English, Japanese };
 
 struct Settings {
+    std::string translation_language{"ja"};
+    // Relative paths resolve beside the selected settings file.
+    std::filesystem::path translation_pack;
     std::uint32_t internal_resolution{2};
     // The window's size at startup, in points (it stays resizable), and
     // whether it opens fullscreen at the desktop's resolution instead.

@@ -17,6 +17,7 @@
 #include "display/display.hpp"
 #include "gpu/ge_state.hpp"
 #include "shell/vulkan_context.hpp"
+#include "translation/texture_pack.hpp"
 #include "psprecomp/guest_memory.hpp"
 
 #include <array>
@@ -35,6 +36,8 @@ public:
     GeRenderer(VulkanContext &vulkan, std::uint32_t scale) : vk_(vulkan), scale_(scale) {}
     bool create(std::string &error);
     void destroy();
+    // Set once before the first draw; the session keeps the pack alive.
+    void set_translation_pack(const translation::TexturePack *pack) noexcept { translation_pack_ = pack; }
 
     // Per frame: `begin_frame` with the frame's command buffer, draws, then
     // `presentable` for the image VulkanContext::end_frame shows.
@@ -56,6 +59,7 @@ public:
     void trace_frames(std::uint32_t frames) noexcept { trace_ = frames; }
 
 private:
+    const translation::TexturePack *translation_pack_{};
     struct Target {
         std::uint32_t address{};
         Image color, depth;
@@ -66,6 +70,7 @@ private:
         Image image;
         std::uint64_t last_frame{};
     };
+    std::unordered_map<std::uint32_t, Texture> host_textures_;
     struct PipelineKey {
         std::uint32_t topology{}, blend{}, depth{}, raster{};
         bool operator<(const PipelineKey &other) const noexcept {

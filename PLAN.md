@@ -143,6 +143,42 @@ Monster Hunter's formats apply. Infrastructure is not a completed translation.
 Investigation and English-first delivery plan:
 [`profiles/sarusaru/docs/translation-investigation.md`](profiles/sarusaru/docs/translation-investigation.md).
 
+First implementation slice: optional English pack for the intro, title/main menu,
+name entry, save/load and Options screens, using image regions, bounded read-only
+dialog strings and prepared glyph-line replacement;
+documented in [`profiles/sarusaru/docs/english-main-menu.md`](profiles/sarusaru/docs/english-main-menu.md).
+General string allocation, general font/layout support and full-game translation remain unimplemented.
+
+Local authoring extraction now exports 232 contextual executable labels (entity,
+character, facility, level, mission, area and menu text) to UTF-8 CSV/JSON, plus
+a separate unresolved-candidate queue. Keys retain table identities and context
+evidence; conflicting area associations are explicit. Translator edits survive
+re-export and placeholder/source validation is available. See
+[`profiles/sarusaru/docs/translation-handoff.md`](profiles/sarusaru/docs/translation-handoff.md).
+Gameplay context confirmation, custom message/script decoding and image
+transcription remain to do.
+
+English v1 now applies machine drafts for all 193 structured gameplay labels,
+with verified padded name fields and explicit short variants for packed area
+strings. CSV human edits can be imported into a separate authoring catalog;
+human terminology and gameplay layout review remain pending. See
+[`profiles/sarusaru/docs/english-v1.md`](profiles/sarusaru/docs/english-v1.md).
+
+Compact dialogue extraction now covers the verified 88-slot message table:
+71 nonempty messages / 177 pages, with blank slots preserved separately. The
+bounded glyph decoder reads the local kanji table, preserves embedded NULs,
+line/page/control markers and button identities, and round-trips all source bytes.
+The CSV handoff retains IDs and content topics while explicitly leaving speaker
+and physical level unresolved. See
+[`profiles/sarusaru/docs/dialogue-translation-handoff.md`](profiles/sarusaru/docs/dialogue-translation-handoff.md).
+English dialogue v1 now provides machine drafts for all 177 pages and compact
+runtime encoding, retaining native controller glyphs and voice/page alignment.
+Source-verified lookup slots point into one kernel-reserved guest block; original
+encoded messages remain intact. Long drafts have explicit shorter runtime wording.
+Human CSV edits can be imported without retaining obsolete short variants. See
+[`profiles/sarusaru/docs/english-dialogue-v1.md`](profiles/sarusaru/docs/english-dialogue-v1.md).
+Human context/layout/timing acceptance and movie/story coverage remain pending.
+
 ### 7. Distribution and verification
 
 Reproducible builds, synthetic public regression fixtures, real-device smoke

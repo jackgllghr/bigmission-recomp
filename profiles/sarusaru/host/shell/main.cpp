@@ -8,6 +8,7 @@
 // the shell pumps events, presents the displayed framebuffer and waits until
 // real time catches up with guest time.
 #include "session.hpp"
+#include "game_identity.hpp"
 #include "install/game_builder.hpp"
 #include "install/toolchain.hpp"
 #include "gpu/fov.hpp"
@@ -44,6 +45,7 @@ constexpr const char *kUsage =
     "  own executable is used unless a prepared BOOT.elf is given as well.\n"
     "  --settings FILE  settings and bindings (default: per-user settings.ini)\n"
     "  --scale N  override the file's internal resolution (1-8 times 480x272)\n"
+    "  --translation-pack FILE  select an English menu texture pack for this run\n"
     "  --print-default-settings  print the settings file template and exit\n"
     "  --install ISO  build the game from your disc without the window, as the launcher's Install does\n"
     "Alt+Enter or F11 toggles fullscreen.\n"
@@ -111,6 +113,28 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
             throw;
         }
         auto &game = *session;
+        std::optional<sarusaru::translation::TexturePack> translation_pack;
+        if (settings.translation_language == "en") {
+            translation_pack = sarusaru::translation::TexturePack::load(settings.translation_pack,
+                sarusaru::disc_id, sarusaru::executable_sha256, [&](std::string_view path) {
+                    const auto entry = game.disc.find(path);
+                    if (!entry || entry->directory || entry->size > 32u * 1024u * 1024u)
+                        throw std::runtime_error("translation pack: missing or oversized source " + std::string(path));
+                    return game.disc.read_file(*entry, 32u * 1024u * 1024u);
+                });
+            translation_pack->apply_strings(game.runtime.memory(), game.elf, sarusaru::load_base);
+            translation_pack->apply_dialogue(game.runtime.memory(), game.elf, sarusaru::load_base,
+                [&](std::uint32_t size) {
+                    const auto uid = game.kernel.allocate_partition_memory("English dialogue", 1u, size, 0u);
+                    if (uid < 0) return 0u;
+                    return game.kernel.block_head_address(uid);
+                });
+            renderer.set_translation_pack(&*translation_pack);
+            std::cout << "Translation: " << translation_pack->locale() << " (" << translation_pack->size()
+                      << " menu textures, " << translation_pack->string_count()
+                      << " text strings, " << translation_pack->dialogue_count()
+                      << " dialogue messages); untranslated screens retain Japanese\n";
+        }
         auto &memory = game.runtime.memory();
         // Frame interpolation: each draw is also blended with its match in
         // the previous game frame, for the in-between picture. A game frame
@@ -127,7 +151,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
             game.ge.state().set_view_hook([&fov, &game](sarusaru::gpu::DrawCall &call) {
                 if (game.gameplay_camera.active()) fov.apply(call);
             });
-        game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) {
+        const auto render_draw = [&](const sarusaru::gpu::DrawCall &call) {
             renderer.draw(memory, call);
             if (!interpolating) return;
             if (const auto requests = game.display.framebuffer_requests(); requests != frame_requests) {
@@ -136,6 +160,10 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
             }
             interpolator.interpolate(call, 0.5f, between);
             renderer.queue_interpolated(memory, between);
+        };
+        game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) {
+            if (translation_pack) translation_pack->translate_draw(memory, call, render_draw);
+            else render_draw(call);
         });
         std::uint64_t latches = game.display.framebuffer_latches(game.kernel.now_us()), latch_vblank = 0u;
         game.audio.set_sink([&](std::int32_t channel, std::span<const std::int16_t> samples, bool mono,
@@ -175,6 +203,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
         bool quit = false;
         game.kernel.set_frame_observer([&] {
             if (quit) return;
+            if (translation_pack) translation_pack->flush_draws(render_draw);
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
                 if (event.type == SDL_EVENT_QUIT) quit = true;
@@ -314,6 +343,7 @@ int install_from_command_line(const std::filesystem::path &iso) {
 
 int main(int argc, char **argv) {
     std::optional<std::uint32_t> scale;
+    std::filesystem::path translation_override;
     std::filesystem::path settings_path;
     std::vector<std::string_view> paths;
     for (int i = 1; i < argc; ++i) {
@@ -329,6 +359,10 @@ int main(int argc, char **argv) {
         if (arg == "--install" && i + 1 < argc) return install_from_command_line(argv[i + 1]);
         if (arg == "--settings" && i + 1 < argc) {
             settings_path = argv[++i];
+            continue;
+        }
+        if (arg == "--translation-pack" && i + 1 < argc) {
+            translation_override = std::filesystem::absolute(argv[++i]);
             continue;
         }
         if (arg == "--scale" && i + 1 < argc) {
@@ -408,6 +442,14 @@ int main(int argc, char **argv) {
                 }
                 sarusaru::shell::Settings game_settings = settings;
                 if (scale) game_settings.internal_resolution = *scale;
+                if (!translation_override.empty()) {
+                    game_settings.translation_language = "en";
+                    game_settings.translation_pack = translation_override;
+                } else if (!game_settings.translation_pack.empty() && game_settings.translation_pack.is_relative()) {
+                    game_settings.translation_pack = settings_path.parent_path() / game_settings.translation_pack;
+                }
+                if (game_settings.translation_language == "en" && game_settings.translation_pack.empty())
+                    throw std::runtime_error("English needs a translation pack; use --translation-pack FILE or [translation] pack");
                 start_failure.clear();
                 status = play(window, vulkan, game_settings, executable, iso, start_failure);
                 if (!launcher || start_failure.empty()) break;
