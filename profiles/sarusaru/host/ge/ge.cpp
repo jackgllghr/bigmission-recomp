@@ -18,6 +18,28 @@ constexpr std::uint32_t kSignalHandlerSuspend = 0x01u;
 constexpr std::uint32_t kSignalHandlerContinue = 0x02u;
 }
 
+Ge::Ge(kernel::EarlyKernel &kernel) : kernel_(&kernel) {
+    state_.set_transfer_sink([this](const gpu::BlockTransfer &transfer) {
+        if (!copy_transfer(kernel_->runtime().memory(), transfer))
+            kernel_->runtime().stop("GE block transfer outside guest memory");
+    });
+}
+
+bool Ge::copy_transfer(psprecomp::GuestMemory &memory, const gpu::BlockTransfer &transfer) {
+    const std::uint32_t row_bytes = transfer.width * transfer.bytes_per_pixel;
+    std::vector<std::uint8_t> row(row_bytes);
+    for (std::uint32_t y = 0; y < transfer.height; ++y) {
+        const std::uint32_t source = transfer.source +
+            ((transfer.source_y + y) * transfer.source_stride + transfer.source_x) * transfer.bytes_per_pixel;
+        const std::uint32_t destination = transfer.destination +
+            ((transfer.destination_y + y) * transfer.destination_stride + transfer.destination_x) * transfer.bytes_per_pixel;
+        if (!memory.contains(source, row_bytes) || !memory.contains(destination, row_bytes)) return false;
+        memory.copy_out(source, row);
+        memory.copy_in(destination, row);
+    }
+    return true;
+}
+
 std::int32_t Ge::set_callback(std::uint32_t data_address, std::uint32_t gp) {
     auto &memory = kernel_->runtime().memory();
     if ((data_address & 3u) != 0u || !memory.contains(data_address, 16u)) return static_cast<std::int32_t>(kInvalidPointer);
@@ -116,6 +138,7 @@ bool Ge::execute(std::uint32_t index) {
         case kSpline:
             ++stats_.primitives;
             registers_[command] = data;
+            state_.process(memory, address, word);
             break;
         case kJump:
             list.pc = target(data, list.offset);
@@ -134,13 +157,16 @@ bool Ge::execute(std::uint32_t index) {
         case kBase:
             base_ = (data & 0x000F0000u) << 8u;
             registers_[command] = data;
+            state_.process(memory, address, word);
             break;
         case kOffsetAddress:
             list.offset = data << 8u;
             registers_[command] = data;
+            state_.process(memory, address, word);
             break;
         case kOrigin:
             list.offset = address;
+            state_.process(memory, address, word);
             break;
         case kSignal:
         case kFinish: {
@@ -178,6 +204,7 @@ bool Ge::execute(std::uint32_t index) {
             return fail("END without a preceding FINISH or SIGNAL");
         default:
             registers_[command] = data;
+            state_.process(memory, address, word);
             break;
         }
     }

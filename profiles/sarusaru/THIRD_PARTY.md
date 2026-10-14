@@ -45,6 +45,12 @@ Also adapted from Yakumo at the same revision:
 - `host/movie/psmf_demuxer.*` and `host/movie/avc_decoder.*` (PSMF pack
   demuxing, H.264 decoding on FFmpeg): namespace and macro renamed.
   `host/movie/psmf_player.*` (the scePsmfPlayer library) is new.
+- `host/gpu/ge_state.*`, `texture_decode.*`, `triangle_indices.hpp`,
+  `alpha_test.hpp`, `host/gpu/shaders/ge.vert`, `ge.frag`,
+  `tools/embed_shaders.py`, `tests/ge_state_tests.cpp` and
+  `tests/texture_decode_tests.cpp`: namespace and environment-variable prefix
+  renamed; Yakumo's profiling hooks removed; `GeState::process` added so this
+  profile's GE walker keeps the control flow and hands it every other command.
 
 ## FFmpeg (LGPL-2.1-or-later, dynamically linked, not in the repository)
 

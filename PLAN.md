@@ -148,8 +148,12 @@ networking (`sceNet*`, 21 in total).
        SDL (verified on Apple M4). Still to come: window, event loop,
        real-time pacing on top of the virtual event queue, host input feeding
        `sceCtrl`, audio output.
-11. [ ] GE rendering: Vulkan (MoltenVK on macOS) renderer over the headless
-        GE state; framebuffer presentation. Largest single item.
+11. [~] GE rendering: Yakumo's GeState now decodes every draw (vertices,
+        textures, blend, depth, lighting, fog, matrices) behind the headless
+        GE, and GE block transfers are carried out in guest memory. Still to
+        come: the Vulkan draw path and framebuffer presentation; registers
+        GeState does not model yet (stencil, dithering, morph weights, some
+        texture-mapping modes) are counted as unhandled.
 12. [~] Audio: `sceAudio` output channels are modeled headless on the
         virtual clock (blocking output paces the audio thread; samples are
         counted, not played). `sceSasCore` synthesizes VAG voices with
@@ -201,7 +205,7 @@ time (245,504 GE display lists, 14.5 million primitives) without meeting an
 unmodeled import. Nothing is drawn or heard yet: the next milestone is the
 host shell and GE renderer (chunks 10 and 11).
 
-Twenty-four CTest suites pass. Repeat generation rewrites zero source units.
+Twenty-six CTest suites pass. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
 - three generator defects reproduced with synthetic fixtures;

@@ -21,6 +21,11 @@ if(SARUSARU_HAS_FFMPEG)
     target_link_libraries(sarusaru_atrac PUBLIC sarusaru_ffmpeg)
 endif()
 
+# GE display-list state and texture decoding (adapted from Yakumo).
+add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp)
+target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+target_link_libraries(sarusaru_gpu PUBLIC psprecomp_core)
+
 # PSP-format save data. aes.c is tiny-AES-c, compiled as C++ like the rest.
 add_library(sarusaru_savedata STATIC
     host/save_data/aes128.cpp host/save_data/param_sfo.cpp host/save_data/savedata_crypto.cpp
@@ -68,9 +73,16 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_link_libraries(sarusaru_interrupt_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_interrupt_tests COMMAND sarusaru_interrupt_tests)
     add_executable(sarusaru_ge_tests tests/ge_tests.cpp host/ge/ge.cpp host/kernel/early_kernel.cpp)
+    target_link_libraries(sarusaru_ge_tests PRIVATE sarusaru_gpu)
     target_include_directories(sarusaru_ge_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_ge_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_ge_tests COMMAND sarusaru_ge_tests)
+    add_executable(sarusaru_ge_state_tests tests/ge_state_tests.cpp)
+    target_link_libraries(sarusaru_ge_state_tests PRIVATE sarusaru_gpu)
+    add_test(NAME sarusaru_ge_state_tests COMMAND sarusaru_ge_state_tests)
+    add_executable(sarusaru_texture_decode_tests tests/texture_decode_tests.cpp)
+    target_link_libraries(sarusaru_texture_decode_tests PRIVATE sarusaru_gpu)
+    add_test(NAME sarusaru_texture_decode_tests COMMAND sarusaru_texture_decode_tests)
     add_executable(sarusaru_io_tests tests/io_tests.cpp host/io/io_manager.cpp host/umd/disc_image.cpp)
     target_include_directories(sarusaru_io_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_io_tests PRIVATE psprecomp_core)
@@ -143,7 +155,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
         host/rtc/rtc.cpp host/modules/utility_modules.cpp host/modules/module_manager.cpp host/audio/audio.cpp
         host/sas/sas.cpp)
     target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
-    target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot sarusaru_savedata sarusaru_atrac)
+    target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot sarusaru_savedata sarusaru_atrac sarusaru_gpu)
     sarusaru_use_ffmpeg(sarusaru_bootstrap)
     set_target_properties(sarusaru_bootstrap PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

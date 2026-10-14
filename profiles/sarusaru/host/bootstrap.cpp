@@ -183,7 +183,9 @@ int main(int argc, char **argv) {
                    << runtime.stop_reason() << '\n'
                    << "Guest time: " << early_kernel.now_us() << " us (virtual); GE: "
                    << ge.stats().lists_completed << " lists, " << ge.stats().commands << " commands, "
-                   << ge.stats().primitives << " primitives\n"
+                   << ge.stats().primitives << " primitives; " << ge.state().draw_count() << " draws decoded ("
+                   << ge.state().vertex_count() << " vertices, " << ge.state().unhandled_command_count()
+                   << " unhandled commands)\n"
                    << "Stop arguments: a0=" << psprecomp::hex32(cpu.gpr[4])
                    << " a1=" << psprecomp::hex32(cpu.gpr[5])
                    << " a2=" << psprecomp::hex32(cpu.gpr[6])

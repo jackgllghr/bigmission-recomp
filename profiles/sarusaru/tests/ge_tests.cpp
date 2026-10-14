@@ -95,6 +95,16 @@ int main() {
     kernel.guest_call_returned(cpu);
     require(kernel.current_uid() == main_uid && cpu.pc == 0x08804300u, "caller did not resume");
 
+    // Block transfers (TRXKICK) copy pixel rectangles in guest memory: 2x2
+    // pixels of 4 bytes from (1,1) of a 4-wide source to (0,0) of a 2-wide destination.
+    for (std::uint32_t i = 0; i < 16u; ++i) runtime.memory().store32(0x08814000u + i * 4u, 0x100u + i);
+    write_list(runtime, 0x08815000u, {0xB2814000u, 0xB3080004u, 0xB4816000u, 0xB5080002u, 0xEB000401u,
+                                      0xEC000000u, 0xEE000401u, 0xEA000001u, 0x0F000000u, 0x0C000000u});
+    call(runtime, kEnqueue, 0x08804350u, {0x08815000u, 0u, 0xFFFFFFFFu, 0u});
+    require(runtime.memory().load32(0x08816000u) == 0x105u && runtime.memory().load32(0x08816004u) == 0x106u &&
+                runtime.memory().load32(0x08816008u) == 0x109u && runtime.memory().load32(0x0881600Cu) == 0x10Au,
+            "block transfer copied the rectangle");
+
     call(runtime, kEnqueue, 0x08804400u, {0x08812002u, 0u, 0u, 0u});
     require(cpu.gpr[2] == kInvalidPointer, "unaligned list accepted");
     write_list(runtime, 0x08813000u, {0x04000000u, 0x0C000000u});

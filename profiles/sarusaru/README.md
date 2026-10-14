@@ -104,7 +104,7 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All twenty-four CTest suites pass, including 17 ISO/preparation cases and seven
+- All twenty-six CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -229,6 +229,12 @@ The pinned upstream is recorded in `config/supported_game.json`.
   Pictures are assumed to leave the decoder in presentation order at
   29.97 Hz; only start position 0 is modeled. Demuxing and H.264 decoding
   come from Yakumo (see `THIRD_PARTY.md`).
+- Adopted Yakumo's GE state machine and texture decoding (`gpu/`; see
+  `THIRD_PARTY.md`). The GE walker keeps control flow, stalls and interrupts
+  and hands every other command to `GeState`, which decodes draws for a
+  renderer. GE block transfers (`TRXKICK`), previously ignored, are now
+  copied in guest memory. The diagnostic summary reports decoded draws,
+  vertices and unhandled commands.
 - Added the host shell's dependencies (`cmake/Graphics.cmake`): SDL3 3.4.16,
   Vulkan-Headers, glslang 16.5.0 and, on macOS, MoltenVK 1.4.2, all pinned and
   hash-checked (see `THIRD_PARTY.md`). Vulkan is never linked; functions are

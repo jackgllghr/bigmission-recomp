@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gpu/ge_state.hpp"
 #include "kernel/early_kernel.hpp"
 #include "psprecomp/runtime.hpp"
 
@@ -41,7 +42,14 @@ public:
         std::uint64_t lists_completed{};
     };
 
-    explicit Ge(kernel::EarlyKernel &kernel) noexcept : kernel_(&kernel) {}
+    // Control flow, stalls and interrupts are handled here; every other
+    // command goes to `state()` (gpu::GeState), which decodes draws for a
+    // renderer's sink. Block transfers are copied in guest memory unless a
+    // renderer installs its own transfer sink.
+    explicit Ge(kernel::EarlyKernel &kernel);
+    [[nodiscard]] gpu::GeState &state() noexcept { return state_; }
+    // Copies a GE block transfer in guest memory; false if it falls outside it.
+    static bool copy_transfer(psprecomp::GuestMemory &memory, const gpu::BlockTransfer &transfer);
 
     [[nodiscard]] std::int32_t set_callback(std::uint32_t data_address, std::uint32_t gp);
     [[nodiscard]] std::int32_t unset_callback(std::uint32_t id);
@@ -81,6 +89,7 @@ private:
     std::vector<kernel::ThreadUid> draw_waiters_;
     std::array<std::uint32_t, 256> registers_{};
     std::uint32_t base_{};
+    gpu::GeState state_;
     Stats stats_;
 
     [[nodiscard]] std::optional<std::uint32_t> slot(std::uint32_t id) const noexcept;
