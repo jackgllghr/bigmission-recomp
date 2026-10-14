@@ -3,17 +3,32 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 # FFmpeg (LGPL, dynamically linked) decodes the game's ATRAC music.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FFmpeg.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Graphics.cmake")
+# Recognising the player's disc image, for the launcher and the game session.
+add_library(sarusaru_disc STATIC host/game_disc.cpp host/umd/disc_image.cpp)
+target_include_directories(sarusaru_disc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+target_link_libraries(sarusaru_disc PUBLIC psprecomp_core)
+
 if(SARUSARU_HAS_RENDERER)
     add_library(sarusaru_controls STATIC host/shell/settings.cpp host/shell/input.cpp)
     target_include_directories(sarusaru_controls PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_controls PUBLIC SDL3::SDL3 psprecomp_core)
-    add_library(sarusaru_shell STATIC host/shell/vulkan_loader.cpp)
+    add_library(sarusaru_shell STATIC host/shell/vulkan_loader.cpp host/shell/vulkan_context.cpp)
     target_include_directories(sarusaru_shell PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_shell PUBLIC SDL3::SDL3 Vulkan::Headers)
     add_executable(sarusaru_vulkan_probe host/shell/vulkan_probe.cpp)
     target_link_libraries(sarusaru_vulkan_probe PRIVATE sarusaru_shell)
     set_target_properties(sarusaru_vulkan_probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+
+    # The launcher and the port's screens: their logic (tested without a
+    # window), then the screens themselves on Dear ImGui.
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Ui.cmake")
+    add_library(sarusaru_ui_logic STATIC host/ui/settings_rows.cpp host/ui/file_list.cpp)
+    target_include_directories(sarusaru_ui_logic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_ui_logic PUBLIC sarusaru_controls)
+    add_library(sarusaru_ui STATIC host/ui/layer.cpp host/ui/ui_renderer.cpp host/ui/theme.cpp host/ui/widgets.cpp
+        host/ui/launcher.cpp host/ui/ui_script.cpp)
+    target_link_libraries(sarusaru_ui PUBLIC sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui)
 endif()
 # Shift-JIS text (guest output, later the translation tools), through iconv
 # where the platform has it.
@@ -62,6 +77,12 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
         set_target_properties(sarusaru_settings_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
         add_test(NAME sarusaru_settings_tests COMMAND sarusaru_settings_tests)
+        add_executable(sarusaru_launcher_tests tests/launcher_tests.cpp)
+        target_include_directories(sarusaru_launcher_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+        target_link_libraries(sarusaru_launcher_tests PRIVATE sarusaru_ui_logic sarusaru_disc)
+        set_target_properties(sarusaru_launcher_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+        add_test(NAME sarusaru_launcher_tests COMMAND sarusaru_launcher_tests)
     endif()
     add_test(NAME sarusaru_prepare_tests
             COMMAND "${Python3_EXECUTABLE}" -m unittest discover
@@ -199,12 +220,13 @@ if(SARUSARU_BUILD_BOOTSTRAP)
 
     # Everything one running game needs, shared by the bootstrap and the shell.
     add_library(sarusaru_session STATIC host/session.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
-        host/kernel/sync.cpp host/kernel/interrupts.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp host/ctrl/controller.cpp
+        host/kernel/sync.cpp host/kernel/interrupts.cpp host/umd/umd_drive.cpp host/ctrl/controller.cpp
         host/display/display.cpp host/ge/ge.cpp host/io/io_manager.cpp
         host/rtc/rtc.cpp host/modules/utility_modules.cpp host/modules/module_manager.cpp host/audio/audio.cpp
         host/sas/sas.cpp)
     target_include_directories(sarusaru_session PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
-    target_link_libraries(sarusaru_session PUBLIC sarusaru_aot sarusaru_savedata sarusaru_atrac sarusaru_gpu sarusaru_text sarusaru_frame_rate)
+    target_link_libraries(sarusaru_session PUBLIC sarusaru_aot sarusaru_disc sarusaru_savedata sarusaru_atrac sarusaru_gpu
+        sarusaru_text sarusaru_frame_rate)
     if(SARUSARU_HAS_FFMPEG)
         target_compile_definitions(sarusaru_session PRIVATE SARUSARU_HAS_FFMPEG=1)
     endif()
@@ -241,14 +263,14 @@ if(SARUSARU_BUILD_BOOTSTRAP)
             set_source_files_properties(resources/sarusaru.rc PROPERTIES
                 OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/sarusaru.ico")
         endif()
-        add_executable(sarusaru host/shell/main.cpp host/shell/vulkan_context.cpp host/shell/ge_renderer.cpp
+        add_executable(sarusaru host/shell/main.cpp host/shell/ge_renderer.cpp
             host/shell/audio_output.cpp "${_sarusaru_shaders}" "${_sarusaru_icon}"
             ${_sarusaru_resources})
         if(WIN32)
             target_include_directories(sarusaru PRIVATE
                 "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/resources>")
         endif()
-        target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_shell sarusaru_controls)
+        target_link_libraries(sarusaru PRIVATE sarusaru_session sarusaru_ui)
         sarusaru_use_ffmpeg(sarusaru)
         set_target_properties(sarusaru PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")

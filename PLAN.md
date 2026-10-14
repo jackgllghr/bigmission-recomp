@@ -87,7 +87,26 @@ needs document-picker integration, lifecycle handling and touch-accessible setup
 - [x] Window size at startup and fullscreen (Alt+Enter/F11 toggle).
 - [ ] Verify interpolation in stages, cutscenes and dialogs; higher simulation
       rates remain uncompensated; the presentation cap does not change simulation speed.
-- [ ] Expose settings and binding capture in the launcher's in-game screen.
+- [~] Expose settings and binding capture in the launcher's in-game screen.
+      The launcher's Settings screen edits graphics, window and dead-zone
+      settings; binding capture and an in-game menu are still to come.
+
+### Launcher chunk (milestone 5)
+
+- [x] Dear ImGui UI layer on the shell's Vulkan context, in the series' style
+      (yellow lettering in blue outlines, Pipo's siren lamp as the focus,
+      sky, sunburst and swoosh); pinned fonts with Japanese coverage.
+- [x] One navigation model for gamepad, keyboard, mouse and touch (hover
+      focus, tap, drag-to-scroll, Back pill), with device-specific hints.
+- [x] First-run disc selection: verification against the supported identity,
+      a gamepad-only file browser, the system file picker and drag and drop.
+      The game runs from the ISO alone; no Python preparation step.
+- [x] Settings screen backed by `settings.ini`, saved atomically on change.
+- [x] Scripted UI checks (`SARUSARU_UI_SCRIPT`) with a virtual gamepad.
+- [ ] Binding capture, save management (import, export, backups), on-screen
+      keyboard, in-game menu, progress/cancellation for long operations.
+- [ ] Android document picker, lifecycle handling and touch verification on
+      a device.
 
 Implementation and investigation notes: `profiles/sarusaru/docs/settings-investigation.md`.
 

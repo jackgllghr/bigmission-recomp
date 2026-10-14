@@ -84,6 +84,20 @@ int main() {
     auto numeric = parse_settings("[keyboard]\ncircle = scancode:54");
     require(parse_settings(serialize_settings(numeric)) == numeric, "delimiter key did not round-trip");
 
+    // The launcher's own settings: the disc image (any path, including the
+    // comment mark, escapes, edge spaces and non-ASCII) and the confirm button.
+    Settings launcher = defaults;
+    launcher.confirm_south = false;
+    for (const auto *name : {u8"/Games/PSP #1/100% サル.iso", u8" leading and trailing ", u8"C:\\Games\\%23.iso"}) {
+        launcher.game_disc = std::filesystem::path(name);
+        require(parse_settings(serialize_settings(launcher)) == launcher, "game disc path did not round-trip");
+    }
+    require(parse_settings("[game]\ndisc = /a/b%23c.iso\n").game_disc == std::filesystem::path("/a/b#c.iso"),
+            "escaped game disc path not decoded");
+    require(!parse_settings("[interface]\nconfirm = east\n").confirm_south, "confirm button not parsed");
+    require(defaults.confirm_south && defaults.game_disc.empty(), "launcher defaults changed");
+    for (const auto text : {"[interface]\nconfirm = north", "[game]\ndisc = bad%2", "[game]\ndisc = bad%zz"}) rejects(text);
+
     PresentationClock native(0), thirty(30), sixty(60), one(1);
     unsigned n = 0, t = 0, s = 0, o = 0;
     for (std::uint64_t i = 0; i <= 600; ++i) {
@@ -107,6 +121,9 @@ int main() {
     std::ifstream in(path); std::string line; std::getline(in, line);
     require(line == "broken file", "invalid existing file overwritten");
     in.close();
+    save_settings(path, launcher);
+    require(load_settings(path) == launcher && !std::filesystem::exists(path.string() + ".new"),
+            "saved settings did not reload");
     std::filesystem::remove_all(directory);
     std::cout << "Settings, control mapping and presentation clock tests passed\n";
 }

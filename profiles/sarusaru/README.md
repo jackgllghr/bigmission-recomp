@@ -7,7 +7,9 @@ disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 window, but is not verified playable end to end.** File-based settings and
 keyboard/gamepad rebinding are available, as are 60 FPS frame interpolation at
 the original game speed, a FOV override and window size/fullscreen settings.
-The launcher, in-game settings UI, timing-correct higher simulation rates and
+A first launcher chooses the disc image and edits the main settings with a
+gamepad, keyboard, mouse or touch screen. The in-game settings UI, binding
+capture, save management, timing-correct higher simulation rates and
 translation are still to come. Native game cadence overrides are available as
 an explicit experiment.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
@@ -80,6 +82,65 @@ out/macos-arm64/bin/sarusaru profiles/sarusaru/game/BOOT.elf \
   '../Saru! Get You! SaruSaru Daisakusen (Japan).iso'
 ```
 
+With only the ISO (`sarusaru game.iso`) the executable is read from the disc
+image itself, after the same SHA-256 check; no prepared `BOOT.elf` is needed.
+
+### Launcher
+
+Started with no disc image, `sarusaru` opens the launcher in the game's
+window: **Play**, **Settings**, **Game disc** and **Quit** over the series'
+sky, sunburst and yellow swoosh, with the title art. The focused control turns
+yellow and wears Pipo's red siren lamp.
+
+- **Game disc** checks a disc image before keeping it in `settings.ini`
+  (`[game] disc`): an ISO9660 image whose `UMD_DATA.BIN` names UCJS10060 and
+  whose `BOOT.BIN` is the supported executable. Another PSP game, a damaged
+  image or a different executable gets a sentence saying so. The image is
+  found with the launcher's own browser (folders, `.iso` files and common
+  places such as home, downloads and mounted drives, all reachable with a
+  gamepad), the system file picker, or by dropping the file on the window.
+- **Settings** has Graphics, Window and Controls tabs: resolution, 60 FPS
+  motion, the frame rate cap, FOV, the experimental update rate (flagged in
+  red, as is interpolation it switches off), fullscreen, window size, the
+  stick dead zone and the confirm button. Values step with left/right, the
+  row's arrows, or by activating it; each is saved at once. Key and button
+  bindings are still edited in `settings.ini`; the Controls tab opens its
+  folder.
+- **Play** starts the game in the same window. A game that cannot start (a
+  moved image) returns to the launcher with the reason.
+
+Every screen works with each device alone. The arrow keys, d-pad or left stick
+move the focus; Enter or the confirm button activates; Esc, the other face
+button, a mouse's back button or Android's Back go back; Q/W or L1/R1 switch
+tabs. The mouse focuses what it hovers. A finger taps, dragging a list
+scrolls it (without pressing the row it started on), and a Back pill appears
+for the mouse and touch. The button hints along the bottom follow the device
+last used: PlayStation shapes, Xbox or Nintendo letters (from SDL's labels
+for the pad), or keyboard keys. Confirm is the south button (cross) by
+default; `[interface] confirm = east` makes it circle, as the game itself
+confirms in this Japanese release.
+Layout scales with the window from a 960x544 design.
+
+The launcher draws with [Dear ImGui](https://github.com/ocornut/imgui) on the
+shell's Vulkan context, in Luckiest Guy (titles) and M PLUS Rounded 1c (text,
+including Japanese file names); see [`THIRD_PARTY.md`](THIRD_PARTY.md). They
+are downloaded at configure time, pinned and hash-checked, into
+`bin/resources/` beside the executable with their licences.
+
+`SARUSARU_UI_SCRIPT` drives the launcher without a person, for checks with
+each device: keys through SDL, buttons through an SDL virtual gamepad (which
+can claim to be a PlayStation, Xbox or Switch pad), mouse and touch input
+straight to Dear ImGui, file drops, and `capture FILE` to save a BMP of the
+next frame. The commands are listed in `host/ui/ui_script.hpp`, e.g.:
+
+```sh
+SARUSARU_UI_SCRIPT='wait 1; pad dpdown; pad east; wait 0.5; capture /tmp/settings.bmp; quit' \
+  out/macos-arm64/bin/sarusaru --settings /tmp/test-settings.ini
+```
+
+The launcher writes the settings file it was given, so point developer runs at
+a scratch file rather than the committed `resources/settings.ini`.
+
 `--scale N` overrides the settings file's internal resolution for this run
 (1-8 times 480x272, default 2). Default keys: arrows d-pad, Z circle
 (confirm in this Japanese release), X cross,
@@ -140,8 +201,8 @@ directions inverts an axis. Triggers can bind any action. Buttons activate
 above half travel; stick axes have a rescaled dead zone, while triggers use
 their unipolar range. Connected controllers contribute together, and normal
 hot-plugging remains supported. One source may intentionally trigger several
-actions. These settings will be the backing model for the launcher's in-game
-screen; there is no settings screen yet.
+actions. The launcher edits the graphics, window and dead-zone settings;
+bindings have no screen yet.
 
 `frame_rate` is a **presentation cap**, from 1 to 60; 0 presents at every native
 PSP vblank (about 59.94 Hz). It leaves guest vblank timing, input sampling,
@@ -512,7 +573,8 @@ These are game-neutral fixes; game identity and bootstrap choices stay here.
 
 The acceptance run with real input (new game, a level, save and reload),
 then writing GPU results back to guest memory, the GE registers GeState does
-not model yet, and the settings, launcher and translation milestones. See
+not model yet, the rest of the launcher (binding capture, save management, an
+in-game menu, Android document picking) and translation. See
 [`../../PLAN.md`](../../PLAN.md) and [`YAKUMO_REUSE.md`](YAKUMO_REUSE.md).
 
 The desired prebuilt release model still requires review of distribution of

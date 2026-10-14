@@ -104,6 +104,9 @@ PSPRecomp framework code is distributed under the MIT License. See [`LICENSE`](L
 - [FFmpeg](https://ffmpeg.org/) — music and movie decoding.
 - [Vulkan](https://www.vulkan.org/) and [MoltenVK](https://github.com/KhronosGroup/MoltenVK) — rendering.
 - [tiny-AES-c](https://github.com/kokke/tiny-AES-c) — the installer and PSP save-data support.
+- [Dear ImGui](https://github.com/ocornut/imgui) — the launcher's interface.
+- [Luckiest Guy](https://fonts.google.com/specimen/Luckiest+Guy) and
+  [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS) — the launcher's fonts.
 - [TeamGDB](https://github.com/TeamGDB) — their Yakumo project served as inspiration.
 
 ## Legal disclaimer

@@ -24,7 +24,9 @@ struct InputState {
                                    std::span<const GamepadState> gamepads);
 class Input {
 public:
-    explicit Input(ControlSettings settings) : settings_(std::move(settings)) {}
+    // Opens the gamepads already connected: their SDL_EVENT_GAMEPAD_ADDED may
+    // have gone to the launcher before the game started.
+    explicit Input(ControlSettings settings);
     ~Input();
     Input(const Input &) = delete;
     Input &operator=(const Input &) = delete;

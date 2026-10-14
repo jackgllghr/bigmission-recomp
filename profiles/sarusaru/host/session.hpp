@@ -3,6 +3,7 @@
 // One running game: the verified executable and disc, the runtime with the
 // generated code, and every HLE module this profile provides, wired together
 // and ready to start. Shared by the diagnostic bootstrap and the windowed shell.
+#include "game_disc.hpp"
 #include "startup_hle.hpp"
 #include "audio/atrac.hpp"
 #include "audio/audio.hpp"
@@ -44,9 +45,14 @@ struct SessionOptions {
     bool track_gameplay_camera{false};
 };
 
+// The disc this build plays (config/supported_game.json).
+[[nodiscard]] DiscIdentity supported_disc();
+
 class GameSession {
 public:
     // Verifies the executable and the disc (throws psprecomp::Error) and builds everything.
+    // Without a prepared executable, the one on the verified disc is used.
+    GameSession(const std::filesystem::path &iso, const SessionOptions &options);
     GameSession(const std::filesystem::path &executable, const std::filesystem::path &iso, const SessionOptions &options);
 
     // Runs the game from its entry point until it stops or `dispatch_limit` is reached.

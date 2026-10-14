@@ -49,6 +49,11 @@ struct Settings {
     // 0 = native; otherwise the gameplay camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
     ControlSettings controls;
+    // The player's disc image, chosen in the launcher (empty until then).
+    std::filesystem::path game_disc;
+    // Which face button confirms in the launcher and the port's screens: the
+    // south one (cross) by default, or the east one (circle) as the game does.
+    bool confirm_south{true};
     bool operator==(const Settings &) const = default;
 };
 
@@ -59,5 +64,8 @@ struct Settings {
 [[nodiscard]] std::filesystem::path default_settings_path();
 // Missing files are created with defaults; malformed existing files are never overwritten.
 [[nodiscard]] Settings load_settings(const std::filesystem::path &path);
+// Replaces the file with `settings` through a temporary file, so a failed
+// write leaves the old file intact.
+void save_settings(const std::filesystem::path &path, const Settings &settings);
 
 } // namespace sarusaru::shell

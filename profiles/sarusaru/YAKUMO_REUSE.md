@@ -30,6 +30,17 @@ or parameterised. Tests cover AES (FIPS-197), CMAC (RFC 4493), PARAM.SFO,
 all three crypto modes, the store and the utility's request sequence. Mode 3
 output has not yet been checked against a save made by a PSP.
 
+## Launcher: written independently
+
+The launcher (`host/ui/`, 2026-10-14) uses Dear ImGui as Yakumo's screens do,
+and its device handling follows ideas read in Yakumo's `ui/layer.cpp`: any
+connected pad drives the interface, Esc is Back, the confirm button can be
+swapped, and the system file dialog is not relied on. No Yakumo code was
+copied; its widgets, theme, file browser and screens are new, in this game's
+series style. Still to consider adapting from Yakumo: binding capture with
+chords, the on-screen keyboard (`ui/text_input.cpp`), Steam's Esc-with-B
+filtering and the touch overlay.
+
 ## Licence considerations
 
 Yakumo's original source is MIT-licensed and its licence includes both PSPRecomp

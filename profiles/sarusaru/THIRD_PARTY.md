@@ -78,6 +78,22 @@ notices.
 | [glslang](https://github.com/KhronosGroup/glslang) | 16.5.0 | BSD-3-Clause and others (its `LICENSE.txt`) | build-time shader compiler; not shipped |
 | [MoltenVK](https://github.com/KhronosGroup/MoltenVK) (macOS) | 1.4.2 | Apache-2.0 | Vulkan on Metal; prebuilt `libMoltenVK.dylib` with `MoltenVK-LICENSE.txt` in `bin/lib/` |
 
+## Launcher interface (downloaded at configure time, not in the repository)
+
+`cmake/Ui.cmake` downloads each of these at a pinned version and checks its
+SHA-256. Dear ImGui is compiled unmodified into the executable; the fonts and
+all three licences are placed in `bin/resources/` beside it. Releases must
+carry those notices.
+
+| Component | Version | Licence | Use |
+| --- | --- | --- | --- |
+| [Dear ImGui](https://github.com/ocornut/imgui) | 1.92.9b | MIT (`DearImGui-LICENSE.txt`) | launcher widgets, SDL3 and Vulkan backends |
+| [Luckiest Guy](https://github.com/google/fonts/tree/main/apache/luckiestguy) | google/fonts `e9678a5` | Apache-2.0 (`fonts/LuckiestGuy-LICENSE.txt`) | titles and big buttons |
+| [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS) Bold, ExtraBold | google/fonts `e9678a5` | SIL OFL 1.1 (`fonts/MPLUSRounded1c-OFL.txt`, from the M+ project at `eb60490`) | text, including Japanese |
+
+The launcher's own code (`host/ui/`) is new. Yakumo's Dear ImGui layer was
+read as a reference for its device handling (see `YAKUMO_REUSE.md`), not copied.
+
 ## tiny-AES-c (Unlicense)
 
 `third_party/tiny_aes/aes.c` and `aes.h` are unmodified copies of
