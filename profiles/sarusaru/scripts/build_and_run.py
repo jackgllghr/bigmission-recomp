@@ -22,7 +22,7 @@ def build(iso, jobs):
         configure("OFF")
         run("cmake", "--build", BUILD, "--parallel", jobs, "--target", "psp_recomp")
         supported = json.loads((PROFILE / "config/supported_game.json").read_text())
-        run(executable(BUILD / "psp_recomp"), PROFILE / "game/BOOT.elf", "--auto",
+        run(executable(BUILD / "bin/psp_recomp"), PROFILE / "game/BOOT.elf", "--auto",
             PROFILE / "generated", supported["load_base"], supported["unit_span"])
     configure("ON")
     run("cmake", "--build", BUILD, "--parallel", jobs, "--target", "sarusaru")

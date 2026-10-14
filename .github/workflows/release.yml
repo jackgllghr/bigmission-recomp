@@ -1,0 +1,127 @@
+# Builds the launcher for every desktop host, tests it, packages it
+# (profiles/sarusaru/scripts/package.py) and, for a version tag, attaches the
+# packages to a draft GitHub release to review and publish by hand.
+#
+# The packages contain no game code: the launcher builds the game on each
+# player's machine from their own disc. Windows is built with the same pinned
+# llvm-mingw that players' launchers download, so the two match.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: windows-x64
+            runner: windows-2022
+          # The oldest supported Ubuntu, so the packages run on as many
+          # distributions (glibc versions) as possible.
+          - host: linux-x64
+            runner: ubuntu-22.04
+          - host: linux-arm64
+            runner: ubuntu-22.04-arm
+          - host: macos-arm64
+            runner: macos-14
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-12 ninja-build pkg-config \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxfixes-dev libxtst-dev \
+            libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev libdrm-dev libgbm-dev libegl-dev
+          echo "CC=gcc-12" >> "$GITHUB_ENV"
+          echo "CXX=g++-12" >> "$GITHUB_ENV"
+
+      - name: Install macOS packages
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Fetch llvm-mingw
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cmake -DHOST=windows "-DDEST=$RUNNER_TEMP" -P profiles/sarusaru/cmake/fetch_llvm_mingw.cmake
+          # Test programs built outside bin/ (the framework's import tests) find its C++ runtime here.
+          echo "$RUNNER_TEMP/llvm-mingw/x86_64-w64-mingw32/bin" >> "$GITHUB_PATH"
+
+      - name: Configure
+        shell: bash
+        run: |
+          extra=()
+          case "${{ runner.os }}" in
+            Windows) extra+=("-DCMAKE_TOOLCHAIN_FILE=profiles/sarusaru/cmake/llvm-mingw.toolchain.cmake"
+                             "-DLLVM_MINGW_ROOT=$RUNNER_TEMP/llvm-mingw") ;;
+            macOS) extra+=(-DCMAKE_OSX_ARCHITECTURES=arm64 "-DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET") ;;
+          esac
+          cmake -S . -B out/${{ matrix.host }} -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_GAME_MODULE=OFF "${extra[@]}"
+
+      - name: Build
+        run: cmake --build out/${{ matrix.host }} --parallel 4
+
+      - name: Test
+        run: ctest --test-dir out/${{ matrix.host }} --output-on-failure
+
+      - name: Package
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != tag ]; then version="$(git describe --tags --always)"; fi
+          python3 profiles/sarusaru/scripts/package.py --build out/${{ matrix.host }} \
+            --host ${{ matrix.host }} --version "$version" --out out/dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.host }}
+          path: out/dist/*
+          if-no-files-found: error
+
+  release:
+    name: Draft release
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat > notes.md <<'EOF'
+          Launcher packages for Windows x64, Linux x64 and arm64, and macOS arm64.
+
+          They contain no game files or game code. Choose your own disc image
+          (.iso) of the Japanese UMD (UCJS10060) in the launcher; the first
+          time you play, it builds the game for your computer from that disc.
+          See README.txt in each package for what that needs.
+          EOF
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+            --title "SaruSaru Recomp $GITHUB_REF_NAME" --notes-file notes.md \
+            ./*.zip ./*.tar.gz SHA256SUMS.txt

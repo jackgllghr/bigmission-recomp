@@ -1,5 +1,7 @@
 #include "ui/theme.hpp"
 
+#include "platform/paths.hpp"
+
 #include <SDL3/SDL.h>
 
 #include <iostream>
@@ -32,9 +34,9 @@ ImFont *load(const char *file, bool merge = false) {
 const Fonts &fonts() { return g_fonts; }
 
 std::filesystem::path resource_path(std::string_view name) {
-    const char *base = SDL_GetBasePath();
-    const std::string utf8 = base != nullptr ? base : "";
-    return std::filesystem::path(std::u8string(utf8.begin(), utf8.end())) / "resources" /
+    // Beside the executable, as everything the port ships is (also inside an app bundle).
+    const auto directory = platform::executable_directory();
+    return (directory ? *directory : std::filesystem::path()) / "resources" /
            std::filesystem::path(std::u8string(name.begin(), name.end()));
 }
 

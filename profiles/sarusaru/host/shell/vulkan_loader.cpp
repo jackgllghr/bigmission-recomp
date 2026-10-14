@@ -1,5 +1,7 @@
 #include "shell/vulkan_loader.hpp"
 
+#include "platform/paths.hpp"
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
@@ -16,8 +18,10 @@ bool VulkanLoader::load(std::string &error) {
 #if defined(__APPLE__)
     // Errors only, unless MVK_CONFIG_LOG_LEVEL is already set.
     setenv("MVK_CONFIG_LOG_LEVEL", "1", 0);
-    // The pinned MoltenVK sits in lib/ next to the executable.
-    std::string path = std::string(SDL_GetBasePath() != nullptr ? SDL_GetBasePath() : "") + "lib/libMoltenVK.dylib";
+    // The pinned MoltenVK sits in lib/ next to the executable (also inside an app bundle).
+    const auto directory = platform::executable_directory();
+    const auto utf8 = ((directory ? *directory : std::filesystem::path()) / "lib" / "libMoltenVK.dylib").u8string();
+    std::string path(utf8.begin(), utf8.end());
     library = path.c_str();
 #endif
     if (!SDL_Vulkan_LoadLibrary(library)) {

@@ -1,6 +1,6 @@
-# Builds the framework and the SaruSaru profile on every target desktop host and
-# runs their tests. No game files exist here, so the game itself (which needs
-# code generated from the player's own disc) is not built.
+# Builds the framework and the SaruSaru profile (with its launcher) on every
+# target desktop host and runs their tests. No game files exist here, so the
+# game module (code generated from the player's own disc) is not built.
 name: Build
 
 on:
@@ -53,7 +53,7 @@ jobs:
           extra=()
           if [ "${{ runner.os }}" = macOS ]; then extra+=(-DCMAKE_OSX_ARCHITECTURES=arm64); fi
           cmake -S . -B out/${{ matrix.host }} -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_BUILD_BOOTSTRAP=OFF "${extra[@]}"
+            -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_GAME_MODULE=OFF "${extra[@]}"
 
       - name: Build
         run: cmake --build out/${{ matrix.host }} --parallel 4

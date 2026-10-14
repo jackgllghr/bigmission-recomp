@@ -4,6 +4,7 @@
 // generated code, and every HLE module this profile provides, wired together
 // and ready to start. Shared by the diagnostic bootstrap and the windowed shell.
 #include "game_disc.hpp"
+#include "game_module.hpp"
 #include "startup_hle.hpp"
 #include "audio/atrac.hpp"
 #include "audio/audio.hpp"
@@ -43,6 +44,8 @@ struct SessionOptions {
     // Watches for the gameplay cameras (game/gameplay_camera.hpp), for
     // overrides that leave menus and cutscenes native.
     bool track_gameplay_camera{false};
+    // The game module to load; empty finds it (find_game_module()).
+    std::filesystem::path game_module;
 };
 
 // The disc this build plays (config/supported_game.json).
@@ -61,6 +64,8 @@ public:
     [[nodiscard]] const std::string &module_name() const noexcept { return module_name_; }
     [[nodiscard]] std::uint32_t entry() const noexcept { return entry_; }
 
+    // First, so that it outlives the runtime holding its functions.
+    GameModule game_module;
     psprecomp::Elf32Image elf;
     umd::DiscImage disc;
     // Applied before the runtime is built, which reads it once.

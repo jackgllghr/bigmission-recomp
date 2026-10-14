@@ -1,0 +1,19 @@
+#pragma once
+
+// How this build of the port compiles the game module on a player's machine
+// (game_builder.hpp), made when the port is configured so the module matches it.
+#include <string_view>
+
+namespace sarusaru::install {
+// apple (Xcode's clang), gnu (the system's g++ or clang++), llvm-mingw (a
+// downloaded llvm-mingw), or empty: this build cannot install the game.
+inline constexpr std::string_view kToolchain = "@SARUSARU_INSTALL_TOOLCHAIN@";
+// Compiler options for the generated code, space-separated.
+inline constexpr std::string_view kOptimization = "@SARUSARU_AOT_OPTIMIZATION@";
+inline constexpr std::string_view kDefines = "@SARUSARU_MODULE_DEFINES@";
+inline constexpr std::string_view kMacosDeploymentTarget = "@CMAKE_OSX_DEPLOYMENT_TARGET@";
+// The llvm-mingw the Windows port was built with, downloaded on first install.
+inline constexpr std::string_view kLlvmMingwUrl = "@SARUSARU_LLVM_MINGW_URL@";
+inline constexpr std::string_view kLlvmMingwSha256 = "@SARUSARU_LLVM_MINGW_SHA256@";
+inline constexpr std::string_view kLlvmMingwSize = "@SARUSARU_LLVM_MINGW_SIZE@";
+} // namespace sarusaru::install

@@ -1,0 +1,11 @@
+#pragma once
+
+// The runtime interface the game module is built for (game_module.hpp): a hash
+// of the PSPRecomp headers, the code generator and the supported game, made
+// when the port is configured.
+#include <string_view>
+
+namespace sarusaru {
+// Null-terminated, as the module also hands it out as a C string.
+inline constexpr std::string_view game_module_abi = "@SARUSARU_GAME_ABI@";
+}

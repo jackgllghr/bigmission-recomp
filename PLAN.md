@@ -9,8 +9,16 @@ extracted text, saves, or generated game code are committed.
 - Windows x86-64; Linux x86-64 and arm64; macOS arm64; Android arm64.
 - Start and prove behavior on macOS arm64.
 - Reuse audited portable MIT-licensed Yakumo runtime/UI code, retaining notices.
-- Target prebuilt applications requiring an ISO. Distribution of translated game
-  code is an unresolved policy/legal release gate, not resolved by ISO validation.
+- Ship a prebuilt launcher, not the game. On first run the launcher builds the
+  game on the player's own machine from their own disc: it reads the executable,
+  runs the bundled code generator and compiles the result into a game module
+  in the per-user data directory. Packages contain the launcher, its libraries,
+  the code generator and the runtime SDK, never game-derived code. Players need
+  a C++ compiler (Xcode Command Line Tools on macOS, the distribution's g++ or
+  clang++ on Linux, a pinned llvm-mingw the launcher downloads on Windows).
+- Publishing even launcher-only packages still needs a release decision (see
+  milestone 7); the on-device build removes derived code from them but is not
+  itself a legal review.
 - PSPRecomp baseline: `f6e7d415c7f447b934cc3865a31eb725f353d659`.
 - Local disc metadata observed: UCJS10060, version 1.00. Metadata alone is not
   sufficient to identify a compatible executable.
@@ -64,10 +72,13 @@ and then actual PSP hardware. Never overwrite the user's source save on import.
 
 ### 5. Shared launcher and in-game UI
 
-First-run ISO installation, progress/cancellation/recovery, settings, save
+First-run ISO selection and installation (building the game module on the
+player's machine, with progress, cancellation and recovery), settings, save
 management, file browser and on-screen keyboard. Every screen supports gamepad,
 keyboard and mouse, including gamepad-only installation. Android additionally
-needs document-picker integration, lifecycle handling and touch-accessible setup.
+needs document-picker integration, lifecycle handling and touch-accessible setup,
+and builds the game on the device with an in-process compiler (see the Android
+chunk).
 
 ### Settings chunk (milestones 4 and 5)
 
@@ -108,10 +119,16 @@ needs document-picker integration, lifecycle handling and touch-accessible setup
 - [x] Binding capture: a Controls screen per PSP control and device, capture
       of keys, buttons, sticks and triggers (hold back to cancel), add, clear
       and reset, shared inputs pointed out.
+- [x] Install screen: builds the game module from the chosen disc with
+      progress and cancellation; Play installs first when the game is missing
+      or was built for another runtime interface. The module is built in a
+      work directory and moved into place only when complete.
 - [ ] Save management (import, export, backups), on-screen keyboard, in-game
-      menu, progress/cancellation for long operations, chorded bindings.
+      menu, chorded bindings.
+- [ ] Installation housekeeping: remove modules built for older runtime
+      interfaces, and report disk space and compiler needs before starting.
 - [ ] Android document picker, lifecycle handling and touch verification on
-      a device.
+      a device (see the Android chunk).
 
 Implementation and investigation notes: `profiles/sarusaru/docs/settings-investigation.md`.
 
@@ -130,31 +147,94 @@ Investigation and English-first delivery plan:
 
 Reproducible builds, synthetic public regression fixtures, real-device smoke
 tests and packages for every confirmed target. Per-user data survives upgrades.
-Publish tested compatibility and unresolved issues. Resolve derived-code
-distribution policy before public prebuilt game releases.
+Publish tested compatibility and unresolved issues. Releases are launcher
+packages only; the game module is built by each player and never distributed.
+Decide the public release policy for those packages before publishing.
 
-### Desktop platforms chunk (milestone 7)
+### Desktop platforms and releases chunk (milestones 5 and 7)
 
 - [x] Build scripts for every desktop host (`scripts/bootstrap.py`,
       `scripts/build_and_run.py`), building into `out/<host>/`.
-- [x] Linux arm64: framework, profile and the full game compile with GCC 13;
-      all tests pass (Docker on Apple Silicon, `scripts/linux.Dockerfile`).
 - [x] Windows build settings: `/utf-8`, `/bigobj` for generated units, a
-      64 MiB main-thread stack (the game runs chained guest calls on it),
-      executables beside the bundled FFmpeg DLLs.
+      64 MiB main-thread stack (the game runs chained guest calls on it).
 - [x] CI building and testing the framework and profile on Windows x64, Linux
       x64, Linux arm64 and macOS arm64 (`.github/workflows/build.yml`).
-- [ ] Windows x64: first green CI run; compile the generated game with MSVC.
-- [ ] Linux x64: compile the generated game.
-- [ ] Play to the title screen on Windows and Linux (Vulkan drivers, audio,
-      gamepads, settings and save locations).
+- [x] Distribution model: the launcher ships; the game is built on the
+      player's machine from their own disc. The generated code is a run-time
+      module (`sarusaru_game`) sharing a shared runtime (`psprecomp_runtime`)
+      with the host, refused when built for another runtime interface.
+- [x] On-device builder and the launcher's Install screen (progress, cancel,
+      compiler checks), plus `sarusaru --install`. macOS: Xcode's clang;
+      Linux: system g++/clang++; Windows: pinned llvm-mingw, downloaded.
+- [x] Packages (`scripts/package.py`: macOS `.app`, Windows `.zip`, Linux
+      `.tar.gz`) refusing game-derived files and build-path leaks; tagged
+      releases to a draft GitHub release (`.github/workflows/release.yml`).
+- [x] Verified: macOS arm64 package installs the game (3½ min) and plays to
+      the boot screens; Linux arm64 package installs (5½ min) and runs
+      headless; Windows x64 cross-compiles with llvm-mingw and its game DLL
+      builds as a player's launcher would.
+- [ ] First release workflow run; Windows and Linux x64 install and play.
+- [ ] macOS signing and notarisation (needs an Apple Developer ID).
+- [ ] Windows GUI subsystem (no console window) with logs to a file.
+- [ ] Release policy for public distribution (packages hold no game code).
+
+### Android chunk (milestones 5 and 7)
+
+The APK follows the desktop model: it ships the launcher, not the game, and
+builds the game module on the device from the player's own disc. Android has
+no system compiler and, from Android 10, forbids executing programs from
+app-writable storage, so the code generator, clang and lld are linked into the
+app and run in-process; the module is written to app-private storage and
+loaded with `dlopen`.
+
+Dusklight (`TwilitRealm/dusklight`, `platforms/android`, CC0) is the model for
+the shell only: it ships its decompiled game code prebuilt in the APK, which
+this port does not do with generated code. Borealis, its SDL shell library,
+is a separate project whose licence has not been checked; copy patterns, not
+code, unless that changes.
+
+- [x] Measure compile cost per generated unit (Apple clang, M4, game-module
+      flags, every unit, 4 jobs). Peak memory per unit is far below the
+      1.5 GiB the desktop builder assumes, so phones can compile the game:
+
+      | Unit span | Units | Peak RSS max / p95 / median | CPU total | Slowest unit |
+      |-----------|-------|-----------------------------|-----------|--------------|
+      | `0x4000` (current) | 163 | 498 / 413 / 307 MiB | 586 s | 10.3 s |
+      | `0x2000`  | 326 | 315 / 253 / 206 MiB | 481 s | 4.0 s |
+      | `0x1000`  | 652 | 238 / 191 / 170 MiB | 490 s | 2.0 s |
+
+      Code generation: 71 s on one thread, 159 MiB. Linking: under 1 s,
+      163 MiB. A phone is perhaps 2-3 times slower per core, so an install
+      should take roughly 5-15 minutes (an estimate, not measured on a phone).
+- [ ] Choose the Android unit span: `0x2000` halves peak memory and cuts
+      compile CPU by 18%; measure its effect on run-time speed (more calls
+      cross units) before adopting it on any platform.
+- [ ] Desktop builder: base `compile_jobs` on the measured ~0.5 GiB per unit
+      (with headroom) rather than 1.5 GiB.
+- [ ] Gradle project and NDK CMake preset building `libmain.so` for arm64-v8a;
+      an `SDLActivity` subclass taking arguments from intent extras; game-mode
+      configuration.
+- [ ] Disc access through the system document picker (no
+      `MANAGE_EXTERNAL_STORAGE`): `DiscImage` reads from a file descriptor.
+- [ ] A `DocumentsProvider` exposing saves and settings to the Files app.
+- [ ] In-process generator, clang and lld; installation in a foreground
+      service, with job count from available memory; APK size measured.
+- [ ] Fallback for phones that cannot compile: the desktop launcher
+      cross-compiles an Android module that the app imports.
+- [ ] Distribution channel: sideloaded APK first. Whether Google Play's rules
+      on executable code permit an on-device build is unresolved.
+- [ ] If the release policy ever allows shipping generated code, a prebuilt
+      game in the APK (as Dusklight does) replaces the on-device build, and
+      the desktop model should be revisited with it.
 
 ## Proof and safety
 
 Use invented fixtures for public ISO/import tests. Keep local analysis reports,
 generated code and game inputs ignored. Reject malformed or incompatible inputs
 before installation; constrain extraction paths and never silently replace an
-existing different executable. Diagnose missing imports honestly. No playable,
+existing different executable. Packages must never contain generated code, a
+game module or anything else derived from the disc; the packaging script
+refuses them. Diagnose missing imports honestly. No playable,
 save-compatible or enhanced-framerate claim without end-to-end verification.
 
 ## Remaining work
@@ -214,7 +294,8 @@ networking (`sceNet*`, 21 in total).
        time at each vblank of the virtual clock (Tab fast-forwards),
        keyboard and gamepad input into `sceCtrl`, and `sceAudio` output
        through SDL audio streams. File-based settings and keyboard/gamepad
-       rebinding are available; the in-game settings screen comes with the launcher.
+       rebinding are available and editable in the launcher; an in-game menu
+       is still to come.
 11. [~] GE rendering: Yakumo's GeState now decodes every draw (vertices,
         textures, blend, depth, lighting, fog, matrices) behind the headless
         GE, and GE block transfers are carried out in guest memory. A Vulkan
@@ -277,10 +358,20 @@ unmodeled import.
 The windowed shell now shows and plays the game at real time: the developer
 logos, loading screens, the title over its 3D beach scene, the attract demo,
 the save menu and the stage hub all render correctly at 2x internal
-resolution on an Apple M4. Next: the acceptance run with real input, GPU
-write-back, and the remaining GE registers.
+resolution on an Apple M4. Frame interpolation gives 60 FPS motion at native
+game speed, gameplay cameras take an adjustable FOV, and an English/Japanese
+launcher handles disc selection, settings and binding capture on every input
+device.
 
-Thirty CTest suites pass. With generated code at `-O1` and AOT call
+The game is now installed rather than shipped: the generated code is a
+separate module (`sarusaru_game`) loaded at run time against a shared runtime
+(`psprecomp_runtime`), keyed to the runtime interface it was built for. The
+launcher's Install screen (or `sarusaru --install ISO`) builds it on the
+player's machine. Launcher-only packages are produced for all four desktop
+hosts; the macOS arm64 package has installed the game and played to the boot
+screens.
+
+Thirty-four CTest suites pass. With generated code at `-O1` and AOT call
 chaining enabled, the headless run reaches stage 1 at about 28 times real time. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
@@ -292,3 +383,26 @@ Game-neutral framework fixes, each covered by a regression test:
 - function discovery from paired HI16/LO16 relocations, which finds code
   pointers whose halves are built far apart (49 more entries here,
   including a sound-thread entry point).
+
+## Current gaps
+
+In priority order:
+
+- Milestone 2 acceptance run (title, new game, a level, save, restart and
+  reload) with real input; not yet done.
+- GE: GPU results are not written back to guest memory; stencil, dithering,
+  morph weights, some texture modes and Bezier/spline patches are missing.
+- Utility dialogs: no message dialog or OSK; no dialog UI is drawn. Saves are
+  unchecked against PPSSPP and a PSP.
+- Unreached services: `ms0:` file paths, `umd0:` raw access, remaining
+  startup libraries, ad-hoc networking reported as unavailable; SAS reverb.
+- Windows and Linux x64: install and play from a release package has not been
+  verified, and the release workflow has never run.
+- Distribution: macOS signing and notarisation, a Windows build without a
+  console window, and the public release policy.
+- Android: nothing built yet. Measurements show phones have the memory to
+  compile the game; next are the unit-span choice and the app shell.
+- Interpolation and FOV are unverified in cutscenes, dialogs and other stage
+  types; higher simulation rates remain uncompensated.
+- Launcher: save management, in-game menu, on-screen keyboard; removal of
+  modules for older runtime interfaces.

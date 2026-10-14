@@ -66,9 +66,9 @@ def check_toolchain():
             raise ValueError(f"Missing {tool}; {hint}")
 
 
-def configure_command(build_bootstrap, *extra):
+def configure_command(game_module, *extra):
     command = ["cmake", "-S", ROOT, "-B", BUILD, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
-               "-DPSPRECOMP_PROFILE=sarusaru", f"-DSARUSARU_BUILD_BOOTSTRAP={build_bootstrap}", *extra]
+               "-DPSPRECOMP_PROFILE=sarusaru", f"-DSARUSARU_GAME_MODULE={game_module}", *extra]
     if host_name() == "macos-arm64":
         command.append("-DCMAKE_OSX_ARCHITECTURES=arm64")
     return command
@@ -108,8 +108,8 @@ def bootstrap(iso, jobs):
     run("ctest", "--test-dir", BUILD, "--output-on-failure")
     analysis = PROFILE / "analysis"
     analysis.mkdir(exist_ok=True)
-    run(executable(BUILD / "psp_analyze"), elf, analysis / "main.json", supported["load_base"])
-    run(executable(BUILD / "psp_recomp"), elf, "--auto", PROFILE / "generated",
+    run(executable(BUILD / "bin/psp_analyze"), elf, analysis / "main.json", supported["load_base"])
+    run(executable(BUILD / "bin/psp_recomp"), elf, "--auto", PROFILE / "generated",
         supported["load_base"], supported["unit_span"])
     configure("ON")
     run("cmake", "--build", BUILD, "--parallel", jobs, "--target", "sarusaru_bootstrap")

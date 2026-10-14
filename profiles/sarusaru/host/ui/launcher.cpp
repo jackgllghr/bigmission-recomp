@@ -1,5 +1,7 @@
 #include "ui/launcher.hpp"
 
+#include "game_module.hpp"
+
 #include "ui/text.hpp"
 #include "ui/theme.hpp"
 #include "ui/ui_script.hpp"
@@ -149,6 +151,16 @@ void Launcher::go(Screen screen, std::string_view focus) {
     focus_control(focus);
 }
 
+void Launcher::play() {
+    if (find_game_module()) {
+        outcome_ = Outcome::Play;
+        return;
+    }
+    install_error_.clear();
+    toolchain_.reset();
+    go(Screen::Install, "install_start");
+}
+
 void Launcher::save() {
     try {
         shell::save_settings(settings_path_, settings_);
@@ -185,6 +197,7 @@ void Launcher::frame() {
         case Screen::Home: home(); break;
         case Screen::Disc: disc(); break;
         case Screen::Browser: browser(); break;
+        case Screen::Install: install(); break;
         case Screen::Settings: settings(); break;
         case Screen::Bindings: bindings(); break;
         }
@@ -243,7 +256,7 @@ void Launcher::home() {
     place(0);
     if (menu_button(layer_, "play", tr(Text::Play), button, true)) {
         if (ready) {
-            outcome_ = Outcome::Play;
+            play();
         } else {
             disc_message_ = settings_.game_disc.empty() ? std::string(tr(Text::ChooseDiscFirst)) : "";
             disc_message_good_ = false;
@@ -361,7 +374,7 @@ void Launcher::disc() {
     }
 
     const bool ready = disc_check_ && disc_check_->supported();
-    if (ready && action_row(layer_, "play_now", tr(Text::PlayNow), "", width)) outcome_ = Outcome::Play;
+    if (ready && action_row(layer_, "play_now", tr(Text::PlayNow), "", width)) play();
     if (action_row(layer_, "browse", tr(Text::FindDisc), tr(Text::WorksWithController), width)) {
         browser_message_.clear();
         std::filesystem::path start;
@@ -484,6 +497,148 @@ void Launcher::browser() {
 
     if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Disc, "browse");
     hints(layer_, {{Control::Confirm, tr(Text::HintOpen)}, {Control::Back, tr(Text::HintBack)}});
+}
+
+// --- Installing the game -------------------------------------------------------
+
+namespace {
+
+std::string megabytes(std::uint64_t bytes) { return std::to_string((bytes + 500'000u) / 1'000'000u); }
+
+// What the installation is doing, in the player's language.
+std::string install_step(const install::Progress &progress) {
+    using Step = install::Progress::Step;
+    switch (progress.step) {
+    case Step::Starting: return std::string(tr(Text::InstallStepStarting));
+    case Step::Downloading:
+        return progress.total == 0u ? std::string(tr(Text::InstallStepPreparing))
+                                    : format(Text::InstallStepDownloading, {megabytes(progress.done), megabytes(progress.total)});
+    case Step::Extracting: return std::string(tr(Text::InstallStepExtracting));
+    case Step::Generating: return std::string(tr(Text::InstallStepGenerating));
+    case Step::Compiling:
+        return format(Text::InstallStepCompiling, {std::to_string(progress.done), std::to_string(progress.total)});
+    case Step::Linking: return std::string(tr(Text::InstallStepLinking));
+    case Step::Done:
+    case Step::Failed:
+    case Step::Cancelled: break;
+    }
+    return {};
+}
+
+// A bar of `fraction` in [0, 1], or a sweeping block while the end is unknown.
+void progress_bar(const Layer &layer, float width, std::optional<float> fraction) {
+    const float u = layer.unit(), height = 22.0f * u, radius = height * 0.5f;
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(at, ImVec2(at.x + width, at.y + height), colors::kBlue, radius);
+    const float inset = 3.0f * u, room = width - 2.0f * inset;
+    float from = 0.0f, to = 0.0f;
+    if (fraction) {
+        to = room * std::clamp(*fraction, 0.0f, 1.0f);
+    } else {
+        const float sweep = std::fmod(layer.time() * 0.6f, 1.0f);
+        from = room * std::max(0.0f, sweep * 1.25f - 0.25f);
+        to = room * std::min(1.0f, sweep * 1.25f);
+    }
+    if (to - from > 1.0f)
+        draw->AddRectFilled(ImVec2(at.x + inset + from, at.y + inset), ImVec2(at.x + inset + to, at.y + height - inset),
+                            colors::kYellow, radius - inset);
+    ImGui::Dummy(ImVec2(width, height));
+}
+
+} // namespace
+
+void Launcher::install() {
+    using Status = install::ToolchainCheck::Status;
+    using Step = install::Progress::Step;
+    const float u = layer_.unit();
+    const float top = screen_title(layer_, tr(Text::InstallTitle));
+    const ImRect inner = content_panel(layer_, top, 700.0f);
+    const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
+
+    // An installation that ended: on to the game, or back to the choices with why.
+    if (builder_) {
+        const auto progress = builder_->progress();
+        if (progress.step == Step::Done) {
+            builder_.reset();
+            outcome_ = Outcome::Play;
+            return;
+        }
+        if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
+            install_error_ = progress.step == Step::Failed ? format(Text::InstallFailed, {progress.error}) : "";
+            builder_.reset();
+            toolchain_.reset();
+            focus_control("install_start");
+        }
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, inner.Min.y + pad * 0.8f));
+    begin_list("##install", ImVec2(inner.GetWidth() - 2.0f * pad, inner.GetHeight() - 1.6f * pad));
+    paragraph(layer_, tr(Text::InstallIntro), width, colors::kInkDim);
+    ImGui::Dummy(ImVec2(0, 8.0f * u));
+    if (builder_) {
+        const auto progress = builder_->progress();
+        paragraph(layer_, install_step(progress), width);
+        ImGui::Dummy(ImVec2(0, 4.0f * u));
+        std::optional<float> fraction;
+        if ((progress.step == Step::Compiling || progress.step == Step::Downloading) && progress.total != 0u)
+            fraction = static_cast<float>(progress.done) / static_cast<float>(progress.total);
+        progress_bar(layer_, width, fraction);
+        ImGui::Dummy(ImVec2(0, 8.0f * u));
+        if (action_row(layer_, "install_cancel", tr(Text::InstallCancel), "", width)) builder_->cancel();
+    } else {
+        if (!toolchain_) {
+            install::ProcessGroup probe;
+            toolchain_ = install::check_toolchain(probe);
+        }
+        const auto start = [this] {
+            install_error_.clear();
+            builder_ = std::make_unique<install::GameBuilder>(settings_.game_disc, identity_, toolchain_->download_bytes);
+            focus_control("install_cancel");
+        };
+        switch (toolchain_->status) {
+        case Status::Ready:
+            if (action_row(layer_, "install_start", tr(Text::InstallStart), "", width)) start();
+            break;
+        case Status::Download:
+            paragraph(layer_, format(Text::InstallDownloadNote, {megabytes(toolchain_->download_bytes)}), width);
+            ImGui::Dummy(ImVec2(0, 4.0f * u));
+            if (action_row(layer_, "install_start", tr(Text::InstallStart), "", width)) start();
+            break;
+        case Status::NeedXcode:
+            paragraph(layer_, tr(xcode_requested_ ? Text::InstallXcodeWaiting : Text::InstallNeedXcode), width);
+            ImGui::Dummy(ImVec2(0, 4.0f * u));
+            if (action_row(layer_, "install_start", tr(Text::InstallGetXcode), "", width)) {
+                install::request_xcode_tools();
+                xcode_requested_ = true;
+            }
+            if (action_row(layer_, "install_check", tr(Text::InstallCheckAgain), "", width)) toolchain_.reset();
+            break;
+        case Status::NeedCompiler:
+            paragraph(layer_, tr(Text::InstallNeedCompiler), width);
+            ImGui::Dummy(ImVec2(0, 4.0f * u));
+            if (action_row(layer_, "install_start", tr(Text::InstallCheckAgain), "", width)) toolchain_.reset();
+            break;
+        case Status::Unsupported:
+            paragraph(layer_, tr(Text::InstallUnsupported), width, colors::kRed);
+            break;
+        }
+        if (!install_error_.empty()) {
+            ImGui::Dummy(ImVec2(0, 6.0f * u));
+            paragraph(layer_, install_error_, width, colors::kRed);
+        }
+    }
+    end_list(layer_);
+
+    // Back stops an installation under way rather than leaving it running.
+    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) {
+        if (builder_)
+            builder_->cancel();
+        else
+            go(Screen::Home, "play");
+    }
+    hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
+                   {Control::Back, tr(builder_ ? Text::HintCancel : Text::HintBack)}});
 }
 
 // --- Settings ----------------------------------------------------------------

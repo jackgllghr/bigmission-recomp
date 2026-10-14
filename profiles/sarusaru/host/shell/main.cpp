@@ -8,6 +8,8 @@
 // the shell pumps events, presents the displayed framebuffer and waits until
 // real time catches up with guest time.
 #include "session.hpp"
+#include "install/game_builder.hpp"
+#include "install/toolchain.hpp"
 #include "gpu/fov.hpp"
 #include "gpu/frame_interpolator.hpp"
 #include "kernel/guest_clock.hpp"
@@ -32,6 +34,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 
 namespace {
 
@@ -42,6 +45,7 @@ constexpr const char *kUsage =
     "  --settings FILE  settings and bindings (default: per-user settings.ini)\n"
     "  --scale N  override the file's internal resolution (1-8 times 480x272)\n"
     "  --print-default-settings  print the settings file template and exit\n"
+    "  --install ISO  build the game from your disc without the window, as the launcher's Install does\n"
     "Alt+Enter or F11 toggles fullscreen.\n"
     "Default keys: arrows d-pad, Z circle, X cross, A square, S triangle, Q/W L/R, Enter start,\n"
     "      Backspace select, I/J/K/L analog stick, Tab (held) fast forward, Escape quit.\n"
@@ -262,6 +266,50 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
     return status;
 }
 
+// --install: builds the game module from `iso` with the launcher's builder,
+// reporting progress on the terminal.
+int install_from_command_line(const std::filesystem::path &iso) {
+    using sarusaru::install::Progress;
+    using sarusaru::install::ToolchainCheck;
+    sarusaru::install::ProcessGroup probe;
+    const auto check = sarusaru::install::check_toolchain(probe);
+    switch (check.status) {
+    case ToolchainCheck::Status::Ready: break;
+    case ToolchainCheck::Status::Download:
+        std::cout << "Downloading the compiler first (" << check.download_bytes / 1'000'000u << " MB)\n";
+        break;
+    case ToolchainCheck::Status::NeedXcode:
+        std::cerr << "sarusaru: install Xcode's Command Line Tools first (xcode-select --install)\n";
+        return 1;
+    case ToolchainCheck::Status::NeedCompiler:
+        std::cerr << "sarusaru: install a C++ compiler first (g++ or clang++ from your distribution)\n";
+        return 1;
+    case ToolchainCheck::Status::Unsupported:
+        std::cerr << "sarusaru: this build cannot install the game; build it with SARUSARU_GAME_MODULE\n";
+        return 1;
+    }
+    sarusaru::install::GameBuilder builder(iso, sarusaru::supported_disc(), check.download_bytes);
+    std::cout << "Installing from " << iso.string() << " with " << builder.jobs() << " compiler jobs\n";
+    constexpr const char *kSteps[] = {"Starting", "Preparing the compiler", "Reading the disc", "Generating the code",
+                                      "Compiling", "Linking", "Done", "Failed", "Cancelled"};
+    Progress last;
+    last.step = Progress::Step::Done;
+    for (;;) {
+        const Progress now = builder.progress();
+        if (now.step != last.step || (now.step == Progress::Step::Compiling && now.done != last.done)) {
+            std::cout << kSteps[static_cast<int>(now.step)];
+            if (now.step == Progress::Step::Compiling) std::cout << ' ' << now.done << '/' << now.total;
+            std::cout << std::endl;
+            last = now;
+        }
+        if (now.finished()) {
+            if (now.step == Progress::Step::Failed) std::cerr << "sarusaru: " << now.error << '\n';
+            return now.step == Progress::Step::Done ? 0 : 1;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -278,6 +326,7 @@ int main(int argc, char **argv) {
             std::cout << sarusaru::shell::serialize_settings(sarusaru::shell::default_settings());
             return 0;
         }
+        if (arg == "--install" && i + 1 < argc) return install_from_command_line(argv[i + 1]);
         if (arg == "--settings" && i + 1 < argc) {
             settings_path = argv[++i];
             continue;

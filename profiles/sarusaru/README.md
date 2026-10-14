@@ -5,9 +5,11 @@ disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 
 **Early build: on macOS arm64 the game boots, renders and plays sound in a
 window, but is not verified playable end to end. Linux (x86-64, arm64) and
-Windows x86-64 builds are being brought up: Linux arm64 compiles the game and
-passes the tests; Windows and Linux x86-64 are compiled and tested only by CI
-(no game code there), and none of them has been played yet.** File-based settings and
+Windows x86-64 builds are being brought up: on Linux arm64 the launcher
+installs the game and it starts; Windows is cross-compiled and its game module
+built, but neither Windows nor Linux x86-64 has been run yet.** The port is
+distributed as a launcher that builds the game on the player's own machine
+from their own disc (see [Releases](#releases-and-installing-the-game)). File-based settings and
 keyboard/gamepad rebinding are available, as are 60 FPS frame interpolation at
 the original game speed, a FOV override and window size/fullscreen settings.
 A first launcher chooses the disc image and edits the main settings with a
@@ -88,6 +90,12 @@ next launch. It prints the selected absolute settings path. An explicit
 `--settings` option or `SARUSARU_SETTINGS` overrides that default; the explicit
 option takes precedence over the environment variable. Directly launching the
 executable still uses the normal per-user settings by default.
+
+The game's generated code is a module, `sarusaru_game` (`.dylib`, `.so` or
+`.dll`), that `sarusaru` and `sarusaru_bootstrap` load at run time. The
+scripts build it beside them from `generated/` (`-DSARUSARU_GAME_MODULE=ON`).
+Without one there, the executables load the one a launcher installed (below),
+or `SARUSARU_GAME_MODULE=/path/to/module`.
 
 After the bootstrap script has generated the game code once:
 
@@ -316,7 +324,7 @@ starting at `SARUSARU_CAPTURE_FROM` seconds if set,
 ```sh
 cmake -S . -B out/macos-arm64 -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_BUILD_BOOTSTRAP=OFF
+  -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_GAME_MODULE=OFF
 cmake --build out/macos-arm64 --parallel 2
 ctest --test-dir out/macos-arm64 --output-on-failure
 ```
@@ -325,6 +333,51 @@ All public fixtures are invented data. The import regression suite generates
 and natively executes a synthetic ELF to verify same-unit and cross-unit calls
 reach registered PSP imports, with correct delay-slot and return-address state.
 It currently runs on native non-MSVC builds, not cross-compilation builds.
+
+## Releases and installing the game
+
+Players get the launcher, not the game: the packages hold no game files and no
+game code. The first time they choose **Play** with a supported disc, the
+launcher's **Install the Game** screen builds the game module on their machine
+from their own disc, with a progress bar and Cancel:
+
+1. the executable is read from the verified disc (the same SHA-256 check);
+2. the bundled code generator (`psp_recomp`) translates it to C++;
+3. the platform's compiler builds the units in parallel (one job per 1.5 GiB of
+   memory, up to one per core) and links `sarusaru_game` against the bundled
+   runtime (`sdk/`, `lib/libpsprecomp_runtime`);
+4. the module is checked to load and replaces any earlier one in
+   `<user data>/game/<version hash>/`, with `install.log` beside it.
+
+| Platform | Compiler | Install time measured |
+| --- | --- | --- |
+| macOS arm64 | Xcode's clang (the Command Line Tools; the launcher asks macOS to install them) | about 3½ minutes, M-series, 10 jobs |
+| Linux | the system's `g++` or `clang++` (`$CXX` first) | about 5½ minutes, 5 jobs in an 8 GB arm64 container |
+| Windows x64 | llvm-mingw 20260922, downloaded once (190 MB, hash-checked) | not measured yet |
+
+`<user data>` is `~/Library/Application Support/SaruSaruRecomp` on macOS,
+`$XDG_DATA_HOME/SaruSaruRecomp` (or `~/.local/share/SaruSaruRecomp`) on Linux
+and `%APPDATA%\SaruSaruRecomp` on Windows. The version hash covers the
+runtime headers, the code generator and the supported game, so an update that
+changes any of them asks for a new install; others keep the installed module.
+`sarusaru --install game.iso` does the same without a window.
+
+The module must match the port's C++ ABI, so the Windows release is built with
+the same llvm-mingw (`cmake/llvm-mingw.toolchain.cmake`, fetched with
+`cmake -DHOST=windows -DDEST=<dir> -P profiles/sarusaru/cmake/fetch_llvm_mingw.cmake`);
+an MSVC build of the port cannot install the game and needs
+`-DSARUSARU_GAME_MODULE=ON`. The same toolchain cross-compiles the Windows
+port from Linux (`-DHOST=linux-x64` or `linux-arm64`, with `glslang` installed
+for the shaders).
+
+`scripts/package.py` packages a build: a `.app` in a `.zip` on macOS (not
+notarised: right-click and Open the first time), a `.zip` on Windows and a
+`.tar.gz` on Linux, each with a player README and the licences. It refuses to
+package anything game-derived or any binary that names the build directory.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds, tests
+and packages every host (Linux on Ubuntu 22.04 for older glibc, macOS for 13.0
+and later) and attaches the packages and `SHA256SUMS.txt` to a **draft**
+release to review and publish by hand.
 
 ## Local files (ignored by Git)
 
