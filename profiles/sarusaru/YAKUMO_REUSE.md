@@ -36,13 +36,13 @@ their OFL notices. Vulkan/MoltenVK packaging also needs dependency-specific revi
 ## Current kernel decision
 
 The full Yakumo kernel and ThreadMan HLE were inspected as behavioral reference,
-but are not copied at this stage: their implementation spans virtual-clock pacing,
-renderer hooks, fast-loading/fast-forward policies, interrupt delivery, tracing,
-and a Monster Hunter text-loader notification. This profile's `host/kernel/early_kernel.*`
-is independently written and intentionally only owns validated thread construction
-and stack allocation. It implements the observed `sceKernelCreateThread` contract
-and is covered by synthetic tests. It is not yet a scheduler, and does not assert
-compatibility for starting, delaying, waiting, or exiting threads.
+but are not copied: their implementation spans virtual-clock pacing, renderer
+hooks, fast-loading/fast-forward policies, interrupt delivery, tracing, and a
+Monster Hunter text-loader notification. This profile's `host/kernel/` is
+independently written: a deterministic scheduler with thread lifecycle, object
+waits with timeouts, semaphores, event flags, a virtual clock and interrupt
+delivery, each covered by synthetic tests. Imports are bound one at a time as
+startup reaches them, so it does not yet claim complete ThreadMan coverage.
 
 Sources:
 

@@ -3,6 +3,7 @@
 #include "ctrl/controller.hpp"
 #include "display/display.hpp"
 #include "kernel/early_kernel.hpp"
+#include "kernel/interrupts.hpp"
 #include "kernel/sync.hpp"
 #include "umd/disc_image.hpp"
 #include "umd/umd_drive.hpp"
@@ -98,6 +99,8 @@ int main(int argc, char **argv) {
         sarusaru::kernel::register_early_threadman(early_kernel, runtime);
         sarusaru::kernel::SyncObjects sync_objects(early_kernel);
         sarusaru::kernel::register_sync(sync_objects, runtime);
+        sarusaru::kernel::InterruptManager interrupts(early_kernel);
+        sarusaru::kernel::register_interrupts(interrupts, runtime);
         sarusaru::umd::UmdDrive umd_drive(disc);
         sarusaru::umd::register_umd(umd_drive, runtime);
         sarusaru::ctrl::Controller controller;

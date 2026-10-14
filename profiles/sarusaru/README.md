@@ -95,7 +95,7 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All eleven CTest suites pass, including 17 ISO/preparation cases and seven
+- All twelve CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -154,6 +154,14 @@ The pinned upstream is recorded in `config/supported_game.json`.
 - Added semaphores and event flags (`kernel/sync.cpp`): FIFO or priority wait
   queues, AND/OR waits with clear-all/clear-pattern, single or multiple
   waiters, overflow and count validation, and `WAIT_DELETE` on deletion.
+- Added interrupt delivery: queued guest handlers run on a priority-0
+  interrupt pseudo-thread with its own stack and return through a kernel stub;
+  waits from interrupt context fail with `CAN_NOT_WAIT`. `InterruptManager`
+  registers, enables and releases sub-interrupt handlers; enabled vblank
+  handlers run as the virtual clock crosses each vblank (only while
+  interrupts are enabled), before threads released by that vblank. If only
+  vblanks remain, 600 consecutive idle vblanks without a runnable thread
+  stop execution.
 - Recorded `sceKernelSetGPO`, and bound the data-cache writeback calls as
   no-ops: host memory is coherent and nothing yet reads guest memory behind
   the CPU's back.

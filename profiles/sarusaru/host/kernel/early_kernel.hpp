@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <string>
@@ -21,6 +22,7 @@ inline constexpr std::uint32_t kIllegalArgument = 0x800200D2u;
 inline constexpr std::uint32_t kIllegalMemblockType = 0x800200D8u;
 inline constexpr std::uint32_t kIllegalMemblock = 0x800201B6u;
 inline constexpr std::uint32_t kThreadExitStub = 0x08800000u;
+inline constexpr std::uint32_t kGuestCallReturnStub = 0x08800008u;
 inline constexpr std::uint32_t kPowerInvalidCallback = 0x80000100u;
 inline constexpr std::uint32_t kPowerInvalidSlot = 0x80000102u;
 inline constexpr std::uint32_t kPowerSlotsFull = 0x80000022u;
@@ -29,6 +31,7 @@ inline constexpr std::uint32_t kDormant = 0x800201A2u;
 inline constexpr std::uint32_t kIllegalAttribute = 0x80020191u;
 inline constexpr std::uint32_t kIllegalThread = 0x80020197u;
 inline constexpr std::uint32_t kNotDormant = 0x800201A4u;
+inline constexpr std::uint32_t kCanNotWait = 0x800201A7u;
 inline constexpr std::uint32_t kWaitTimeout = 0x800201A8u;
 inline constexpr std::uint32_t kThreadTerminated = 0x800201ACu;
 inline constexpr std::uint32_t kWaitDelete = 0x800201B5u;
@@ -90,6 +93,24 @@ public:
     // thread of higher priority if there is one.
     void return_with_preemption(psprecomp::AllegrexContext &context, std::uint32_t result);
     [[nodiscard]] std::int32_t allocate_uid() noexcept { return next_uid_++; }
+
+    // Guest code run in interrupt context: a priority-0 pseudo-thread with its
+    // own stack runs queued calls in order and returns through
+    // kGuestCallReturnStub. It cannot block; waits fail with kCanNotWait.
+    struct GuestCall {
+        std::uint32_t address{};
+        std::array<std::uint32_t, 4> arguments{};
+        std::uint32_t gp{};
+        std::string label;
+        std::function<void(std::uint32_t)> on_return;
+    };
+    // The caller must then let the interrupt run, e.g. via return_with_preemption.
+    void queue_interrupt(GuestCall call);
+    [[nodiscard]] bool in_interrupt() const noexcept { return current_uid_ != 0 && current_uid_ == interrupt_uid_; }
+    // Called at every vblank the virtual clock crosses while `active`.
+    void set_vblank_handler(std::function<void()> handler) { vblank_handler_ = std::move(handler); }
+    void set_vblank_active(bool active) noexcept { vblank_active_ = active; }
+    void guest_call_returned(psprecomp::AllegrexContext &context);
     [[nodiscard]] psprecomp::Runtime &runtime() noexcept { return *runtime_; }
     [[nodiscard]] std::int32_t allocate_partition_memory(const std::string &name, std::uint32_t type,
                                                          std::uint32_t size, std::uint32_t address_or_alignment);
@@ -146,6 +167,10 @@ private:
     ThreadUid current_uid_{};
     std::uint64_t next_ready_sequence_{1u};
     std::uint64_t now_us_{};
+    ThreadUid interrupt_uid_{};
+    std::deque<GuestCall> interrupt_calls_;
+    std::function<void()> vblank_handler_;
+    bool vblank_active_{};
     std::map<ThreadUid, ThreadInfo> threads_;
 
     struct FreeRange { std::uint32_t address{}; std::uint32_t size{}; };
@@ -165,6 +190,8 @@ private:
                               std::uint32_t result) noexcept;
     void run_next_ready(psprecomp::AllegrexContext &context, const char *idle_reason);
     void wake_due_threads();
+    void start_interrupt_call(ThreadInfo &thread);
+    [[nodiscard]] bool refuse_wait_in_interrupt(psprecomp::AllegrexContext &context);
     void end_thread(ThreadInfo &thread, std::uint32_t status);
     [[nodiscard]] std::string describe_blocked() const;
     void prepare_thread_stack(ThreadInfo &thread);

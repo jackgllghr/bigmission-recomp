@@ -115,32 +115,38 @@ networking (`sceNet*`, 21 in total).
        thread queries/attributes, exit/delete/terminate, system time, with
        timeouts on the virtual clock. Deferred until reached: thread and
        dispatch suspend/resume, `GetThreadStackFreeSize`, `Libc*` time.
-4. [ ] Callback and interrupt delivery: notify UMD/power/exit callbacks and
-       run them from `*CB` waits and `sceKernelCheckCallback`; run vblank
-       sub-interrupt handlers (`InterruptManager`) on the virtual clock.
-5. [ ] File I/O: `IoFileMgrForUser` over `disc0:`/`umd0:` (read-only, backed
+4. [x] Interrupt delivery: guest handlers run in interrupt context (a
+       priority-0 pseudo-thread that cannot block); `InterruptManager`
+       sub-interrupt registration; vblank handlers on the virtual clock.
+5. [ ] Headless GE (pulled forward: startup reaches it here): EDRAM, display
+       list queue, control-flow walker (jump/call/return, stall, finish,
+       signal), sync waits and finish/signal callbacks as GE interrupts.
+       Drawing commands are recorded, not rendered.
+6. [ ] Thread callbacks: notify UMD/power/exit callbacks and run them on
+       their thread from `*CB` waits and `sceKernelCheckCallback`.
+7. [ ] File I/O: `IoFileMgrForUser` over `disc0:`/`umd0:` (read-only, backed
        by `DiscImage`) including async I/O and directory listing; `ms0:` backed
        by a per-user host directory with path confinement. Stdio output.
-6. [ ] Modules and overlays: `ModuleMgrForUser` load/start of on-disc modules.
+8. [ ] Modules and overlays: `ModuleMgrForUser` load/start of on-disc modules.
        Establish which modules and code overlays load at runtime, decide
        AOT vs. HLE for each, and measure generated-code coverage.
-7. [ ] Remaining startup libraries as reached: `sceRtc`, `scePower`,
+9. [ ] Remaining startup libraries as reached: `sceRtc`, `scePower`,
        `sceSuspendForUser`, `InterruptManager`, `LoadExecForUser` exit.
 
 ### Presentation and media (milestone 2, interactive)
 
-8. [ ] Host shell: SDL3 window, event loop, real-time pacing on top of the
+10. [ ] Host shell: SDL3 window, event loop, real-time pacing on top of the
        virtual event queue, host input feeding `sceCtrl`.
-9. [ ] GE: display-list processing, EDRAM, and a Vulkan (MoltenVK on macOS)
-       renderer; framebuffer presentation. Largest single item.
-10. [ ] Audio: `sceAudio` output channels, then `sceSasCore` and `sceAtrac`
+11. [ ] GE rendering: Vulkan (MoltenVK on macOS) renderer over the headless
+        GE state; framebuffer presentation. Largest single item.
+12. [ ] Audio: `sceAudio` output channels, then `sceSasCore` and `sceAtrac`
         decoding, through SDL3 audio.
-11. [ ] Movies: `scePsmfPlayer`/`sceMpeg` playback, if the game uses them
+13. [ ] Movies: `scePsmfPlayer`/`sceMpeg` playback, if the game uses them
         on the path to gameplay.
-12. [ ] Utility dialogs: message dialog, OSK, savedata (feeds milestone 3).
-13. [ ] Ad-hoc networking: report "unavailable" faithfully so single-player
+14. [ ] Utility dialogs: message dialog, OSK, savedata (feeds milestone 3).
+15. [ ] Ad-hoc networking: report "unavailable" faithfully so single-player
         paths proceed; real multiplayer is out of scope for now.
-14. [ ] Acceptance run: title screen, new game, representative level,
+16. [ ] Acceptance run: title screen, new game, representative level,
         save, restart and reload (milestone 2 gate).
 
 Milestones 3 to 7 follow as described above, once gameplay is reachable.
@@ -158,9 +164,9 @@ callback registration and interrupt masking. A read-only ISO9660 UMD layer
 reads the user's own ISO in place after binding it to the prepared
 executable. Controller configuration and blocking buffered reads (neutral pad)
 work, as do display state, vblank timing, semaphores, event flags and thread
-lifecycle. After one virtual vblank, startup now stops at
+lifecycle, and vblank interrupt handlers. After one virtual vblank, startup now stops at
 `sceGe_user::sceGeEdramGetAddr`, the first graphics-engine call.
-Eleven CTest suites pass,
+Twelve CTest suites pass,
 including 17 input/preparation cases and seven generated-native-code cases.
 Repeat generation rewrites zero source units. Three game-neutral generator
 defects discovered during this work were reproduced with synthetic fixtures,

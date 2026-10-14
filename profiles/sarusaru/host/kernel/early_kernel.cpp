@@ -1,5 +1,6 @@
 #include "kernel/early_kernel.hpp"
 
+#include "kernel/guest_clock.hpp"
 #include "psprecomp/common.hpp"
 
 #include <algorithm>
@@ -29,6 +30,17 @@ void thread_exit(psprecomp::Runtime &runtime, psprecomp::AllegrexContext &contex
     }
     active_kernel->exit_current_thread(context, context.gpr[2]);
 }
+
+void guest_call_return(psprecomp::Runtime &runtime, psprecomp::AllegrexContext &context) {
+    if (active_kernel == nullptr) {
+        runtime.stop("A guest call returned before the early kernel was installed");
+        return;
+    }
+    active_kernel->guest_call_returned(context);
+}
+
+constexpr std::uint32_t kInterruptStackSize = 0x4000u;
+constexpr std::uint32_t kMaxIdleVblanks = 600u;
 }
 
 void EarlyKernel::install(psprecomp::Runtime &runtime, std::uint32_t user_memory_start, std::uint32_t user_memory_top) {
@@ -49,8 +61,13 @@ void EarlyKernel::install(psprecomp::Runtime &runtime, std::uint32_t user_memory
     current_uid_ = 0;
     next_ready_sequence_ = 1u;
     now_us_ = 0u;
+    interrupt_uid_ = 0;
+    interrupt_calls_.clear();
+    vblank_handler_ = nullptr;
+    vblank_active_ = false;
     active_kernel = this;
     runtime.register_function(kThreadExitStub, &thread_exit, "sarusaru_thread_exit");
+    runtime.register_function(kGuestCallReturnStub, &guest_call_return, "sarusaru_guest_call_return");
 }
 
 void EarlyKernel::begin_main_thread(psprecomp::AllegrexContext &context, std::string name,
@@ -119,8 +136,10 @@ void EarlyKernel::wake_due_threads() {
 void EarlyKernel::run_next_ready(psprecomp::AllegrexContext &context, const char *idle_reason) {
     wake_due_threads();
     ThreadInfo *next = best_ready_thread();
-    if (next == nullptr) {
-        // Idle: advance virtual time to the earliest timed wait, if any.
+    // Idle: advance virtual time to the next thread deadline or vblank event.
+    // Vblanks alone cannot keep an otherwise stuck guest alive forever.
+    std::uint32_t idle_vblanks = 0u;
+    while (next == nullptr && !runtime_->stopped()) {
         std::optional<std::uint64_t> earliest;
         for (const auto &[uid, thread] : threads_) {
             (void)uid;
@@ -128,11 +147,18 @@ void EarlyKernel::run_next_ready(psprecomp::AllegrexContext &context, const char
                 (!earliest || thread.wake_at_us < *earliest))
                 earliest = thread.wake_at_us;
         }
-        if (earliest) {
+        const bool vblanks = vblank_active_ && vblank_handler_ && idle_vblanks < kMaxIdleVblanks;
+        const std::uint64_t vblank = vblank_time_us(vblanks_by(now_us_) + 1u);
+        if (!earliest && !vblanks) break;
+        if (vblanks && (!earliest || vblank <= *earliest)) {
+            now_us_ = vblank;
+            ++idle_vblanks;
+            if (interrupts_enabled_) vblank_handler_();
+        } else {
             now_us_ = std::max(now_us_, *earliest);
-            wake_due_threads();
-            next = best_ready_thread();
         }
+        wake_due_threads();
+        next = best_ready_thread();
     }
     if (next != nullptr) {
         switch_to(context, next->uid, *next);
@@ -140,7 +166,64 @@ void EarlyKernel::run_next_ready(psprecomp::AllegrexContext &context, const char
     }
     current_uid_ = 0;
     psprecomp::set_runtime_thread_identity(-1, "idle");
-    runtime_->stop(std::string(idle_reason) + describe_blocked());
+    if (!runtime_->stopped()) runtime_->stop(std::string(idle_reason) + describe_blocked());
+}
+
+void EarlyKernel::queue_interrupt(GuestCall call) {
+    if (interrupt_uid_ == 0) {
+        const auto block = allocate_block("interrupt stack", 1u, kInterruptStackSize, 0u);
+        if (block < 0) {
+            runtime_->stop("Cannot allocate the interrupt stack");
+            return;
+        }
+        interrupt_uid_ = next_uid_++;
+        ThreadInfo thread{interrupt_uid_, "interrupt", 0u, 0u, block_head_address(block), kInterruptStackSize};
+        thread.stack_block = block;
+        threads_.emplace(interrupt_uid_, std::move(thread));
+    }
+    interrupt_calls_.push_back(std::move(call));
+    ThreadInfo &thread = threads_.at(interrupt_uid_);
+    if (thread.state == ThreadState::Dormant) {
+        start_interrupt_call(thread);
+        make_ready(thread);
+    }
+}
+
+void EarlyKernel::start_interrupt_call(ThreadInfo &thread) {
+    const GuestCall &call = interrupt_calls_.front();
+    thread.context = psprecomp::AllegrexContext{};
+    thread.context.eat_vfpu_prefixes();
+    for (std::uint32_t i = 0; i < 4u; ++i) thread.context.set_gpr(4u + i, call.arguments[i]);
+    thread.context.set_gpr(28u, call.gp);
+    thread.context.set_gpr(29u, thread.stack_bottom + thread.stack_size - kArgumentHome);
+    thread.context.set_gpr(31u, kGuestCallReturnStub);
+    thread.context.pc = call.address;
+    thread.wait_label = call.label;
+}
+
+void EarlyKernel::guest_call_returned(psprecomp::AllegrexContext &context) {
+    if (!in_interrupt() || interrupt_calls_.empty()) {
+        runtime_->stop("Guest call return outside a kernel-initiated call");
+        return;
+    }
+    const auto on_return = std::move(interrupt_calls_.front().on_return);
+    interrupt_calls_.pop_front();
+    if (on_return) on_return(context.gpr[2]);
+    ThreadInfo &thread = threads_.at(interrupt_uid_);
+    if (!interrupt_calls_.empty()) {
+        start_interrupt_call(thread);
+        context = thread.context;
+        return;
+    }
+    thread.state = ThreadState::Dormant;
+    thread.wait_label.clear();
+    run_next_ready(context, "Every early-kernel guest thread has ended or is blocked with no deadline");
+}
+
+bool EarlyKernel::refuse_wait_in_interrupt(psprecomp::AllegrexContext &context) {
+    if (!in_interrupt()) return false;
+    context.set_gpr(2u, kCanNotWait);
+    return true;
 }
 
 std::string EarlyKernel::describe_blocked() const {
@@ -436,6 +519,7 @@ EarlyKernel::WaitRequest EarlyKernel::object_wait(std::string label, std::uint32
 }
 
 void EarlyKernel::block_current(psprecomp::AllegrexContext &context, WaitRequest request) {
+    if (refuse_wait_in_interrupt(context)) return;
     const auto current = threads_.find(current_uid_);
     if (current == threads_.end()) {
         runtime_->stop("Wait with no current early-kernel thread");
@@ -483,6 +567,7 @@ void EarlyKernel::return_with_preemption(psprecomp::AllegrexContext &context, st
 }
 
 void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context) {
+    if (refuse_wait_in_interrupt(context)) return;
     const auto current = threads_.find(current_uid_);
     if (current == threads_.end()) {
         runtime_->stop("Thread sleep with no current early-kernel thread");
