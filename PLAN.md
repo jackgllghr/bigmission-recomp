@@ -154,8 +154,10 @@ networking (`sceNet*`, 21 in total).
         `sceAtrac3plus` decodes streamed or in-memory ATRAC3/ATRAC3plus
         tracks with FFmpeg (LGPL, dynamically linked, built from a pinned
         source). Still to come: reverb and host output through SDL3 audio.
-13. [ ] Movies: `scePsmfPlayer`/`sceMpeg` playback, if the game uses them
-        on the path to gameplay.
+13. [x] Movies: `scePsmfPlayer` plays PSMF movies from the disc (Yakumo's
+        demuxer, H.264 and ATRAC3plus on FFmpeg), timed on the virtual clock,
+        into the game's buffers in its configured pixel format. Headless:
+        nothing is shown or heard until the host shell exists.
 14. [~] Utility dialogs: savedata is modeled (load/save/list/delete/sizes on
         a per-user PSP-layout memory stick, PSP save encryption with the
         public keys, mode 3 for this game). No dialog UI is drawn yet. Still
@@ -187,10 +189,12 @@ first data file, initialises its sound system (printing progress to stdout),
 and enters its main loop. A longer run loads title-screen data, queries and
 auto-loads its save (none on a fresh memory stick), streams its first music
 track through ATRAC3plus decoding, and draws for 57 s of guest time (1,719 GE
-display lists, over a million primitives), loads its media modules, then
-stops at `sceMpeg::sceMpegInit` as movie playback begins.
+display lists, over a million primitives), loads its media modules and plays
+its title-screen movie (`d01.pmf`, 54 s, looped) with real decoded pictures
+and audio. It then waits on the title screen for a button press, which the
+neutral pad never gives.
 
-Twenty-three CTest suites pass. Repeat generation rewrites zero source units.
+Twenty-four CTest suites pass. Repeat generation rewrites zero source units.
 Game-neutral framework fixes, each covered by a regression test:
 
 - three generator defects reproduced with synthetic fixtures;

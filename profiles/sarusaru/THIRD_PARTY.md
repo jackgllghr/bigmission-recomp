@@ -42,6 +42,9 @@ Also adapted from Yakumo at the same revision:
 - `host/audio/atrac.cpp`: WAVE header parsing, the sample-position convention
   and all-on-memory decoding from `host/hle/hle_atrac.cpp`; the streaming API
   this game uses is new.
+- `host/movie/psmf_demuxer.*` and `host/movie/avc_decoder.*` (PSMF pack
+  demuxing, H.264 decoding on FFmpeg): namespace and macro renamed.
+  `host/movie/psmf_player.*` (the scePsmfPlayer library) is new.
 
 ## FFmpeg (LGPL-2.1-or-later, dynamically linked, not in the repository)
 

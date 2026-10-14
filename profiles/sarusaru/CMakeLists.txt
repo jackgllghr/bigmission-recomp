@@ -2,7 +2,8 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # FFmpeg (LGPL, dynamically linked) decodes the game's ATRAC music.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FFmpeg.cmake")
-add_library(sarusaru_atrac STATIC host/audio/atrac.cpp host/audio/atrac_decoder.cpp)
+add_library(sarusaru_atrac STATIC host/audio/atrac.cpp host/audio/atrac_decoder.cpp
+    host/movie/psmf_demuxer.cpp host/movie/avc_decoder.cpp host/movie/psmf_player.cpp)
 target_include_directories(sarusaru_atrac PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_atrac PUBLIC psprecomp_core)
 if(SARUSARU_HAS_FFMPEG)
@@ -95,6 +96,10 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_link_libraries(sarusaru_atrac_tests PRIVATE sarusaru_atrac)
     sarusaru_use_ffmpeg(sarusaru_atrac_tests)
     add_test(NAME sarusaru_atrac_tests COMMAND sarusaru_atrac_tests)
+    add_executable(sarusaru_psmf_player_tests tests/psmf_player_tests.cpp host/kernel/early_kernel.cpp)
+    target_link_libraries(sarusaru_psmf_player_tests PRIVATE sarusaru_atrac)
+    sarusaru_use_ffmpeg(sarusaru_psmf_player_tests)
+    add_test(NAME sarusaru_psmf_player_tests COMMAND sarusaru_psmf_player_tests)
     add_executable(sarusaru_module_manager_tests tests/module_manager_tests.cpp host/modules/module_manager.cpp
         host/kernel/early_kernel.cpp)
     target_include_directories(sarusaru_module_manager_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")

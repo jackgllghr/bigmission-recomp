@@ -94,13 +94,15 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
   initialises its sound system, auto-loads its save (none on a fresh memory
   stick), streams its first ATRAC3plus music track and draws for 57 s of
-  guest time (1,719 GE lists), loads its media modules and stops at
-  `sceMpeg::sceMpegInit` as movie playback begins. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
+  guest time (1,719 GE lists), loads its media modules and loops its
+  title-screen movie, waiting for a button press the neutral pad never
+  gives. `PSPRECOMP_HLE_HISTOGRAM=1` lists the most-called imports;
+  `SARUSARU_TRACE_MOVIE=1` traces the movie player. `SARUSARU_DISPATCH_LIMIT` raises the 100,000-dispatch budget; `SARUSARU_TRACE_SCHED=1` logs
   every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All twenty-three CTest suites pass, including 17 ISO/preparation cases and seven
+- All twenty-four CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -216,6 +218,16 @@ The pinned upstream is recorded in `config/supported_game.json`.
   engineered descriptions and are not hardware-verified. Reverb settings are
   validated and recorded but not applied (effect sends are dropped); the
   multichannel output mode and the noise spectrum are not modeled.
+- Added `scePsmfPlayer` (`movie/psmf_player.cpp`) and `sceMpegInit/Finish`:
+  Create/Delete, SetPsmf/ReleasePsmf (the movie is read from the disc),
+  GetPsmfInfo, ConfigPlayer (loop, pixel type), Start/Stop/Update,
+  GetCurrentStatus, GetVideoData (the latest picture whose time has come on
+  the virtual clock, converted to 565/5551/4444/8888 at the game's stride)
+  and GetAudioData (the next ATRAC3plus frame, 2048 stereo samples).
+  Pictures are assumed to leave the decoder in presentation order at
+  29.97 Hz; only start position 0 is modeled. Demuxing and H.264 decoding
+  come from Yakumo (see `THIRD_PARTY.md`).
+- Added `sceKernelPowerTick` (counted; there are no idle timers to reset).
 - Added `ModuleMgrForUser` (`modules/module_manager.cpp`): `psmf.prx` and
   `libpsmfplayer.prx`, Sony's media libraries whose exports the game imports
   and this profile provides by HLE, load and start as module IDs without

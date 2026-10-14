@@ -254,6 +254,18 @@ std::int32_t IoManager::devctl(const std::string &device, std::uint32_t command,
     return static_cast<std::int32_t>(kNoDevice);
 }
 
+std::optional<std::vector<std::uint8_t>> IoManager::read_disc_file(const std::string &path) {
+    const auto resolved = resolve(path);
+    const auto *entry = std::get_if<umd::DiscImage::Entry>(&resolved);
+    if (entry == nullptr || entry->directory) return std::nullopt;
+    try {
+        return disc_->read_file(*entry, entry->size);
+    } catch (const psprecomp::Error &error) {
+        runtime_->stop(std::string("Disc read failed: ") + error.what());
+        return std::nullopt;
+    }
+}
+
 std::int32_t IoManager::open_async(const std::string &path, std::uint32_t flags) {
     const auto result = open(path, flags);
     if (runtime_->stopped()) return result;

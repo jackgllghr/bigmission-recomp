@@ -59,6 +59,10 @@ public:
     [[nodiscard]] std::int32_t devctl(const std::string &device, std::uint32_t command, std::uint32_t out_address,
                                       std::uint32_t out_length);
 
+    // Reads a whole disc file for host-side consumers such as the movie
+    // player; nullopt if it does not exist (unmodeled paths stop execution).
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> read_disc_file(const std::string &path);
+
     [[nodiscard]] std::int32_t open_async(const std::string &path, std::uint32_t flags);
     [[nodiscard]] std::int32_t read_async(std::int32_t fd, std::uint32_t address, std::uint32_t size);
     [[nodiscard]] std::int32_t close_async(std::int32_t fd);

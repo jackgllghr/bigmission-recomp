@@ -7,6 +7,7 @@
 #include "ge/ge.hpp"
 #include "io/io_manager.hpp"
 #include "modules/module_manager.hpp"
+#include "movie/psmf_player.hpp"
 #include "modules/utility_modules.hpp"
 #include "rtc/rtc.hpp"
 #include "sas/sas.hpp"
@@ -132,6 +133,8 @@ int main(int argc, char **argv) {
         sarusaru::sas::register_sas(sas, runtime);
         sarusaru::audio::AtracLibrary atrac(sarusaru::audio::make_ffmpeg_decoder);
         sarusaru::audio::register_atrac(atrac, runtime);
+        sarusaru::movie::PsmfPlayer psmf_player(early_kernel, [&io](const std::string &path) { return io.read_disc_file(path); });
+        sarusaru::movie::register_psmf_player(psmf_player, runtime);
         sarusaru::utility::SavedataUtility savedata(sarusaru::utility::default_memory_stick(),
                                                     [&startup_hle] { return startup_hle.compiled_sdk_version(); });
         sarusaru::utility::register_savedata(savedata, runtime);
@@ -169,6 +172,7 @@ int main(int argc, char **argv) {
         if (const char *limit = std::getenv("SARUSARU_DISPATCH_LIMIT"); limit != nullptr && *limit != '\0')
             dispatch_limit = std::strtoull(limit, nullptr, 10);
         runtime.run(entry, dispatch_limit);
+        runtime.report_hle_histogram(25u);  // PSPRECOMP_HLE_HISTOGRAM=1 enables it
         std::cout << "Stopped at " << psprecomp::hex32(cpu.pc) << ": "
                    << runtime.stop_reason() << '\n'
                    << "Guest time: " << early_kernel.now_us() << " us (virtual); GE: "

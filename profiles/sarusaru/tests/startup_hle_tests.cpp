@@ -38,5 +38,8 @@ int main() {
     cpu.set_gpr(2u, 0xFFFFFFFFu);
     runtime.invoke_import("UtilsForUser", 0x3EE30821u, cpu);
     require(!runtime.stopped() && cpu.gpr[2] == 0u, "cache writeback import failed");
+    cpu.set_gpr(4u, 0u);
+    runtime.invoke_import("sceSuspendForUser", 0x090CCB3Fu, cpu);
+    require(!runtime.stopped() && cpu.gpr[2] == 0u && hle.power_ticks() == 1u, "power tick");
     return 0;
 }
