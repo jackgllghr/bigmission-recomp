@@ -119,10 +119,17 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
                     return game.disc.read_file(*entry, 32u * 1024u * 1024u);
                 });
             translation_pack->apply_strings(game.runtime.memory(), game.elf, sarusaru::load_base);
+            translation_pack->apply_dialogue(game.runtime.memory(), game.elf, sarusaru::load_base,
+                [&](std::uint32_t size) {
+                    const auto uid = game.kernel.allocate_partition_memory("English dialogue", 1u, size, 0u);
+                    if (uid < 0) return 0u;
+                    return game.kernel.block_head_address(uid);
+                });
             renderer.set_translation_pack(&*translation_pack);
             std::cout << "Translation: " << translation_pack->locale() << " (" << translation_pack->size()
                       << " menu textures, " << translation_pack->string_count()
-                      << " text strings); untranslated screens retain Japanese\n";
+                      << " text strings, " << translation_pack->dialogue_count()
+                      << " dialogue messages); untranslated screens retain Japanese\n";
         }
         auto &memory = game.runtime.memory();
         // Frame interpolation: each draw is also blended with its match in

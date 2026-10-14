@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "description": "Version-specific dialogue source locators and editorial context; original text is read locally.",
+  "pointer_table": "0x27b07c",
+  "message_count": 88,
+  "message_region": ["0x21a094", "0x21c170"],
+  "auxiliary_table": "0x21c170",
+  "kanji_table": "0x23d654",
+  "kanji_bytes": 1160,
+  "lookup_function": "0x0882ab78",
+  "compact_reader_function": "0x088fdf18",
+  "font_mapping_function": "0x088daad4",
+  "topics": {
+    "1": "basic_controls", "2": "battery_and_actions", "3": "health",
+    "4": "strong_punch", "5": "locked_gate", "7": "cliff_climbing",
+    "8": "branch_disguise", "9": "warp_device", "11": "swimming", "12": "lily_crossing",
+    "14": "marked_branch", "16": "paraglider", "17": "long_jump", "18": "paraglider_controls", "19": "torch",
+    "20": "door_puzzle", "22": "windmill", "23": "stone_switch", "24": "running", "25": "distant_switch",
+    "27": "wall_climbing", "29": "impact_switch", "30": "fire_breathing", "32": "statue_pedestal",
+    "33": "mummy", "34": "freezing", "35": "frozen_pond", "36": "loader_controls", "37": "missiles",
+    "39": "slot_item", "40": "fan", "42": "wings", "43": "pumpkin_disguise", "44": "candles",
+    "46": "ufo_controls", "48": "distant_warp", "49": "popup_switch", "50": "electricity",
+    "51": "rocket", "52": "heart_beam", "53": "wall_walking", "54": "broken_door", "57": "obstacle",
+    "60": "slippery_ground",
+    "61": "encouragement", "62": "encouragement", "63": "encouragement",
+    "64": "shrunk_laboratory", "65": "warp_device", "66": "save_device",
+    "67": "monkey_book", "68": "enemy_book", "69": "movie_box",
+    "70": "music_box", "71": "illustrations", "72": "capsule_shop",
+    "73": "no_chips", "74": "monkey_photo", "75": "album", "76": "gachi_king",
+    "77": "red_comment", "78": "blue_comment", "79": "satoru_comment",
+    "80": "girl_comment", "81": "elder_comment",
+    "82": "nano_cards_remaining", "83": "nano_cards_complete",
+    "84": "save_reminder", "85": "shop_reminder", "86": "break_reminder",
+    "87": "spare_battery_reminder"
+  },
+  "mentioned_character_names": {
+    "hikaru": {"offset": "0x21930c", "bytes": 6},
+    "akie": {"offset": "0x21941c", "bytes": 6},
+    "satoru": {"offset": "0x21952c", "bytes": 6},
+    "professor": {"offset": "0x21974c", "bytes": 6},
+    "specter": {"offset": "0x21985c", "bytes": 10}
+  }
+}

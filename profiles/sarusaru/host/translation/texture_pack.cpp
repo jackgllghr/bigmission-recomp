@@ -70,10 +70,10 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) invalid("short read");
     Reader reader(bytes);
     const auto magic = reader.text(8);
-    if (magic != "SSTEXPK1" && magic != "SSTEXPK2" && magic != "SSTEXPK3") invalid("unsupported format/version");
+    if (magic != "SSTEXPK1" && magic != "SSTEXPK2" && magic != "SSTEXPK3" && magic != "SSTEXPK4") invalid("unsupported format/version");
     if (disc_id.size() != 9 || reader.text(9) != disc_id || reader.digest() != executable_hash) invalid("incompatible game");
     TexturePack pack;
-    pack.padded_strings_ = magic == "SSTEXPK3";
+    pack.padded_strings_ = magic == "SSTEXPK3" || magic == "SSTEXPK4";
     pack.locale_ = reader.text(2);
     if (pack.locale_ != "en") invalid("unsupported locale");
     const auto source_count = reader.integer(4);
@@ -174,6 +174,30 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             const auto pixels = reader.take(size);
             run.rgba.assign(pixels.begin(), pixels.end());
             pack.runs_.push_back(std::move(run));
+        }
+    }
+    if (magic == "SSTEXPK4") {
+        const auto count = reader.integer(2);
+        if (count > 88) invalid("too many dialogue messages");
+        std::set<std::uint32_t> pointers;
+        std::size_t total = 0;
+        for (std::uint32_t i = 0; i < count; ++i) {
+            DialogueEntry entry;
+            entry.id = reader.name(128);
+            if (!ids.insert(entry.id).second) invalid("duplicate entry ID");
+            entry.pointer_offset = reader.integer(4);
+            entry.source_offset = reader.integer(4);
+            entry.source_size = reader.integer(4);
+            if (entry.pointer_offset % 4 != 0 || entry.pointer_offset > 4u * 1024u * 1024u - 4u ||
+                !pointers.insert(entry.pointer_offset).second || entry.source_size < 2 || entry.source_size > 16384 ||
+                entry.source_offset > 4u * 1024u * 1024u - entry.source_size)
+                invalid("invalid dialogue source/lookup slot");
+            entry.source_hash = reader.digest();
+            const auto size = reader.integer(4);
+            if (size < 2 || size > 16384 || (total += size) > 512u * 1024u) invalid("oversized dialogue payload");
+            const auto bytes = reader.take(size);
+            entry.encoded.assign(bytes.begin(), bytes.end());
+            pack.dialogue_.push_back(std::move(entry));
         }
     }
     if (!reader.empty()) invalid("trailing data");

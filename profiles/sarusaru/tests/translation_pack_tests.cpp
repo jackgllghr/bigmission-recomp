@@ -47,20 +47,22 @@ void string_record(Bytes &bytes, std::string_view id, std::uint32_t offset,
     integer(bytes, replacement.size(), 2); text(bytes, replacement);
 }
 psprecomp::Elf32Image string_elf(const Bytes &first, const Bytes &second) {
-    Bytes bytes(512, 0);
+    Bytes bytes(640, 0);
     const auto put = [&](std::size_t offset, std::uint32_t value, unsigned size = 4) {
         for (unsigned i = 0; i < size; ++i) bytes[offset + i] = static_cast<std::uint8_t>(value >> (8 * i));
     };
     bytes[0] = 0x7f; bytes[1] = 'E'; bytes[2] = 'L'; bytes[3] = 'F'; bytes[4] = bytes[5] = bytes[6] = 1;
     put(16, 2, 2); put(18, 8, 2); put(20, 1); put(24, 0x08801000); put(28, 52); put(32, 384);
-    put(40, 52, 2); put(42, 32, 2); put(44, 1, 2); put(46, 40, 2); put(48, 3, 2); put(50, 2, 2);
-    put(52, 1); put(56, 256); put(60, 0x08801000); put(68, 64); put(72, 64); put(76, 4); put(80, 16);
+    put(40, 52, 2); put(42, 32, 2); put(44, 1, 2); put(46, 40, 2); put(48, 4, 2); put(50, 2, 2);
+    put(52, 1); put(56, 256); put(60, 0x08801000); put(68, 104); put(72, 104); put(76, 4); put(80, 16);
     std::copy(first.begin(), first.end(), bytes.begin() + 256);
     std::copy(second.begin(), second.end(), bytes.begin() + 288);
-    const char names[] = "\0.rodata\0.shstrtab\0";
+    const char names[] = "\0.rodata\0.shstrtab\0.data\0";
     std::copy(std::begin(names), std::end(names), bytes.begin() + 320);
     put(424, 1); put(428, 1); put(432, 2); put(436, 0x08801000); put(440, 256); put(444, 64); put(456, 16);
     put(464, 9); put(468, 3); put(480, 320); put(484, sizeof(names)); put(496, 1);
+    put(352, 0x08801000); put(356, 0x08801020);
+    put(504, 19); put(508, 1); put(512, 3); put(516, 0x08801060); put(520, 352); put(524, 8); put(536, 4);
     return psprecomp::Elf32Image::from_bytes(std::move(bytes));
 }
 
@@ -156,6 +158,47 @@ int main() {
           require(false, "nonzero metadata treated as name padding"); }
     catch (const std::runtime_error &) {}
     require(memory.load8(0x08801000) == 'N', "failed padded field validation modified memory");
+
+    // V4 redirects lookup slots into a separately reserved buffer. An escaped
+    // glyph with a zero trail is preserved; source messages are never overwritten.
+    const Bytes compact_first{0x3f, 0xf0, 0x00, 0x00}; // Cross, glyph 239, terminator
+    const Bytes compact_second{0x01, 0x0a, 0x00};
+    auto dialogue_elf = string_elf(compact_first, compact_second);
+    auto dialogue_record = [&](Bytes &result, std::string_view id, std::uint32_t pointer,
+                               std::uint32_t source, const Bytes &raw, const Bytes &replacement, bool bad_hash) {
+        name(result, id); integer(result, pointer, 4); integer(result, source, 4); integer(result, raw.size(), 4);
+        text(result, bad_hash ? std::string(64, '0') : psprecomp::sha256(raw));
+        integer(result, replacement.size(), 4); result.insert(result.end(), replacement.begin(), replacement.end());
+    };
+    auto dialogue_pack = [&](bool bad_second, const Bytes &replacement = Bytes{0x9f, 0x3f, 0xf0, 0, 0}) {
+        auto result = version2(); result[7] = '4'; integer(result, 0, 4); integer(result, 0, 2); integer(result, 2, 2);
+        dialogue_record(result, "dialogue.first", 352, 256, compact_first, replacement, false);
+        dialogue_record(result, "dialogue.second", 356, 288, compact_second, Bytes{0x9f, 0}, bad_second);
+        return result;
+    };
+    dialogue_elf.load_into(memory);
+    unsigned allocations = 0;
+    auto reserve = [&](std::uint32_t size) { ++allocations; require(size < 1024, "oversized synthetic allocation"); return 0x08900000u; };
+    try { load(dialogue_pack(true)).apply_dialogue(memory, dialogue_elf, 0, reserve); require(false, "changed second dialogue source accepted"); }
+    catch (const std::runtime_error &) {}
+    require(allocations == 0 && memory.load32(0x08801060) == 0x08801000, "failed dialogue validation left a partial redirect");
+    for (const Bytes bad : {Bytes{0x9f, 0}, Bytes{0x3f, 0, 1}, Bytes{0x3f, 0xf0},
+                           Bytes{0x3f, 0xff, 0x9f, 0}, Bytes(22, 0x3f)}) {
+        try { load(dialogue_pack(false, bad)).apply_dialogue(memory, dialogue_elf, 0, reserve); require(false, "bad compact controls/grammar/layout accepted"); }
+        catch (const std::runtime_error &) {}
+    }
+    require(allocations == 0, "invalid compact payload allocated memory");
+    auto messages = load(dialogue_pack(false));
+    try { messages.apply_dialogue(memory, dialogue_elf, 0, [](auto) { return 0u; }); require(false, "failed allocation accepted"); }
+    catch (const std::runtime_error &) {}
+    try { messages.apply_dialogue(memory, dialogue_elf, 0, [](auto) { return 0x08801000u; }); require(false, "destination overlapped executable"); }
+    catch (const std::runtime_error &) {}
+    require(memory.load32(0x08801060) == 0x08801000, "allocation failure changed dialogue lookup");
+    messages.apply_dialogue(memory, dialogue_elf, 0, reserve);
+    require(messages.dialogue_count() == 2 && memory.load32(0x08801060) == 0x08900000 &&
+            memory.load32(0x08801064) == 0x08900005 && memory.load8(0x08900000) == 0x9f &&
+            memory.load8(0x08900003) == 0 && memory.load8(0x08801000) == 0x3f,
+            "dialogue redirection damaged embedded zero, original source or pointer offsets");
 
     // Complete glyph runs translate once, independent of guest addresses.
     Bytes glyph_signature;

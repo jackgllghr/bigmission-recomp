@@ -147,6 +147,21 @@ strings. CSV human edits can be imported into a separate authoring catalog;
 human terminology and gameplay layout review remain pending. See
 [`profiles/sarusaru/docs/english-v1.md`](profiles/sarusaru/docs/english-v1.md).
 
+Compact dialogue extraction now covers the verified 88-slot message table:
+71 nonempty messages / 177 pages, with blank slots preserved separately. The
+bounded glyph decoder reads the local kanji table, preserves embedded NULs,
+line/page/control markers and button identities, and round-trips all source bytes.
+The CSV handoff retains IDs and content topics while explicitly leaving speaker
+and physical level unresolved. See
+[`profiles/sarusaru/docs/dialogue-translation-handoff.md`](profiles/sarusaru/docs/dialogue-translation-handoff.md).
+English dialogue v1 now provides machine drafts for all 177 pages and compact
+runtime encoding, retaining native controller glyphs and voice/page alignment.
+Source-verified lookup slots point into one kernel-reserved guest block; original
+encoded messages remain intact. Long drafts have explicit shorter runtime wording.
+Human CSV edits can be imported without retaining obsolete short variants. See
+[`profiles/sarusaru/docs/english-dialogue-v1.md`](profiles/sarusaru/docs/english-dialogue-v1.md).
+Human context/layout/timing acceptance and movie/story coverage remain pending.
+
 ### 7. Distribution and verification
 
 Reproducible builds, synthetic public regression fixtures, real-device smoke

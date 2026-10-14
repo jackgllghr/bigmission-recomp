@@ -118,10 +118,14 @@ def render_line(run, canvas):
     canvas.alpha_composite(layer.resize((run['width'], 16), Image.Resampling.LANCZOS))
 
 
-def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None):
+def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dialogue_catalog=None):
     inputs = {iso_path.resolve(), logo_path.resolve(), catalog_path.resolve()}
     if gameplay_catalog is not None:
         inputs.add(gameplay_catalog.resolve())
+    if dialogue_catalog is not None:
+        inputs.add(dialogue_catalog.resolve())
+        if output.with_suffix('.dialogue-layout.json').resolve() in inputs:
+            raise ValueError('Dialogue layout report must not replace an input file')
     if output.resolve() in inputs:
         raise ValueError('Pack output must not replace an input file')
     from PIL import Image, ImageOps
@@ -135,6 +139,10 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None):
         if gameplay_catalog is not None:
             from translation_drafts import merge_gameplay_catalog
             catalog = merge_gameplay_catalog(boot, catalog, json.loads(gameplay_catalog.read_text(encoding='utf-8')))
+        dialogue_bytes, dialogue_count, dialogue_layout = b'', 0, []
+        if dialogue_catalog is not None:
+            from dialogue_drafts import dialogue_records
+            dialogue_bytes, dialogue_layout, dialogue_count = dialogue_records(boot, json.loads(dialogue_catalog.read_text(encoding='utf-8')))
         sources = {SOURCE_PATH: iso.file(SOURCE_PATH, 6_000_000), COMMON_SOURCE_PATH: iso.file(COMMON_SOURCE_PATH, 6_000_000)}
         members = archive_members(sources[SOURCE_PATH])
         common = archive_members(decode_lzs(sources[COMMON_SOURCE_PATH]))
@@ -155,7 +163,8 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None):
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
     regions = render_labels(catalog, images)
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
-    result = bytearray(b'SSTEXPK3' if any('capacity' in entry for entry in catalog.get('strings', [])) else b'SSTEXPK2')
+    result = bytearray(b'SSTEXPK4' if dialogue_catalog is not None else
+        b'SSTEXPK3' if any('capacity' in entry for entry in catalog.get('strings', [])) else b'SSTEXPK2')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', len(sources))
     for source_path, source in sources.items():
@@ -223,6 +232,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None):
         result += run['signature'].encode('ascii') + struct.pack('<H', run['glyph_count'])
         rgba = canvas.tobytes()
         result += struct.pack('<I', len(rgba)) + rgba
+    result += dialogue_bytes
     # Atomic replacement of this explicit output file; no ISO writes or asset extraction.
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix='.translation-', delete=False) as temporary:
@@ -234,7 +244,10 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None):
         staging.replace(output)
     finally:
         staging.unlink(missing_ok=True)
-    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines; {len(result)} bytes')
+    if dialogue_catalog is not None:
+        from extract_translation_labels import atomic_write
+        atomic_write(output.with_suffix('.dialogue-layout.json'), json.dumps(dialogue_layout, indent=2) + '\n')
+    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines, {dialogue_count} dialogue messages; {len(result)} bytes')
 
 
 def main():
@@ -243,10 +256,11 @@ def main():
     parser.add_argument('--logo', type=Path, default=ROOT / 'include/image/SaruSaruBigMission.png')
     parser.add_argument('--catalog', type=Path, default=PROFILE / 'resources/translations/english-menu.json')
     parser.add_argument('--gameplay-catalog', type=Path, help='Include contextual English gameplay label drafts')
+    parser.add_argument('--dialogue-catalog', type=Path, help='Include compact English dialogue drafts')
     parser.add_argument('--output', type=Path, default=ROOT / 'out/translations/english-menu.sstp')
     args = parser.parse_args()
     try:
-        build(args.iso, args.logo, args.catalog, args.output, args.gameplay_catalog)
+        build(args.iso, args.logo, args.catalog, args.output, args.gameplay_catalog, args.dialogue_catalog)
     except (ValueError, OSError, KeyError, ImportError, struct.error) as exc:
         parser.exit(1, f'build_menu_translation: {exc}\n')
 

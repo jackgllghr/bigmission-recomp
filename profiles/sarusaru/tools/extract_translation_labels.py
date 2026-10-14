@@ -201,20 +201,20 @@ def csv_text(rows):
     return stream.getvalue()
 
 
-def read_edits(path, originals):
+def read_edits(path, originals, fields=FIELDS, token_reader=placeholders):
     """Require exact source/context identity; only three translator fields change."""
     expected = {row['key']: row for row in originals}
     result = {}
     with path.open(encoding='utf-8-sig', newline='') as stream:
         reader = csv.DictReader(stream)
-        if reader.fieldnames != FIELDS:
+        if reader.fieldnames != fields:
             raise ValueError(f'{path.name}: CSV columns changed')
         for row in reader:
             key = row['key']
             if key not in expected or key in result or None in row or any(v is None for v in row.values()):
                 raise ValueError(f'{path.name}: unknown/duplicate key or malformed row: {key}')
             original = expected[key]
-            if any(row[field] != original[field] for field in FIELDS if field not in EDITABLE):
+            if any(row[field] != original[field] for field in fields if field not in EDITABLE):
                 raise ValueError(f'{key}: source/context changed; reconcile before re-export')
             if row['review_status'] not in STATUSES:
                 raise ValueError(f'{key}: invalid review status')
@@ -222,7 +222,7 @@ def read_edits(path, originals):
             if translation:
                 if any(unicodedata.category(c).startswith('C') and c != '\n' for c in translation):
                     raise ValueError(f'{key}: translation contains control characters')
-                if placeholders(translation) != json.loads(row['placeholders']):
+                if token_reader(translation) != json.loads(row['placeholders']):
                     raise ValueError(f'{key}: placeholders changed')
             elif row['review_status'] != 'untranslated':
                 raise ValueError(f'{key}: nonempty translation required for draft/reviewed status')

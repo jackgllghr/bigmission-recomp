@@ -29,6 +29,14 @@ An optional [English v1 pack](docs/english-v1.md) adds 193 machine-translated
 gameplay labels. These are drafts awaiting human review; it also supports
 importing the later human-edited label CSV.
 
+Dialogue extraction is available with `tools/extract_dialogue.py export`:
+71 in-game advice/dialogue messages become 177 page records, with message IDs,
+scene topics, character mentions and protected controller tokens. See the
+[dialogue handoff guide](docs/dialogue-translation-handoff.md). The optional
+[English dialogue v1 pack](docs/english-dialogue-v1.md) now applies machine drafts
+for all 177 pages through the compact-message lookup adapter. Speaker/level
+verification and human review remain pending.
+
 ## Requirements
 
 - Apple Silicon Mac and Xcode command-line tools (`xcode-select --install`).

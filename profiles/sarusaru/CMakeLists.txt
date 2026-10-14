@@ -58,7 +58,7 @@ add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cp
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_gpu PUBLIC psprecomp_core)
 
-add_library(sarusaru_translation STATIC host/translation/texture_pack.cpp host/translation/glyph_runs.cpp)
+add_library(sarusaru_translation STATIC host/translation/texture_pack.cpp host/translation/glyph_runs.cpp host/translation/dialogue.cpp)
 target_include_directories(sarusaru_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_translation PUBLIC sarusaru_gpu psprecomp_core)
 
