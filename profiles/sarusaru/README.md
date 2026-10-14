@@ -194,8 +194,9 @@ game-specific hook is installed.
 `fov_degrees` sets the vertical FOV of the gameplay camera (0 for native, about
 36.5 degrees, or 30-120). It applies only while a player-following gameplay
 camera drives the frame: in stages and in the stage hub. The title and main
-menu, 3D menus (stage select, pause), the warp tunnel, stage introductions and
-other cutscenes keep the native FOV. While it applies, every perspective
+menu, 3D menus such as stage select, the warp tunnel, stage introductions and
+other cutscenes keep the native FOV. A pause during gameplay keeps the wide
+view behind the pause menu. While it applies, every perspective
 projection is rescaled by the same factor, so zooms keep their proportion;
 orthographic and screen-space draws (the HUD, 2D menus) are unchanged. With
 frame interpolation the switch is eased over one in-between picture. The

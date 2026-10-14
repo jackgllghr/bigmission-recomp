@@ -9,7 +9,10 @@
 // the stage hub's camera run once per game frame exactly while the player is
 // in control, and not in the title, menus, the stage-select menu, the pause
 // menu, the warp tunnel or the stage introduction (docs/settings-investigation.md).
-// Both are reached through cross-unit calls, which the runtime's call hooks see.
+// The stage's pause state runs its own routine every paused frame; a pause
+// entered from gameplay keeps counting as gameplay, so the frozen scene behind
+// the pause menu keeps its view. All are reached through cross-unit calls or
+// outer dispatch, which the runtime's call hooks see.
 #include "display/display.hpp"
 #include "psprecomp/runtime.hpp"
 
@@ -22,6 +25,7 @@ public:
     // Routines of the SHA-256-verified UCJS10060 executable.
     static constexpr std::uint32_t kStageFollowCamera = 0x0888A09Cu;
     static constexpr std::uint32_t kHubCamera = 0x08809814u;
+    static constexpr std::uint32_t kStagePause = 0x08866918u;
 
     explicit GameplayCamera(const display::Display &display) : display_(display) {}
     ~GameplayCamera();

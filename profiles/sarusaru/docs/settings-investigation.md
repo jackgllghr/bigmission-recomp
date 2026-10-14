@@ -173,13 +173,17 @@ exactly while the player is in control. They stop in the stage-select and
 pause menus, and only three stray calls happen during the stage load. Both
 are reached through cross-unit calls, so the runtime's pre-chained-call and
 pre-dispatch hooks see them, at no measurable speed cost. A frame counts as
-gameplay if either ran in that game frame or the one before.
+gameplay if either ran in that game frame or the one before. The stage's
+pause state runs 0x08866918 every paused frame and in no other sampled scene,
+including title, menus, stage select, hub, tunnel, intro and gameplay. A pause
+entered while gameplay is active extends it, so the paused scene keeps the
+wide view; a pause cannot start gameplay on its own.
 
 Verification at FOV 60 against native, one capture per second over a scripted
 run: the title, main menu, load menu and loading (25-66 s), stage select
-(73-75 s), tunnel and intro (76-85 s) and pause (101-104 s) were
-pixel-identical to native. The hub (67-72 s) and stage gameplay (86-100 s,
-105 s on) were widened. Untested: other stage types and vehicles, which may
+(73-75 s) and tunnel and intro (76-85 s) were pixel-identical to native. The
+hub (67-72 s), stage gameplay (86-100 s, 105 s on) and the pause menu entered
+from it (101-104 s) were widened. Untested: other stage types and vehicles, which may
 use other follow cameras and would then stay native; mid-stage events;
 minigames.
 

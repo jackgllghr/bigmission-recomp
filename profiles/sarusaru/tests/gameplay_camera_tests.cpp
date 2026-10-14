@@ -28,8 +28,21 @@ int main() {
     next_frame();
     require(!camera.active(), "still active two frames after the camera stopped (menu or cutscene)");
 
+    // A pause does not start gameplay, but one entered from gameplay keeps it.
+    camera.on_call(GameplayCamera::kStagePause);
+    require(!camera.active(), "a pause outside gameplay counted as gameplay");
+    camera.on_call(GameplayCamera::kStageFollowCamera);
+    for (int frame = 0; frame < 10; ++frame) {
+        next_frame();
+        camera.on_call(GameplayCamera::kStagePause);
+    }
+    require(camera.active(), "pausing during gameplay dropped the gameplay camera");
+    next_frame();
+    next_frame();
+    require(!camera.active(), "still active after leaving the pause for a non-gameplay scene");
+
     camera.on_call(GameplayCamera::kHubCamera);
-    require(camera.active() && camera.gameplay_frames() == 2u, "hub camera not recognised");
+    require(camera.active() && camera.gameplay_frames() == 3u, "hub camera not recognised");
     std::cout << "gameplay camera tests passed\n";
     return 0;
 }
