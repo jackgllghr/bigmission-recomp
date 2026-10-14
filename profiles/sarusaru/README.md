@@ -227,11 +227,22 @@ is built from the catalogs and the maintainer's own disc (see the
 ### HD textures
 
 HD and 4K textures are upscaled on the player's device from their own disc;
-no game pixels are distributed. `--dump-textures DIR` writes every texture the
-game draws, once each, as PNG with an index. `[graphics] texture_pack` (or
-`--texture-pack DIR`) selects an HD pack directory: `pack.ini` plus one
-upscaled PNG per texture, matched by content. The launcher's download and
-upscaling steps are not built yet. See [`docs/hd-textures.md`](docs/hd-textures.md).
+no game pixels are distributed. **Textures** on the Graphics tab chooses
+Original, HD (4×) or 4K (8×). The first time HD or 4K is chosen, the launcher
+does three things:
+
+- It downloads the texture recipe this build was configured with
+  (`SARUSARU_TEXTURE_RECIPE_URL/SHA256/SIZE`) and the pinned Real-ESRGAN
+  upscaler.
+- It reads the listed textures from the player's disc and upscales them, with
+  colour and alpha as separate planes.
+- It writes the pack to `<user data>/textures/`.
+
+Textures the recipe can't find on the disc are collected by the game as they
+are drawn, and upscaled the next time the pack is chosen.
+`tools/build_texture_recipe.py` builds a recipe from `--dump-textures DIR`
+dumps and the maintainer's disc. `--texture-pack DIR` (or `none`) overrides
+the pack for one run. See [`docs/hd-textures.md`](docs/hd-textures.md).
 
 `SARUSARU_UI_SCRIPT` drives the launcher without a person, for checks with
 each device: keys through SDL, buttons through an SDL virtual gamepad (which

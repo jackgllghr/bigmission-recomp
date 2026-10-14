@@ -12,7 +12,7 @@ void require(bool condition, const char *message) {
     if (!condition) { std::cerr << "FAIL: " << message << '\n'; std::exit(1); }
 }
 using Camera = sarusaru::game::OrbitCamera;
-constexpr std::uint32_t object = 0x08901000u, system = 0x08900000u;
+constexpr std::uint32_t object = 0x08901000u, camera_system = 0x08900000u;
 void store(psprecomp::GuestMemory &m, unsigned offset, float value) { m.store32(object + offset, std::bit_cast<std::uint32_t>(value)); }
 float load(psprecomp::GuestMemory &m, unsigned offset) { return std::bit_cast<float>(m.load32(object + offset)); }
 void pose(psprecomp::GuestMemory &m) {
@@ -26,7 +26,7 @@ std::array<unsigned, 3> eye(psprecomp::GuestMemory &m) { return {m.load32(object
 int main() {
     psprecomp::Runtime rt;
     auto &m = rt.memory(); auto &ctx = rt.cpu();
-    m.store32(0x08A82B24u, system); m.store32(system + 20u, object);
+    m.store32(0x08A82B24u, camera_system); m.store32(camera_system + 20u, object);
     m.store32(object + 0xFCu, 1u); m.store32(object + 0x228u, 0u);
     ctx.set_gpr(4u, object); ctx.set_gpr(31u, Camera::kStageViewReturn);
     const auto update = [&](Camera &camera, unsigned time) { pose(m); camera.on_call(Camera::kBuildView, m, ctx, time); };

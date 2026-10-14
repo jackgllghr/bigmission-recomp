@@ -79,9 +79,15 @@ is distributed, never game pixels. Notes: `profiles/sarusaru/docs/hd-textures.md
 - [x] Texture dump mode (`--dump-textures DIR`): PNG per identity plus `textures.tsv`.
 - [x] HD pack directory (`pack.ini` + `<hash>.png`), lazily decoded and
       uploaded at scale; `[graphics] texture_pack` / `--texture-pack`.
-- [ ] Recipe format and authoring tool; locating textures on the disc.
-- [ ] Launcher: Textures setting, recipe and pinned upscaler download,
-      on-device upscaling with progress and cancellation.
+- [x] Recipe format (`texture`/`scan`/`skip`, per-texture model, scale, alpha,
+      edge) and `tools/build_texture_recipe.py`; textures located on the disc
+      as TIM2 pictures in .lzs files and PAC archives (17 of the first 55),
+      the rest collected by the game while playing.
+- [x] Launcher: Textures setting (Original / HD 4× / 4K 8×), recipe and pinned
+      Real-ESRGAN download, on-device upscaling with progress and cancellation;
+      verified on macOS.
+- [ ] Publish a first recipe from a full play-through; try the Windows and
+      Linux download and unpacking paths.
 - [ ] Off-thread image decoding, CPU cache across eviction, BC7 for 8x.
 
 ### 5. Shared launcher and in-game UI

@@ -107,6 +107,16 @@ licences in that file).
 The game module itself is never distributed: each player's launcher builds it
 from their own disc on their own machine.
 
+## Real-ESRGAN ncnn-vulkan (HD textures; downloaded by the launcher, not in the repository or packages)
+
+[Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) ncnn-vulkan 20220424
+(release v0.2.5.0, BSD-3-Clause; built on [ncnn](https://github.com/Tencent/ncnn),
+BSD-3-Clause), pinned per platform with its SHA-256 in
+`host/install/texture_build.cpp`. When a player chooses HD textures, their
+launcher downloads it into the per-user data directory and runs it,
+unmodified, with its bundled models, on textures read from the player's own
+disc (docs/hd-textures.md).
+
 ## tiny-AES-c (Unlicense)
 
 `third_party/tiny_aes/aes.c` and `aes.h` are unmodified copies of
