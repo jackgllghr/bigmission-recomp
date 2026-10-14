@@ -41,6 +41,10 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_include_directories(sarusaru_ge_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_ge_tests PRIVATE psprecomp_core)
     add_test(NAME sarusaru_ge_tests COMMAND sarusaru_ge_tests)
+    add_executable(sarusaru_io_tests tests/io_tests.cpp host/io/io_manager.cpp host/umd/disc_image.cpp)
+    target_include_directories(sarusaru_io_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+    target_link_libraries(sarusaru_io_tests PRIVATE psprecomp_core)
+    add_test(NAME sarusaru_io_tests COMMAND sarusaru_io_tests)
 endif()
 
 option(SARUSARU_BUILD_BOOTSTRAP "Build the diagnostic host with locally generated AOT code" OFF)
@@ -65,7 +69,7 @@ if(SARUSARU_BUILD_BOOTSTRAP)
 
     add_executable(sarusaru_bootstrap host/bootstrap.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
         host/kernel/sync.cpp host/kernel/interrupts.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp host/ctrl/controller.cpp
-        host/display/display.cpp host/ge/ge.cpp)
+        host/display/display.cpp host/ge/ge.cpp host/io/io_manager.cpp)
     target_include_directories(sarusaru_bootstrap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_aot)
     set_target_properties(sarusaru_bootstrap PROPERTIES

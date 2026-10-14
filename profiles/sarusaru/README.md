@@ -91,12 +91,13 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   the public PSPSDK stubs) and UMD callback registration are modeled. Startup
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
-  lists, then stops at `IoFileMgrForUser::sceIoOpenAsync` (`0x89AA9906`).
-  `SARUSARU_TRACE_SCHED=1` logs every thread switch to stderr.
+  lists, opens `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
+  `sceRtc::sceRtcGetCurrentClockLocalTime`. `SARUSARU_TRACE_SCHED=1` logs
+  every thread switch and `SARUSARU_TRACE_IO=1` every file operation.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All thirteen CTest suites pass, including 17 ISO/preparation cases and seven
+- All fourteen CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -171,6 +172,14 @@ The pinned upstream is recorded in `config/supported_game.json`.
   until its handler returns. Every other command's latest value is kept as GE
   state. Nothing is rasterised; bounding-box tests count as visible. Other
   signal behaviours, a bare END and runaway lists stop execution.
+- Added `IoFileMgrForUser` file I/O (`io/io_manager.cpp`) over the disc
+  image: open/read/seek/close, stat (`st_private[0]` holds the start sector),
+  directory listing with `.` and `..`, `sce_lbn0x<sector>_size0x<bytes>`
+  extents, and the async open/read/close with wait/poll. Async operations
+  complete when issued; a failed async open still returns a descriptor
+  carrying the error. Writes to stdout/stderr go to the host log. Write
+  access to the disc is refused; other devices and relative paths stop
+  execution. Disc timestamps are not yet reported.
 - Mapped the PSP's 16 KiB scratchpad RAM (`0x00010000`) in the framework's
   `GuestMemory`, which previously faulted on it. Accesses use the checked
   slow paths; the main-RAM fast path is unchanged.

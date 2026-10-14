@@ -3,6 +3,7 @@
 #include "ctrl/controller.hpp"
 #include "display/display.hpp"
 #include "ge/ge.hpp"
+#include "io/io_manager.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
 #include "kernel/sync.hpp"
@@ -104,6 +105,8 @@ int main(int argc, char **argv) {
         sarusaru::kernel::register_interrupts(interrupts, runtime);
         sarusaru::umd::UmdDrive umd_drive(disc);
         sarusaru::umd::register_umd(umd_drive, runtime);
+        sarusaru::io::IoManager io(disc, runtime);
+        sarusaru::io::register_io(io, runtime);
         sarusaru::ctrl::Controller controller;
         sarusaru::ctrl::register_ctrl(controller, early_kernel, runtime);
         sarusaru::display::Display display;

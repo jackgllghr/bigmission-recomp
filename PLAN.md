@@ -124,9 +124,10 @@ networking (`sceNet*`, 21 in total).
        Drawing commands are recorded, not rendered.
 6. [ ] Thread callbacks: notify UMD/power/exit callbacks and run them on
        their thread from `*CB` waits and `sceKernelCheckCallback`.
-7. [ ] File I/O: `IoFileMgrForUser` over `disc0:`/`umd0:` (read-only, backed
-       by `DiscImage`) including async I/O and directory listing; `ms0:` backed
-       by a per-user host directory with path confinement. Stdio output.
+7. [~] File I/O: done for `disc0:` paths and `sce_lbn` extents (read-only,
+       backed by `DiscImage`), async I/O, stat, directory listing and stdio.
+       Still to come when reached: `ms0:` on a per-user host directory with
+       path confinement, `umd0:` raw access, Devctl/Ioctl, relative paths.
 8. [ ] Modules and overlays: `ModuleMgrForUser` load/start of on-disc modules.
        Establish which modules and code overlays load at runtime, decide
        AOT vs. HLE for each, and measure generated-code coverage.
