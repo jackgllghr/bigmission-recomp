@@ -96,6 +96,9 @@ Japanese fallback, formatting/placeholder validation, glyph support and layout
 checks. Support text-bearing texture replacements where necessary. Never assume
 Monster Hunter's formats apply. Infrastructure is not a completed translation.
 
+Investigation and English-first delivery plan:
+[`profiles/sarusaru/docs/translation-investigation.md`](profiles/sarusaru/docs/translation-investigation.md).
+
 ### 7. Distribution and verification
 
 Reproducible builds, synthetic public regression fixtures, real-device smoke
