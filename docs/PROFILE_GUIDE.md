@@ -33,7 +33,7 @@ Build the framework tools and run `psp_analyze` against the local executable. Ke
 
 Use the root `psp_recomp` when ordinary PSPRecomp lowering is sufficient. If a title needs verified, address-specific lowering, keep that code in a profile tool rather than hardcoding the address in `tools/codegen_main.cpp` or `src/runtime.cpp`.
 
-The VCS profile demonstrates this split with its own `vcs_recomp` target while the root `psp_recomp` remains game-neutral.
+The SaruSaru profile keeps its game-specific choices (identity, HLE, renderer hooks) under `profiles/sarusaru` while using the game-neutral root `psp_recomp`.
 
 ## 4. Implement the host profile
 

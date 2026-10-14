@@ -7,10 +7,17 @@ with the aim of making the game available on Windows, macOS, Linux, and Android
 with improved performance and configurability, and providing a foundation for
 translating the game.
 
-The project currently runs on macOS arm64, with Linux and Windows builds being
-brought up, and is
-**not playable yet**. See the
-[project plan](PLAN.md) and [profile instructions](profiles/sarusaru/README.md).
+**Status: early, not yet verified playable end to end.** On macOS arm64 the
+game boots, renders and plays sound in a window through the title screen, the
+attract demo, the save menu and the stage hub, with 60 FPS frame interpolation,
+an adjustable FOV and a launcher in English and Japanese. Linux arm64 installs
+and runs the game; Windows x64 and Linux x64 build in CI but have not yet been
+played. See the [project plan](PLAN.md) and the
+[profile instructions](profiles/sarusaru/README.md).
+
+Releases contain only the launcher: the first time you press **Play**, it
+builds the game on your machine from your own disc. No game files or game code
+are distributed.
 
 ## Roadmap
 
@@ -35,7 +42,8 @@ The project is built on PSPRecomp. The upstream framework documentation follows 
 
 PSPRecomp is a static recompilation framework for PSP software. It reads an Allegrex/MIPS executable, analyzes guest code, emits C++ translation units, and runs them through a native host runtime instead of shipping a PSP interpreter or JIT.
 
-The repository is split between a reusable framework and game-specific profiles. The first working profile is GTA: Vice City Stories (`profiles/vcs`).
+The repository is split between the reusable framework and the game-specific
+SaruSaru profile (`profiles/sarusaru`).
 
 ## Repository layout
 
@@ -46,16 +54,19 @@ tools/               Generic analyzer, recompiler and reverse-engineering helper
 tests/               Framework regression tests
 configs/             Generic examples and PSP NID data
 profiles/            Game-specific hosts, generated code, configuration and tests
-  vcs/               GTA: Vice City Stories profile
+  sarusaru/          Saru Get You: Saru Saru Daisakusen profile
 ```
 
 Game-specific addresses, HLE behavior, native fast paths, renderer integration and generated AOT code belong under a profile. The framework should remain usable without any profile selected.
 
 ## Requirements
 
-- CMake 3.20 or newer
-- A C++20 compiler
-- Visual Studio 2022 for the current Windows/DX12 VCS build
+- CMake 3.20 or newer and Ninja
+- A C++20 compiler (Apple clang, GCC 13, Clang 17 or Visual Studio 2022)
+- Python 3.10 or newer for the profile's scripts
+
+See the [profile requirements](profiles/sarusaru/README.md#requirements) for
+each host's packages.
 
 ## Build the framework only
 
@@ -72,11 +83,17 @@ This builds `psprecomp_core`, `psp_analyze`, `psp_recomp`, `dump_function` and t
 Profiles are selected with `PSPRECOMP_PROFILE`:
 
 ```bash
-cmake -S . -B out/vcs -DPSPRECOMP_PROFILE=vcs
-cmake --build out/vcs --config Release
+cmake -S . -B out/sarusaru -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_GAME_MODULE=OFF
+cmake --build out/sarusaru
 ```
 
-Windows users working on the VCS profile can use the maintained scripts in `profiles/vcs/scripts`.
+This builds the launcher and tests without game files. To build and play the
+game from your own disc, use the profile's scripts:
+
+```bash
+python3 profiles/sarusaru/scripts/build_and_run.py --iso '/path/to/game.iso'
+```
 
 ## Create another profile
 
@@ -92,7 +109,7 @@ See [`docs/SOURCE_PROVENANCE.md`](docs/SOURCE_PROVENANCE.md) for the project rul
 
 ## Third-party code
 
-The framework is MIT licensed. Individual profiles may include separately licensed dependencies or assets; their notices stay beside those files. The VCS profile lists its bundled dependencies in `profiles/vcs/THIRD_PARTY.md`.
+The framework is MIT licensed. Individual profiles may include separately licensed dependencies or assets; their notices stay beside those files. The SaruSaru profile lists its bundled dependencies in `profiles/sarusaru/THIRD_PARTY.md`.
 
 ## License
 

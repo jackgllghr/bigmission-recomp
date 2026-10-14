@@ -37,9 +37,9 @@ if(NOT PSPRECOMP_MSVC_CGTHREADS MATCHES "^[0-9]+$")
 endif()
 
 # Bare /MP lets cl.exe spawn one front-end per logical core, and MSBuild /m
-# multiplies that by the number of projects it builds in parallel.  On the VCS
-# profile each generated AOT unit costs well over a gigabyte at /Ox /Ob3, so the
-# unbounded product exhausts physical memory.  Cap the per-cl.exe degree here and
+# multiplies that by the number of projects it builds in parallel.  A large
+# generated AOT unit can cost well over a gigabyte at /Ox /Ob3, so the unbounded
+# product exhausts physical memory.  Cap the per-cl.exe degree here and
 # let the build scripts pick a memory-aware value.
 set(PSPRECOMP_MSVC_MP_JOBS "0" CACHE STRING
     "Max cl.exe front-ends (0 = logical-core default, 1 = disable /MP)")

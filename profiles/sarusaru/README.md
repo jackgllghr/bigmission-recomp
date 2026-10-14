@@ -4,10 +4,11 @@ Native recompilation work for **Saru! Get You! SaruSaru Daisakusen** (Japan),
 disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 
 **Early build: on macOS arm64 the game boots, renders and plays sound in a
-window, but is not verified playable end to end. Linux (x86-64, arm64) and
-Windows x86-64 builds are being brought up: on Linux arm64 the launcher
-installs the game and it starts; Windows is cross-compiled and its game module
-built, but neither Windows nor Linux x86-64 has been run yet.** The port is
+window, but is not verified playable end to end. CI builds and tests the
+launcher on Windows x86-64, Linux x86-64 and arm64, and macOS arm64. On Linux
+arm64 the launcher installs the game and it starts; Windows is cross-compiled
+with llvm-mingw and its game module builds, but neither Windows nor Linux
+x86-64 has been played yet, and no release has been published.** The port is
 distributed as a launcher that builds the game on the player's own machine
 from their own disc (see [Releases](#releases-and-installing-the-game)). File-based settings and
 keyboard/gamepad rebinding are available, as are 60 FPS frame interpolation at
@@ -31,7 +32,9 @@ The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
     system (`docker build -t sarusaru-linux -f profiles/sarusaru/scripts/linux.Dockerfile .`).
     A Vulkan driver is needed to play.
   - **Windows x86-64**: Visual Studio 2022 with the C++ workload, run from its
-    *x64 Native Tools Command Prompt* (which provides `cl`, `cmake` and `ninja`).
+    *x64 Native Tools Command Prompt* (which provides `cl`, `cmake` and `ninja`),
+    for development builds. A launcher that can install the game is built
+    with llvm-mingw instead (see [Releases](#releases-and-installing-the-game)).
 - Your own legally obtained compatible ISO. Its name does not matter.
 
 No commercial game files or generated game code are included. The profile uses
@@ -415,7 +418,7 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   the public PSPSDK stubs) and UMD callback registration are modeled. Startup
   passes `sceUmdUser` drive activation, controller, display, thread and
   synchronization setup, starts five game threads, submits its first GE display
-  lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then stops at
+  lists, reads `disc0:/PSP_GAME/USRDIR/data/common.lzs`, then
   initialises its sound system, auto-loads its save (none on a fresh memory
   stick), streams its first ATRAC3plus music track and draws for 57 s of
   guest time (1,719 GE lists), loads its media modules and loops its
@@ -428,7 +431,7 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All twenty-six CTest suites pass, including 17 ISO/preparation cases and seven
+- All thirty-four CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -593,8 +596,8 @@ The pinned upstream is recorded in `config/supported_game.json`.
   pattern, with their timestamps, written to the caller's ID list. The game
   lists `0*` in play and retried every frame while the mode was missing.
 - The game's `stdout`/`stderr` is converted from Shift-JIS to UTF-8
-  (`text/shift_jis.*`, through iconv where available; otherwise non-ASCII
-  bytes print as `\xNN`).
+  (`text/shift_jis.*`, through iconv, or code page 932 on Windows; bytes
+  that are not valid Shift-JIS print as `\xNN`).
 - Added scripted controller input for unattended runs: timed pad states
   that controller samples follow at their own virtual timestamps.
 - `sceKernelUnloadModule` returns the module ID on success, as on the PSP;
@@ -661,9 +664,13 @@ These are game-neutral fixes; game identity and bootstrap choices stay here.
 The acceptance run with real input (new game, a level, save and reload),
 then writing GPU results back to guest memory, the GE registers GeState does
 not model yet, the rest of the launcher (save management, an in-game menu, Android
-document picking) and translation. See
+document picking) and translation. For releases: the first run of the release
+workflow, installing and playing on Windows and Linux x86-64, macOS signing and
+notarisation, and a Windows build without a console window. See
 [`../../PLAN.md`](../../PLAN.md) and [`YAKUMO_REUSE.md`](YAKUMO_REUSE.md).
 
-The desired prebuilt release model still requires review of distribution of
-translated game code. No permission to redistribute the original game is
-granted by this project's software licence.
+Releases hold the launcher only; the game module is built by each player from
+their own disc and never distributed. The public release policy for those
+packages is still to be decided before the first release is published. No
+permission to redistribute the original game is granted by this project's
+software licence.

@@ -18,7 +18,7 @@ A profile owns its generated AOT corpus, address-specific lowering, HLE behavior
 
 ## Third-party components
 
-Third-party source, binary dependencies, shader code and notices stay beside the profile that needs them. Their original copyright and license notices must be preserved. The VCS profile summarizes its bundled components in `profiles/vcs/THIRD_PARTY.md`.
+Third-party source, binary dependencies, shader code and notices stay beside the profile that needs them. Their original copyright and license notices must be preserved. The SaruSaru profile summarizes its bundled components in `profiles/sarusaru/THIRD_PARTY.md`.
 
 ## Contribution rule
 

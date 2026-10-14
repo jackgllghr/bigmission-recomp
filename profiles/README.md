@@ -8,4 +8,4 @@ A profile is selected at configure time:
 cmake -S . -B out/<profile> -DPSPRECOMP_PROFILE=<profile>
 ```
 
-The current repository includes `vcs`. See `docs/PROFILE_GUIDE.md` before adding another title.
+The current repository includes `sarusaru` (see [`sarusaru/README.md`](sarusaru/README.md)). See `docs/PROFILE_GUIDE.md` before adding another title.
