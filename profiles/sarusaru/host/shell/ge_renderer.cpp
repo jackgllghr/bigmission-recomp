@@ -209,13 +209,17 @@ void GeRenderer::destroy() {
     const auto device = vk_.device;
     if (device == VK_NULL_HANDLE) return;
     vk_.vkDeviceWaitIdle(device);
-    for (auto &[address, target] : targets_) {
-        (void)address;
-        vk_.vkDestroyFramebuffer(device, target->framebuffer, nullptr);
-        vk_.destroy_image(target->color);
-        vk_.destroy_image(target->depth);
+    for (auto &layer : targets_) {
+        for (auto &[address, target] : layer) {
+            (void)address;
+            vk_.vkDestroyFramebuffer(device, target->framebuffer, nullptr);
+            vk_.destroy_image(target->color);
+            vk_.destroy_image(target->depth);
+        }
+        layer.clear();
     }
-    targets_.clear();
+    queued_.clear();
+    queued_count_ = 0u;
     for (auto &[key, texture] : textures_) {
         (void)key;
         vk_.destroy_image(texture.image);
@@ -286,9 +290,9 @@ VkDeviceSize GeRenderer::reserve(Buffer &buffer, VkDeviceSize &cursor, VkDeviceS
     return offset;
 }
 
-GeRenderer::Target *GeRenderer::target(std::uint32_t address) {
+GeRenderer::Target *GeRenderer::target(std::size_t layer, std::uint32_t address) {
     const std::uint32_t key = canonical(address);
-    if (const auto found = targets_.find(key); found != targets_.end()) return found->second.get();
+    if (const auto found = targets_[layer].find(key); found != targets_[layer].end()) return found->second.get();
     end_pass();
     auto target = std::make_unique<Target>();
     target->address = key;
@@ -327,7 +331,7 @@ GeRenderer::Target *GeRenderer::target(std::uint32_t address) {
     vk_.transition(commands_, target->depth.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     Target *raw = target.get();
-    targets_.emplace(key, std::move(target));
+    targets_[layer].emplace(key, std::move(target));
     return raw;
 }
 
@@ -390,19 +394,10 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     u_scale = v_scale = 1.0f;
     if (texture.width == 0u || texture.height == 0u) return VK_NULL_HANDLE;
     // Render to texture: sample the GPU target drawn at that address.
-    if (const auto found = targets_.find(canonical(texture.address)); found != targets_.end() &&
-        found->first != canonical(call.target.color_address)) {
-        Target &source = *found->second;
-        if (source.color_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            end_pass();
-            vk_.transition(commands_, source.color.image, VK_IMAGE_ASPECT_COLOR_BIT, source.color_layout,
-                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            source.color_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        }
-        u_scale = static_cast<float>(texture.width) / kTargetWidth;
-        v_scale = static_cast<float>(texture.height) / kTargetHeight;
-        return source.color.view;
-    }
+    const auto &game = targets_[kGame];
+    if (const auto found = game.find(canonical(texture.address)); found != game.end() &&
+        found->first != canonical(call.target.color_address))
+        return sample_target(*found->second, texture, u_scale, v_scale);
     const std::uint64_t key = gpu::texture_key(memory, texture);
     if (const auto found = textures_.find(key); found != textures_.end()) {
         found->second.last_frame = frame_;
@@ -420,6 +415,18 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     const VkImageView view = entry.image.view;
     textures_.emplace(key, std::move(entry));
     return view;
+}
+
+VkImageView GeRenderer::sample_target(Target &source, const gpu::TextureState &texture, float &u_scale, float &v_scale) {
+    if (source.color_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        end_pass();
+        vk_.transition(commands_, source.color.image, VK_IMAGE_ASPECT_COLOR_BIT, source.color_layout,
+                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        source.color_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+    u_scale = static_cast<float>(texture.width) / kTargetWidth;
+    v_scale = static_cast<float>(texture.height) / kTargetHeight;
+    return source.color.view;
 }
 
 VkDescriptorSet GeRenderer::texture_set(VkImageView view, VkSampler sampler) {
@@ -512,7 +519,36 @@ VkPipeline GeRenderer::pipeline(const PipelineKey &key) {
 }
 
 void GeRenderer::draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call) {
-    if (trace_) {
+    draw_into(kGame, &memory, call, nullptr);
+}
+
+void GeRenderer::queue_interpolated(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call) {
+    if (call.vertices.empty() || call.primitive == gpu::PrimitiveType::Points) return;
+    if (queued_count_ == queued_.size()) queued_.emplace_back();
+    QueuedDraw &queued = queued_[queued_count_++];
+    queued.call = call;
+    queued.texture = {};
+    if (!call.texture.enabled || call.clear_mode || call.texture.width == 0u || call.texture.height == 0u) return;
+    const auto &game = targets_[kGame];
+    if (const auto found = game.find(canonical(call.texture.address)); found != game.end() &&
+        found->first != canonical(call.target.color_address)) {
+        queued.texture.render_target = true;
+        return;
+    }
+    // The game's own draw has just looked this texture up, so this finds it
+    // in the cache: it is the texture as guest memory holds it now.
+    queued.texture.view = texture_view(memory, call, queued.texture.u_scale, queued.texture.v_scale);
+}
+
+void GeRenderer::draw_interpolated() {
+    for (std::size_t i = 0; i < queued_count_; ++i) draw_into(kInterpolated, nullptr, queued_[i].call, &queued_[i].texture);
+    queued_count_ = 0u;
+}
+
+void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memory, const gpu::DrawCall &call,
+                           const QueuedTexture *queued) {
+    if (trace_ && memory != nullptr) {
+        const auto &memory_ref = *memory;
         const auto &v = call.viewport;
         std::fprintf(stderr,
             "draw prim=%u n=%zu idx=%zu through=%d target=%08x tex=%d %08x %ux%u fmt=%u tfx=%u tcc=%d clear=%d/%u "
@@ -529,7 +565,7 @@ void GeRenderer::draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall 
             v.scissor_y1, v.scissor_x2, v.scissor_y2, call.command_address);
         const auto &t = call.texture;
         std::vector<std::uint32_t> texels;
-        const bool decoded = t.enabled && gpu::decode_texture(memory, t, texels);
+        const bool decoded = t.enabled && gpu::decode_texture(memory_ref, t, texels);
         std::uint64_t opaque = 0u, black = 0u;
         for (const auto texel : texels) {
             opaque += (texel >> 24u) != 0u;
@@ -551,14 +587,31 @@ void GeRenderer::draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall 
         }
     }
     if (call.vertices.empty() || call.primitive == gpu::PrimitiveType::Points) return;
-    Target *target = this->target(call.target.color_address);
+    Target *target = this->target(layer, call.target.color_address);
     if (target == nullptr) return;
     const float scale = static_cast<float>(scale_);
 
     // Texture first: uploading may end the pass or flush the frame.
     const bool textured = call.texture.enabled && !call.clear_mode;
     float u_scale = 1.0f, v_scale = 1.0f;
-    VkImageView view = textured ? texture_view(memory, call, u_scale, v_scale) : VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    if (textured && queued == nullptr) {
+        view = texture_view(*memory, call, u_scale, v_scale);
+    } else if (textured && queued->render_target) {
+        // The in-between picture samples in-between render targets; the
+        // game's own is the fallback for one only the game has drawn yet.
+        const std::uint32_t address = canonical(call.texture.address);
+        Target *source = nullptr;
+        if (address == canonical(call.target.color_address)) return;
+        for (const std::size_t from : {layer, std::size_t{kGame}})
+            if (const auto found = targets_[from].find(address); source == nullptr && found != targets_[from].end())
+                source = found->second.get();
+        if (source != nullptr) view = sample_target(*source, call.texture, u_scale, v_scale);
+    } else if (textured) {
+        view = queued->view;
+        u_scale = queued->u_scale;
+        v_scale = queued->v_scale;
+    }
     const bool sampling = view != VK_NULL_HANDLE;
     if (!sampling) view = white_.view;
     const VkSampler texture_sampler = sampler(call.texture);
@@ -789,10 +842,12 @@ void GeRenderer::draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall 
 }
 
 const Image *GeRenderer::presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,
-                                     std::uint32_t &width, std::uint32_t &height) {
+                                     std::uint32_t &width, std::uint32_t &height, bool interpolated) {
     end_pass();
     if (framebuffer.address == 0u) return nullptr;
-    if (const auto found = targets_.find(canonical(framebuffer.address)); found != targets_.end()) {
+    auto *layer = &targets_[kGame];
+    if (interpolated && targets_[kInterpolated].contains(canonical(framebuffer.address))) layer = &targets_[kInterpolated];
+    if (const auto found = layer->find(canonical(framebuffer.address)); found != layer->end()) {
         Target &target = *found->second;
         vk_.transition(commands_, target.color.image, VK_IMAGE_ASPECT_COLOR_BIT, target.color_layout,
                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);

@@ -71,6 +71,8 @@ int main() {
             "GetFrameBuf output incorrect");
     call(runtime, 0x984C27E7u, 0x08804E00u);
     require(display.framebuffer(1u, kernel.now_us()).address == edram + 0x88000u, "framebuffer not latched at vblank");
+    require(display.framebuffer_requests() == 2u && display.framebuffer_latches(kernel.now_us()) == 2u,
+            "framebuffer requests or latches miscounted");
 
     const auto bad = [&](std::uint32_t address, std::uint32_t width, std::uint32_t format, std::uint32_t sync) {
         return static_cast<std::uint32_t>(display.set_framebuffer({address, width, format}, sync, kernel.now_us(), runtime.memory()));

@@ -34,11 +34,19 @@ struct ControlSettings {
 };
 struct Settings {
     std::uint32_t internal_resolution{2};
+    // The window's size at startup, in points (it stays resizable), and
+    // whether it opens fullscreen at the desktop's resolution instead.
+    std::uint32_t window_width{960};
+    std::uint32_t window_height{544};
+    bool fullscreen{false};
     // Presentation cap, 0 = every PSP vblank. Guest timing stays 60000/1001 Hz.
     std::uint32_t frame_rate{0};
     // Native game cadence override: 0, 15, 20, 30 or 60. Changes fixed-step game speed.
     std::uint32_t experimental_game_frame_rate{0};
-    // 0 = native; reserved until gameplay camera/cutscene discrimination is verified.
+    // Draws an in-between picture for each native game frame and presents
+    // both: 60 FPS motion at the original game speed, one vblank later.
+    bool frame_interpolation{false};
+    // 0 = native; otherwise the 3D camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
     ControlSettings controls;
     bool operator==(const Settings &) const = default;

@@ -32,6 +32,13 @@ public:
                                                std::uint64_t now_us, const psprecomp::GuestMemory &memory);
     // The framebuffer being scanned out (sync 1) or the most recently requested one (sync 0).
     [[nodiscard]] Framebuffer framebuffer(std::uint32_t sync, std::uint64_t now_us);
+    // Count accepted framebuffer requests (each one ends a game frame) and
+    // framebuffers scanned out (each one a picture the player sees change).
+    [[nodiscard]] std::uint64_t framebuffer_requests() const noexcept { return requests_; }
+    [[nodiscard]] std::uint64_t framebuffer_latches(std::uint64_t now_us) noexcept {
+        apply_pending(now_us);
+        return latches_;
+    }
 
     [[nodiscard]] static std::uint32_t vcount(std::uint64_t now_us) noexcept;
     [[nodiscard]] static bool in_vblank(std::uint64_t now_us) noexcept;
@@ -49,6 +56,8 @@ private:
     Framebuffer latched_;
     Framebuffer requested_;
     std::optional<std::uint64_t> latch_at_vblank_;
+    std::uint64_t requests_{};
+    std::uint64_t latches_{};
 
     void apply_pending(std::uint64_t now_us) noexcept;
 };

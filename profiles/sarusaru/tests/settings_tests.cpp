@@ -27,16 +27,19 @@ int main() {
     require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
     require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
     const auto custom = parse_settings(
-        "[graphics]\r\ninternal_resolution = 4\r\nframe_rate = 30\nexperimental_game_frame_rate = 60\nfov_degrees = 75\n"
+        "[graphics]\r\ninternal_resolution = 4\r\nwindow_width = 1920\nwindow_height = 1080\nfullscreen = 1\nframe_rate = 30\nexperimental_game_frame_rate = 60\nframe_interpolation = 1\nfov_degrees = 75\n"
         "[input]\ndead_zone = 0.3\n[keyboard]\ncircle = C, V\nquit = none\nfast_forward = F\n"
         "[gamepad]\nanalog_left = axis:rightx+\nanalog_right = axis:rightx-\nl = axis:righttrigger+\n");
-    require(custom.internal_resolution == 4 && custom.frame_rate == 30 && custom.fov_degrees == 75 && custom.experimental_game_frame_rate == 60,
+    require(custom.internal_resolution == 4 && custom.frame_rate == 30 && custom.fov_degrees == 75 && custom.experimental_game_frame_rate == 60 &&
+                custom.frame_interpolation && custom.window_width == 1920 && custom.window_height == 1080 &&
+                custom.fullscreen,
             "graphics settings not parsed");
     require(parse_settings(serialize_settings(custom)) == custom, "custom bindings do not round-trip");
     for (const auto text : {
         "[graphics]\ninternal_resolution = 0", "[graphics]\nframe_rate = 61",
         "[graphics]\nexperimental_game_frame_rate = 24", "[graphics]\nexperimental_game_frame_rate = 120",
-        "[graphics]\nframe_rate = 30junk", "[graphics]\nfov_degrees = 10",
+        "[graphics]\nframe_rate = 30junk", "[graphics]\nframe_interpolation = 2", "[graphics]\nwindow_width = 100",
+        "[graphics]\nwindow_height = 99999", "[graphics]\nfullscreen = yes", "[graphics]\nfov_degrees = 10",
         "[graphics]\nfov_degrees = nan", "[graphics]\nframe_rate = 30\nframe_rate = 60",
         "[input]\ndead_zone = 1", "[input]\ndead_zone = -0.1", "[input]\nunknown = 1",
         "[keyboard]\ncircle = NotAKey", "[keyboard]\nunknown = C", "[keyboard]\ncircle = C,",

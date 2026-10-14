@@ -6,8 +6,10 @@ The windowed shell loads a validated per-user INI file before starting SDL or
 the game. Internal resolution, keyboard/gamepad bindings, axis dead zone and
 presentation rate are applied at startup. An opt-in experimental game cadence
 override is also available; fixed-step gameplay is not compensated. `--scale` is a transient override.
-The file also retains a FOV preference, with an explicit warning that nonzero
-values have no effect yet. The in-game editor belongs to the launcher work.
+Frame interpolation gives 60 FPS motion at the native game speed, a FOV
+override rescales the game's perspective projections, and the window's startup
+size and fullscreen are configurable. The in-game editor belongs to the
+launcher work.
 
 `PresentationClock` selects swapchain presentations on the unchanged guest
 clock. Every vblank still polls input, submits the GE's render work and handles
@@ -85,6 +87,42 @@ Before offering timing-correct higher simulation rates:
 4. Check audio, movies, menus, saves and cutscenes at both rates. If simulation
    cannot be raised independently, investigate interpolation separately.
 
+### Frame interpolation (implemented)
+
+Compensating the cadence override inside the game is not practical: besides
+the FPS-aware counters, movement, animation and frame-counted script waits all
+step by a fixed amount per game frame. Interpolation leaves the game at its
+native cadence instead and works on the GE's draw calls only
+(`gpu/frame_interpolator.*`, `shell/ge_renderer.*`).
+
+- A game frame ends at each accepted `sceDisplaySetFrameBuf`. A headless probe
+  (`progress/interp_probe.cpp`, ignored) found no draws between a request and
+  its latch over 200 s, so this boundary splits frames cleanly.
+- Draws pair by vertex address, index address, vertex type, primitive, count
+  and texture, falling back to the same key without addresses for buffers the
+  game rebuilds each frame. The render target is excluded, since the game
+  alternates two display buffers (0x04000000, 0x04088000). Instances of one mesh pair
+  with the nearest previous instance, compared in view space. Over 200 s of title,
+  menu and hub with scripted input, 99.3% of draws matched. About six per
+  frame were unmatched, and a few per second snapped.
+- Matrices, CPU-transformed vertices, normals, colours and texture offsets are
+  blended. Texture coordinates are not, because they select animation cells. A draw
+  whose anchor moves more than 35% of its view depth (64 pixels for
+  screen-space draws), or any vertex that jumps that far, is drawn unblended.
+- The renderer draws the blended copies into a second set of render targets.
+  Textures are resolved when a draw is queued, and render-to-texture reads the
+  second set. The queue is replayed at the next vblank.
+- At the vblank where a new framebuffer latches, the in-between picture is
+  presented, but only if the previous frame lasted two or more vblanks. The real
+  frame follows one vblank later.
+
+Verification with the windowed shell, capturing every vblank: on the title
+logo and while walking in the stage hub, frame-to-frame differences that
+alternate 0 / X natively became X/2, X/2. Each real frame was pixel-identical
+to the native capture one vblank earlier, which confirms that game timing is
+unchanged. The title movie is a 30 FPS video sprite and stays as it is.
+Not yet checked: stages with many particles, cutscenes, and the save dialog.
+
 ### Projection and FOV
 
 The draw sink recorded non-through, non-clear projections in five-second
@@ -105,7 +143,14 @@ Its coefficient alone therefore cannot establish that a draw is gameplay.
 A blanket perspective-matrix override would change other 3D scenes too and
 would leave guest camera culling unaware of a wider view.
 
-Before activating FOV:
+Implemented (`gpu/fov.*`): `fov_degrees` scales the x and y terms of every
+perspective projection (clip w taken from z, no constant w) by
+`tan(36.5/2) / tan(fov/2)`, through GeState's view hook, before the renderer
+and the interpolator see the draw. Orthographic and through-mode draws are
+untouched. This is projection-level, not camera-level. Menus and cutscenes
+with 3D cameras widen too, and the game's culling does not know about the wider
+view. In the stage hub at 60 degrees no missing geometry was visible at the
+edges. A camera-level hook remains the refinement:
 
 1. Trace the producer of the projection upload and its camera/FOV parameters.
 2. Identify gameplay/menu/cutscene camera state and any intentional zoom paths.

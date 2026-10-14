@@ -8,6 +8,12 @@
 // a render target samples that target instead (render to texture). Rendering
 // is not written back to guest memory, so a game that reads its framebuffer
 // with the CPU sees what was there before.
+//
+// For frame interpolation a second, independent set of render targets is
+// drawn alongside: the in-between picture (gpu::FrameInterpolator), from draws
+// queued as the game makes them and replayed at the next vblank. Textures are
+// resolved when a draw is queued, so later guest-memory changes cannot leak
+// into it; render-to-texture samples the in-between targets.
 #include "display/display.hpp"
 #include "gpu/ge_state.hpp"
 #include "shell/vulkan_context.hpp"
@@ -34,11 +40,16 @@ public:
     // `presentable` for the image VulkanContext::end_frame shows.
     void begin_frame(VkCommandBuffer commands);
     void draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call);
+    // Queues a draw of the in-between picture, to be drawn by draw_interpolated.
+    void queue_interpolated(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call);
+    // Draws the queued in-between draws into their own targets.
+    void draw_interpolated();
     // Ends any render pass and returns the displayed framebuffer as an image in
     // TRANSFER_SRC layout (uploaded from guest memory when the GPU never drew
     // it), with its size in pixels; nullptr when nothing is displayed.
+    // `interpolated` picks the in-between picture, when one was drawn there.
     const Image *presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,
-                             std::uint32_t &width, std::uint32_t &height);
+                             std::uint32_t &width, std::uint32_t &height, bool interpolated = false);
 
     [[nodiscard]] std::uint64_t draws() const noexcept { return draws_; }
     // Prints every draw of the next `frames` vblanks to stderr (SARUSARU_TRACE_DRAWS).
@@ -61,6 +72,18 @@ private:
             return std::tie(topology, blend, depth, raster) < std::tie(other.topology, other.blend, other.depth, other.raster);
         }
     };
+    // A texture as resolved when an in-between draw was queued: a cached
+    // image, or a render target to sample from the in-between targets.
+    struct QueuedTexture {
+        VkImageView view{VK_NULL_HANDLE};
+        float u_scale{1.0f}, v_scale{1.0f};
+        bool render_target{};
+    };
+    struct QueuedDraw {
+        gpu::DrawCall call;
+        QueuedTexture texture;
+    };
+    enum Layer : std::size_t { kGame = 0u, kInterpolated = 1u, kLayers = 2u };
     struct GpuVertex {
         float position[4];
         float texcoord[2];
@@ -85,7 +108,9 @@ private:
     bool white_ready_{};
     Image upload_;  // the displayed framebuffer when the CPU drew it
 
-    std::map<std::uint32_t, std::unique_ptr<Target>> targets_;
+    std::array<std::map<std::uint32_t, std::unique_ptr<Target>>, kLayers> targets_;
+    std::vector<QueuedDraw> queued_;
+    std::size_t queued_count_{};
     std::unordered_map<std::uint64_t, Texture> textures_;
     VkCommandBuffer commands_{VK_NULL_HANDLE};
     Target *pass_target_{};
@@ -94,7 +119,14 @@ private:
     std::uint32_t trace_{};
 
     [[nodiscard]] static std::uint32_t canonical(std::uint32_t address) noexcept;
-    Target *target(std::uint32_t address);
+    Target *target(std::size_t layer, std::uint32_t address);
+    // Readies `source` for sampling and returns its view, with the scale that
+    // maps the texture's size onto the target.
+    VkImageView sample_target(Target &source, const gpu::TextureState &texture, float &u_scale, float &v_scale);
+    // Draws `call` into the layer's targets. A queued texture replaces the
+    // lookup in guest memory, which `memory` is then not needed for.
+    void draw_into(std::size_t layer, const psprecomp::GuestMemory *memory, const gpu::DrawCall &call,
+                   const QueuedTexture *queued);
     void begin_pass(Target &target);
     void end_pass();
     void flush();

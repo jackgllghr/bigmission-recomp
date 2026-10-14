@@ -80,10 +80,13 @@ needs document-picker integration, lifecycle handling and touch-accessible setup
 - [x] Experimental game cadence overrides for 15/20/30/60, separate from the
       presentation cap; preserve PSP clocks and scope waits to the game's frame
       routine. Fixed-step gameplay speed is not compensated yet.
-- [ ] Implement and verify gameplay FOV, distinguishing menu and cutscene cameras.
-      The stored FOV preference currently warns and has no effect.
-- [ ] Verify higher simulation rates/interpolation against movement, animation,
-      audio and cutscenes; the presentation cap does not change simulation speed.
+- [x] Frame interpolation: 60 FPS motion at native game speed from blended GE
+      draws between native game frames; real frames are unchanged, one vblank later.
+- [~] FOV: projection-level override of every perspective camera. Not yet camera-level:
+      menu and cutscene cameras are not distinguished, and guest culling keeps the native view.
+- [x] Window size at startup and fullscreen (Alt+Enter/F11 toggle).
+- [ ] Verify interpolation in stages, cutscenes and dialogs; higher simulation
+      rates remain uncompensated; the presentation cap does not change simulation speed.
 - [ ] Expose settings and binding capture in the launcher's in-game screen.
 
 Implementation and investigation notes: `profiles/sarusaru/docs/settings-investigation.md`.

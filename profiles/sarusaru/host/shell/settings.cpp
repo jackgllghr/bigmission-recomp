@@ -137,6 +137,12 @@ Settings parse_settings(std::string_view text) {
                 controls[action_index(key)] = bindings(value, section == "keyboard");
             } else if (full == "graphics.internal_resolution") {
                 settings.internal_resolution = static_cast<std::uint32_t>(integer(value, 1, 8));
+            } else if (full == "graphics.window_width") {
+                settings.window_width = static_cast<std::uint32_t>(integer(value, 320, 16384));
+            } else if (full == "graphics.window_height") {
+                settings.window_height = static_cast<std::uint32_t>(integer(value, 180, 16384));
+            } else if (full == "graphics.fullscreen") {
+                settings.fullscreen = integer(value, 0, 1) != 0;
             } else if (full == "graphics.frame_rate") {
                 settings.frame_rate = static_cast<std::uint32_t>(integer(value, 0, 60));
             } else if (full == "graphics.experimental_game_frame_rate") {
@@ -144,6 +150,8 @@ Settings parse_settings(std::string_view text) {
                 if (fps != 0 && fps != 15 && fps != 20 && fps != 30 && fps != 60)
                     throw std::runtime_error("game frame rate must be 0, 15, 20, 30 or 60");
                 settings.experimental_game_frame_rate = static_cast<std::uint32_t>(fps);
+            } else if (full == "graphics.frame_interpolation") {
+                settings.frame_interpolation = integer(value, 0, 1) != 0;
             } else if (full == "graphics.fov_degrees") {
                 settings.fov_degrees = number(value, 0.0f, 120.0f);
                 if (settings.fov_degrees != 0.0f && settings.fov_degrees < 30.0f)
@@ -164,11 +172,19 @@ std::string serialize_settings(const Settings &settings) {
     out << "# SaruSaru settings. Restart the game after editing.\n"
            "# Keyboard values: SDL physical key names or scancode:N; comma separates alternatives.\n"
            "# Gamepad values: SDL button names or axis:NAME+ / axis:NAME-; none unbinds.\n"
-           "[graphics]\ninternal_resolution = " << settings.internal_resolution << '\n'
+           "[graphics]\n# Rendering scale: 1-8 times the PSP's 480x272.\ninternal_resolution = " << settings.internal_resolution << '\n'
+        << "# Window size at startup, in points; the window stays resizable and the picture keeps its aspect.\n"
+        << "window_width = " << settings.window_width << "\nwindow_height = " << settings.window_height << '\n'
+        << "# 1 = fullscreen at the desktop resolution (Alt+Enter or F11 toggles while playing).\n"
+        << "fullscreen = " << (settings.fullscreen ? 1 : 0) << '\n'
         << "# Presentation cap only: 0 = native; 1-60. Simulation speed is unchanged.\nframe_rate = " << settings.frame_rate << '\n'
         << "# Experimental game update rate: 0 = native; 15, 20, 30 or 60. Changes fixed-step gameplay speed.\n"
         << "experimental_game_frame_rate = " << settings.experimental_game_frame_rate << '\n'
-        << "# Reserved camera preference: 0 = native. Nonzero values currently warn and have no effect.\nfov_degrees = " << decimal(settings.fov_degrees) << '\n'
+        << "# 1 = 60 FPS motion at native game speed: an interpolated picture between game frames.\n"
+        << "# Adds one vblank of latency; needs experimental_game_frame_rate = 0.\n"
+        << "frame_interpolation = " << (settings.frame_interpolation ? 1 : 0) << '\n'
+        << "# Vertical FOV of the game's 3D camera: 0 = native (about 36.5); 30-120. HUD and 2D stay as they are.\n"
+        << "fov_degrees = " << decimal(settings.fov_degrees) << '\n'
         << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n';
     for (const bool keyboard : {true, false}) {
         out << (keyboard ? "\n[keyboard]\n" : "\n[gamepad]\n");

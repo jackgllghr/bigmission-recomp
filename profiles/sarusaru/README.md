@@ -5,9 +5,11 @@ disc ID **UCJS10060**, version **1.00**, using PSPRecomp.
 
 **Early macOS arm64 build: the game boots, renders and plays sound in a
 window, but is not verified playable end to end.** File-based settings and
-keyboard/gamepad rebinding are available. The launcher, in-game settings UI,
-FOV overrides, timing-correct higher simulation rates and translation are still
-to come. Native game cadence overrides are available as an explicit experiment.
+keyboard/gamepad rebinding are available, as are 60 FPS frame interpolation at
+the original game speed, a FOV override and window size/fullscreen settings.
+The launcher, in-game settings UI, timing-correct higher simulation rates and
+translation are still to come. Native game cadence overrides are available as
+an explicit experiment.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
 ## Requirements
@@ -102,8 +104,12 @@ printed by `sarusaru --print-default-settings`. Edit the file and restart:
 ```ini
 [graphics]
 internal_resolution = 3
-frame_rate = 30
-fov_degrees = 0
+window_width = 1920
+window_height = 1080
+fullscreen = 0
+frame_rate = 60
+frame_interpolation = 1
+fov_degrees = 50
 
 [input]
 dead_zone = 0.2
@@ -143,6 +149,22 @@ render submissions, audio and movie timing intact. It does not turn the game's
 roughly 29.97 Hz updates into 60 Hz gameplay. In fast-forward it still selects
 frames on guest time, so it is not a wall-clock cap.
 
+`frame_interpolation = 1` gives **60 FPS motion at the original game speed**.
+The game keeps its native cadence of two vblanks per frame, so movement,
+animation, scripts, audio and movies keep their original timing; every frame the
+game draws is pixel-identical to native. Between two game frames the renderer
+draws one more picture: each draw call is matched with the same draw of the
+previous frame (by vertex source, texture and vertex type; instances by
+nearness), and its world/view/projection matrices, CPU-transformed vertices
+(skinning, 2D layout), normals, colours and texture scrolling are blended
+halfway. Draws without a match, or that moved too far to be one motion (cuts,
+recycled sprites), appear as in the newer frame. The in-between picture is shown
+at the vblank where the new frame first appears and the new frame one vblank
+later, so the picture is about 17 ms later than native. Full-motion video plays
+at its own rate. It requires `experimental_game_frame_rate = 0` (otherwise it is
+switched off with a warning) and has no effect with a `frame_rate` cap below 60.
+Measured on the title screen and the stage hub, about 99% of draws are matched.
+
 `experimental_game_frame_rate` overrides the game's frame-wait interval. Use
 0 for the original behavior, or 15, 20, 30, or 60. These rates correspond to four,
 three, two or one PSP vblanks per game frame, so actual rates are approximately
@@ -157,7 +179,8 @@ experimental_game_frame_rate = 60
 This increases **game updates**, not just swapchain presentations. Fixed-step
 movement, animation and frame-counted scripts are not compensated: 60 can run
 them faster, and 15/20 can run them slower. It is not yet a timing-correct 60 FPS
-gameplay mode. The setting defaults to 0 and prints that limitation at startup.
+gameplay mode; use `frame_interpolation` for that. The setting defaults to 0 and
+prints that limitation at startup.
 The original PSP clock, audio clock and movie timestamps remain unchanged.
 The presentation cap still applies independently; setting it below the game
 rate hides some updated frames without reducing game updates.
@@ -168,13 +191,25 @@ overridden game frames and the chosen interval. The windowed shell uses the
 settings file instead. Both paths verify the supported executable before the
 game-specific hook is installed.
 
-`fov_degrees` reserves a vertical-FOV preference (0 for native, or 30-120).
-Nonzero values are retained but print an explicit warning and have **no effect**
-yet. Camera overrides and higher simulation rates need further verification;
-see [`docs/settings-investigation.md`](docs/settings-investigation.md).
+`fov_degrees` sets the vertical FOV of the game's 3D camera (0 for native, about
+36.5 degrees, or 30-120). Every perspective projection the game uploads is
+rescaled by the same factor, so narrower cameras keep their proportion to the
+common one; orthographic and screen-space draws (the HUD, 2D menus) are
+unchanged. It applies to every 3D scene, including menus and cutscenes, since
+the projection alone does not tell them apart. The game's own visibility
+culling still uses the native view, so with a wider FOV objects just outside
+it can appear late at the screen edges. See
+[`docs/settings-investigation.md`](docs/settings-investigation.md).
+
+`window_width`/`window_height` set the window's size at startup in points
+(default 960x544, twice the PSP's screen); the window stays resizable and the
+picture is letterboxed at the PSP's aspect ratio. `fullscreen = 1` opens
+fullscreen at the desktop's resolution, and Alt+Enter or F11 toggles it while
+playing. `internal_resolution` sets the rendering resolution independently.
 
 For unattended checks, `SARUSARU_CAPTURE=<directory>` saves the picture as
 BMP files every `SARUSARU_CAPTURE_EVERY` seconds of game time (default 5),
+starting at `SARUSARU_CAPTURE_FROM` seconds if set,
 `SARUSARU_INPUT` scripts the pad as for the bootstrap, and
 `SARUSARU_TRACE_DRAWS=<seconds>` prints the draw calls of two vblanks.
 

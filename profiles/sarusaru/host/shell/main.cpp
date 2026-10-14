@@ -6,6 +6,9 @@
 // the shell pumps events, presents the displayed framebuffer and waits until
 // real time catches up with guest time.
 #include "session.hpp"
+#include "gpu/fov.hpp"
+#include "gpu/frame_interpolator.hpp"
+#include "kernel/guest_clock.hpp"
 #include "psprecomp/common.hpp"
 #include "shell/audio_output.hpp"
 #include "shell/ge_renderer.hpp"
@@ -32,10 +35,12 @@ constexpr const char *kUsage =
     "  --settings FILE  settings and bindings (default: per-user settings.ini)\n"
     "  --scale N  override the file's internal resolution (1-8 times 480x272)\n"
     "  --print-default-settings  print the settings file template and exit\n"
+    "Alt+Enter or F11 toggles fullscreen.\n"
     "Default keys: arrows d-pad, Z circle, X cross, A square, S triangle, Q/W L/R, Enter start,\n"
     "      Backspace select, I/J/K/L analog stick, Tab (held) fast forward, Escape quit.\n"
     "Environment: SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
-    "  seconds of game time (default 5) as BMP files; SARUSARU_INPUT scripts the pad.\n";
+    "  seconds of game time (default 5) as BMP files, from SARUSARU_CAPTURE_FROM seconds if set;\n"
+    "  SARUSARU_INPUT scripts the pad.\n";
 
 // Real time may trail guest time by this much before pacing gives up on
 // catching up (after a stall) and starts again from now.
@@ -107,8 +112,11 @@ int main(int argc, char **argv) {
         if (settings.experimental_game_frame_rate != 0)
             std::cerr << "sarusaru: experimental game frame rate " << settings.experimental_game_frame_rate
                       << "; fixed-step gameplay/animation speed is not compensated\n";
-        if (settings.fov_degrees != 0.0f)
-            std::cerr << "sarusaru: FOV preference saved, but camera overrides are not implemented; using native FOV\n";
+        if (settings.frame_interpolation && settings.experimental_game_frame_rate != 0) {
+            std::cerr << "sarusaru: frame_interpolation needs the native game rate "
+                         "(experimental_game_frame_rate = 0); interpolation is off\n";
+            settings.frame_interpolation = false;
+        }
     } catch (const std::exception &error) {
         std::cerr << "sarusaru: " << error.what() << '\n';
         return 2;
@@ -126,8 +134,10 @@ int main(int argc, char **argv) {
             SDL_Quit();
             return 1;
         }
-        SDL_Window *window = SDL_CreateWindow("Saru! Get You! SaruSaru Daisakusen", 960, 544,
-                                              SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        SDL_Window *window = SDL_CreateWindow("Saru! Get You! SaruSaru Daisakusen", static_cast<int>(settings.window_width),
+            static_cast<int>(settings.window_height),
+            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+                (settings.fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WindowFlags{0}));
         sarusaru::shell::GeRenderer renderer(vulkan, settings.internal_resolution);
         sarusaru::shell::AudioOutput audio;
         sarusaru::shell::Input input(settings.controls);
@@ -144,7 +154,28 @@ int main(int argc, char **argv) {
             options.experimental_game_frame_rate = settings.experimental_game_frame_rate;
             sarusaru::GameSession game(std::string(paths[0]), std::string(paths[1]), options);
             auto &memory = game.runtime.memory();
-            game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) { renderer.draw(memory, call); });
+            // Frame interpolation: each draw is also blended with its match in
+            // the previous game frame, for the in-between picture. A game frame
+            // ends when the game hands the display its next framebuffer.
+            const bool interpolating = settings.frame_interpolation;
+            sarusaru::gpu::FrameInterpolator interpolator;
+            sarusaru::gpu::DrawCall between;
+            std::uint64_t frame_requests = game.display.framebuffer_requests();
+            // FOV: every perspective projection is rescaled before the draw
+            // reaches the renderer (and the interpolator).
+            const sarusaru::gpu::FovOverride fov(settings.fov_degrees);
+            if (fov.enabled()) game.ge.state().set_view_hook([&fov](sarusaru::gpu::DrawCall &call) { fov.apply(call); });
+            game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) {
+                renderer.draw(memory, call);
+                if (!interpolating) return;
+                if (const auto requests = game.display.framebuffer_requests(); requests != frame_requests) {
+                    frame_requests = requests;
+                    interpolator.end_frame();
+                }
+                interpolator.interpolate(call, 0.5f, between);
+                renderer.queue_interpolated(memory, between);
+            });
+            std::uint64_t latches = game.display.framebuffer_latches(game.kernel.now_us()), latch_vblank = 0u;
             game.audio.set_sink([&](std::int32_t channel, std::span<const std::int16_t> samples, bool mono,
                                     std::uint32_t left, std::uint32_t right) {
                 audio.play(channel, samples, mono, left, right);
@@ -164,6 +195,8 @@ int main(int argc, char **argv) {
             if (const char *every = std::getenv("SARUSARU_CAPTURE_EVERY"); every != nullptr && *every != '\0')
                 capture_every_us = static_cast<std::uint64_t>(std::strtod(every, nullptr) * 1e6);
             std::uint64_t next_capture_us = capture_every_us;
+            if (const char *from = std::getenv("SARUSARU_CAPTURE_FROM"); from != nullptr && *from != '\0')
+                next_capture_us = static_cast<std::uint64_t>(std::strtod(from, nullptr) * 1e6);
             std::uint32_t capture_width = 0u, capture_height = 0u, captures = 0u;
             if (capture_directory != nullptr &&
                 !vulkan.create_buffer(4096u * 4096u * 4u, VK_BUFFER_USAGE_TRANSFER_DST_BIT, capture))
@@ -183,6 +216,14 @@ int main(int argc, char **argv) {
                 SDL_Event event;
                 while (SDL_PollEvent(&event)) {
                     if (event.type == SDL_EVENT_QUIT) quit = true;
+                    // Alt+Enter or F11 toggles fullscreen (at the desktop's
+                    // resolution); the swapchain follows the new size.
+                    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                        (event.key.scancode == SDL_SCANCODE_F11 ||
+                         (event.key.scancode == SDL_SCANCODE_RETURN && (event.key.mod & SDL_KMOD_ALT) != 0))) {
+                        SDL_SetWindowFullscreen(window, (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == 0);
+                        continue;
+                    }
                     input.handle(event);
                 }
                 const auto controls = input.sample();
@@ -191,7 +232,22 @@ int main(int argc, char **argv) {
 
                 std::uint32_t width = 0u, height = 0u;
                 const auto framebuffer = game.display.framebuffer(1u, game.kernel.now_us());
-                const auto *image = renderer.presentable(memory, framebuffer, width, height);
+                // A newly displayed game frame first shows as the picture
+                // between it and the one before, then as itself at the next
+                // vblank. Only for frames of two or more vblanks: a game frame
+                // of one leaves no vblank to show the in-between picture at.
+                bool in_between = false;
+                if (interpolating) {
+                    renderer.draw_interpolated();
+                    const auto now = game.kernel.now_us();
+                    if (const auto latched = game.display.framebuffer_latches(now); latched != latches) {
+                        const auto vblank = sarusaru::kernel::vblanks_by(now);
+                        in_between = vblank - latch_vblank >= 2u;
+                        latches = latched;
+                        latch_vblank = vblank;
+                    }
+                }
+                const auto *image = renderer.presentable(memory, framebuffer, width, height, in_between);
                 const bool capturing = capture.buffer != VK_NULL_HANDLE && image != nullptr &&
                                        game.kernel.now_us() >= next_capture_us;
                 if (capturing) {

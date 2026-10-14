@@ -28,8 +28,10 @@ std::int32_t Display::set_framebuffer(const Framebuffer &framebuffer, std::uint3
     }
     apply_pending(now_us);
     requested_ = framebuffer;
+    ++requests_;
     if (sync == 0u) {
         latched_ = framebuffer;
+        ++latches_;
         latch_at_vblank_.reset();
     } else {
         latch_at_vblank_ = kernel::vblanks_by(now_us) + 1u;
@@ -40,6 +42,7 @@ std::int32_t Display::set_framebuffer(const Framebuffer &framebuffer, std::uint3
 void Display::apply_pending(std::uint64_t now_us) noexcept {
     if (latch_at_vblank_ && kernel::vblanks_by(now_us) >= *latch_at_vblank_) {
         latched_ = requested_;
+        ++latches_;
         latch_at_vblank_.reset();
     }
 }
