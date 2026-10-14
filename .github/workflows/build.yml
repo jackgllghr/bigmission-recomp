@@ -60,3 +60,37 @@ jobs:
 
       - name: Test
         run: ctest --test-dir out/${{ matrix.host }} --output-on-failure
+
+      # A download per host: the PSPRecomp tools and the runtime the game is
+      # built against (SDL3, FFmpeg, MoltenVK on macOS, fonts, licences). The
+      # game itself is not here: it is compiled from the player's own disc.
+      - name: Package
+        shell: bash
+        run: |
+          build=out/${{ matrix.host }}
+          package=out/package/sarusaru-${{ matrix.host }}
+          mkdir -p "$package"
+          cp -R "$build/bin/." "$package/"
+          rm -f "$package"/*_tests "$package"/*_tests.exe
+          # Never publish game-derived code, even if a build here produced it.
+          rm -f "$package"/sarusaru "$package"/sarusaru.exe "$package"/sarusaru_bootstrap "$package"/sarusaru_bootstrap.exe
+          for tool in psp_analyze psp_recomp dump_function; do
+            cp "$build/$tool"* "$package/"
+          done
+          cp LICENSE "$package/LICENSE.txt"
+          cp profiles/sarusaru/THIRD_PARTY.md "$package/"
+          if [ "${{ runner.os }}" != Windows ]; then
+            # A tarball keeps the executable bits and library symlinks that
+            # the artifact's zip would drop.
+            tar -C out/package -czf "out/package/sarusaru-${{ matrix.host }}.tar.gz" "sarusaru-${{ matrix.host }}"
+            rm -rf "$package"
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarusaru-${{ matrix.host }}
+          path: out/package/
+          if-no-files-found: error
+          # Artifacts count against the account's Actions storage.
+          retention-days: 14
