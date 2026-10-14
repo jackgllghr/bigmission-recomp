@@ -1,6 +1,7 @@
 #include "io/io_manager.hpp"
 
 #include "psprecomp/common.hpp"
+#include "text/shift_jis.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -141,7 +142,7 @@ std::int32_t IoManager::write(std::int32_t fd, std::uint32_t address, std::uint3
         if (!runtime_->memory().contains(address, size)) return static_cast<std::int32_t>(kInvalidArgument);
         std::string text(size, '\0');
         runtime_->memory().copy_out(address, std::span(reinterpret_cast<std::uint8_t *>(text.data()), text.size()));
-        std::cerr << (fd == 1 ? "[guest stdout] " : "[guest stderr] ") << text << (text.ends_with('\n') ? "" : "\n");
+        std::cerr << (fd == 1 ? "[guest stdout] " : "[guest stderr] ") << text::shift_jis_to_utf8(text) << (text.ends_with('\n') ? "" : "\n");
         return static_cast<std::int32_t>(size);
     }
     if (file(fd) != nullptr) return static_cast<std::int32_t>(kReadOnly);
