@@ -6,6 +6,10 @@
 #include "psprecomp/common.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <string_view>
+#include <utility>
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
@@ -39,11 +43,17 @@ constexpr std::uint32_t kUtilityData = 0x5D8u;
 constexpr std::uint32_t kKey = 0x5DCu; // char[16], firmware 2.00 and later
 constexpr std::uint32_t kSecureVersion = 0x5ECu;
 constexpr std::uint32_t kMinimumSizeWithKey = 0x5ECu;
+constexpr std::uint32_t kIdList = 0x5F4u; // {maxCount, resultCount, entries}
 } // namespace param
+
+// SceUtilitySavedataIdListEntry: st_mode, ctime, atime, mtime (ScePspDateTime,
+// 16 bytes each), then the save name (char[20]).
+constexpr std::uint32_t kIdListEntrySize = 0x48u;
+constexpr std::uint32_t kDirectoryMode = 0x11FFu;
 
 enum Mode : std::uint32_t {
     kAutoLoad = 0, kAutoSave = 1, kLoad = 2, kSave = 3, kListLoad = 4, kListSave = 5, kListDelete = 6,
-    kDelete = 7, kSizes = 8, kAutoDelete = 9, kSingleDelete = 10,
+    kDelete = 7, kSizes = 8, kAutoDelete = 9, kSingleDelete = 10, kList = 11,
 };
 
 const char *mode_name(std::uint32_t mode) {
@@ -235,6 +245,67 @@ struct Request {
         return outcome;
     }
 
+    // LIST: the saves of this game whose names match the save-name pattern
+    // ('*' any run of characters, '?' any one), sorted by name.
+    std::uint32_t list() const {
+        const std::uint32_t list = memory.load32(params + param::kIdList);
+        if (list == 0u || !memory.contains(list, 12u)) return savedata_result::kLoadParam;
+        const std::string game = read_fixed(memory, params + param::kGameName, 13u);
+        const std::string pattern = save_name_at(memory, params + param::kSaveName);
+        std::vector<std::pair<std::string, std::filesystem::file_time_type>> found;
+        std::error_code ec;
+        for (const auto &entry : std::filesystem::directory_iterator(savedata::savedata_root(utility.memory_stick()), ec)) {
+            const std::string folder = entry.path().filename().string();
+            if (!entry.is_directory(ec) || !folder.starts_with(game)) continue;
+            const std::string name = folder.substr(game.size());
+            if (name.size() >= 20u || !matches(pattern, name)) continue;
+            found.emplace_back(name, std::filesystem::last_write_time(entry.path(), ec));
+        }
+        std::sort(found.begin(), found.end());
+        const auto max_count = static_cast<std::int32_t>(memory.load32(list));
+        const std::uint32_t entries = memory.load32(list + 8u);
+        std::uint32_t count = 0u;
+        for (const auto &[name, written] : found) {
+            if (static_cast<std::int32_t>(count) >= max_count) break;
+            const std::uint32_t at = entries + count * kIdListEntrySize;
+            if (!memory.contains(at, kIdListEntrySize)) break;
+            memory.store32(at, kDirectoryMode);
+            for (std::uint32_t time = 0u; time < 3u; ++time) write_date_time(at + 4u + time * 16u, written);
+            write_fixed(memory, at + 52u, name, 20u);
+            ++count;
+        }
+        memory.store32(list + 4u, count);
+        std::cerr << "[savedata] listed " << count << " save(s) matching \"" << game << pattern << "\"\n";
+        return savedata_result::kOk;
+    }
+
+    static bool matches(std::string_view pattern, std::string_view name) {
+        if (pattern.empty()) return name.empty();
+        if (pattern.front() == '*')
+            return matches(pattern.substr(1u), name) || (!name.empty() && matches(pattern, name.substr(1u)));
+        return !name.empty() && (pattern.front() == '?' || pattern.front() == name.front()) &&
+               matches(pattern.substr(1u), name.substr(1u));
+    }
+
+    // ScePspDateTime: year, month, day, hour, minute, second (16-bit), microsecond.
+    void write_date_time(std::uint32_t at, std::filesystem::file_time_type written) const {
+        const auto system = std::chrono::file_clock::to_sys(written);
+        const std::time_t seconds = std::chrono::system_clock::to_time_t(
+            std::chrono::time_point_cast<std::chrono::system_clock::duration>(system));
+        std::tm local{};
+#if defined(_WIN32)
+        localtime_s(&local, &seconds);
+#else
+        localtime_r(&seconds, &local);
+#endif
+        const std::uint16_t fields[6] = {static_cast<std::uint16_t>(local.tm_year + 1900),
+            static_cast<std::uint16_t>(local.tm_mon + 1), static_cast<std::uint16_t>(local.tm_mday),
+            static_cast<std::uint16_t>(local.tm_hour), static_cast<std::uint16_t>(local.tm_min),
+            static_cast<std::uint16_t>(local.tm_sec)};
+        for (std::uint32_t i = 0u; i < 6u; ++i) memory.store16(at + i * 2u, fields[i]);
+        memory.store32(at + 12u, 0u);
+    }
+
     // The save a list dialog would land on when the player just confirms:
     // for loading and deleting the first listed save that exists, for saving
     // the first listed name.
@@ -308,6 +379,8 @@ std::uint32_t SavedataUtility::run(psprecomp::GuestMemory &memory, std::uint32_t
         return request.remove(save_name);
     case kSizes:
         return request.sizes();
+    case kList:
+        return request.list();
     default:
         // Report a parameter error so the guest takes its failure path instead
         // of reading results that were never written.

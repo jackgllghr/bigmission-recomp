@@ -287,6 +287,9 @@ The pinned upstream is recorded in `config/supported_game.json`.
 - SAS voices loop only at a repeating VAG end (flags 3); a plain end (1)
   stops even a looping voice. The game keys its one-shot effects on looping
   voices, so they repeated forever and exhausted its sound slots.
+- Savedata LIST (mode 11): the game's saves whose names match a wildcard
+  pattern, with their timestamps, written to the caller's ID list. The game
+  lists `0*` in play and retried every frame while the mode was missing.
 - The game's `stdout`/`stderr` is converted from Shift-JIS to UTF-8
   (`text/shift_jis.*`, through iconv where available; otherwise non-ASCII
   bytes print as `\xNN`).

@@ -108,6 +108,24 @@ int main() {
                 memory.load8(kData + 1u) == 13u,
             "LISTLOAD picks the first existing save");
 
+    // LIST (11): {maxCount, resultCount, entries} at idList; 0x48-byte entries
+    // with the save name at +52. The game lists "0*", which matches nothing here.
+    constexpr std::uint32_t kIdList = 0x08811400u, kEntries = 0x08811500u;
+    const auto list = [&](const std::string &pattern) {
+        prepare(memory, 11u);
+        write_string(memory, kParams + 0x4Cu, pattern);
+        memory.store32(kParams + 0x5F4u, kIdList);
+        memory.store32(kIdList, 4u);
+        memory.store32(kIdList + 4u, 0xFFFFFFFFu);
+        memory.store32(kIdList + 8u, kEntries);
+        return run(runtime, 11u, true);
+    };
+    require(list("M*") == savedata_result::kOk && memory.load32(kIdList + 4u) == 1u &&
+                memory.read_c_string(kEntries + 52u) == "MAIN" && memory.load32(kEntries) == 0x11FFu &&
+                memory.load16(kEntries + 4u) >= 2024u,
+            "LIST finds the save matching a pattern");
+    require(list("0*") == savedata_result::kOk && memory.load32(kIdList + 4u) == 0u, "LIST with no match lists nothing");
+
     require(run(runtime, 13u) == savedata_result::kLoadParam, "unmodeled modes report a parameter error");
     runtime.invoke_import("sceUtility", 0x9790B33Cu, runtime.cpu());
     require(runtime.cpu().gpr[2] == kErrorInvalidStatus, "ShutdownStart without a dialog");
