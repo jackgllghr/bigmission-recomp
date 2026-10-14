@@ -1,6 +1,7 @@
 #include "game_identity.hpp"
 #include "startup_hle.hpp"
 #include "ctrl/controller.hpp"
+#include "display/display.hpp"
 #include "kernel/early_kernel.hpp"
 #include "umd/disc_image.hpp"
 #include "umd/umd_drive.hpp"
@@ -98,6 +99,8 @@ int main(int argc, char **argv) {
         sarusaru::umd::register_umd(umd_drive, runtime);
         sarusaru::ctrl::Controller controller;
         sarusaru::ctrl::register_ctrl(controller, early_kernel, runtime);
+        sarusaru::display::Display display;
+        sarusaru::display::register_display(display, early_kernel, runtime);
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.

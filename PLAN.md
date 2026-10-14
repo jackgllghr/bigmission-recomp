@@ -109,7 +109,7 @@ networking (`sceNet*`, 21 in total).
 1. [x] Virtual guest clock: deterministic time that advances only when no
        thread is ready; vblank at 60000/1001 Hz; `sceKernelDelayThread[CB]`;
        blocking `sceCtrlReadBufferPositive` with a neutral pad.
-2. [ ] Display state: mode, framebuffer address/format, vcount, `IsVblank`
+2. [x] Display state: mode, framebuffer address/format, vcount, `IsVblank`
        and vblank waits on the virtual clock. No presentation yet.
 3. [ ] Kernel synchronization: semaphores, event flags, `WaitThreadEnd`,
        thread queries/attributes, exit-and-delete, system time
@@ -155,9 +155,10 @@ sleep/wakeup, timed waits on a deterministic virtual clock, partition memory,
 callback registration and interrupt masking. A read-only ISO9660 UMD layer
 reads the user's own ISO in place after binding it to the prepared
 executable. Controller configuration and blocking buffered reads (neutral pad)
-work. After one virtual vblank, startup now stops at the unidentified
-`sceDisplay` NID `0x4D4E10EC` (remaining-work chunk 2).
-Nine CTest suites pass,
+work, as does display state and vblank timing. After one virtual vblank,
+startup now stops at `ThreadManForUser::sceKernelChangeCurrentThreadAttr`
+(remaining-work chunk 3).
+Ten CTest suites pass,
 including 17 input/preparation cases and seven generated-native-code cases.
 Repeat generation rewrites zero source units. Three game-neutral generator
 defects discovered during this work were reproduced with synthetic fixtures,

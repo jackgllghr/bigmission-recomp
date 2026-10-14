@@ -90,13 +90,13 @@ The inventory is read-only analysis; archive-derived paths are not extracted.
   Interrupt-mask state, thread sleep/wakeup (`0x9ACE131E`/`0xD59EAD2F`, per
   the public PSPSDK stubs) and UMD callback registration are modeled. Startup
   passes `sceUmdUser` drive activation, `sceCtrl` configuration and its first
-  blocking controller read (one virtual vblank), then stops at the
-  unidentified `sceDisplay` NID `0x4D4E10EC`. Synchronization objects remain
-  unimplemented.
+  blocking controller read (one virtual vblank) and display setup, then stops
+  at `ThreadManForUser::sceKernelChangeCurrentThreadAttr`. Synchronization
+  objects remain unimplemented.
 - The bootstrap takes the ISO as a second argument and reads it in place. The
   disc must name the supported disc in `UMD_DATA.BIN`, and its `BOOT.BIN`
   must be byte-identical to the prepared executable.
-- All nine CTest suites pass, including 17 ISO/preparation cases and seven
+- All ten CTest suites pass, including 17 ISO/preparation cases and seven
   generated-native-code cases. Repeat generation rewrites zero source units.
 
 ## Framework changes
@@ -139,6 +139,11 @@ The pinned upstream is recorded in `config/supported_game.json`.
   waits. `sceCtrlReadBufferPositive` returns the samples taken since the last
   read, or blocks until the next one; the pad is neutral until host input
   exists. A thread that never blocks never sees time pass.
+- Added `sceDisplay` state on the virtual clock: mode (480x272 only),
+  framebuffer address/width/format with sync-0 immediate and sync-1
+  next-vblank latching, vcount, accumulated hcount (286 lines per frame),
+  `IsVblank` (a 731 us blanking interval) and the vblank waits. Nothing is
+  presented yet.
 - Recorded `sceKernelSetGPO`, and bound the data-cache writeback calls as
   no-ops: host memory is coherent and nothing yet reads guest memory behind
   the CPU's back.
