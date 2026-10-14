@@ -7,6 +7,7 @@
 #include "io/io_manager.hpp"
 #include "modules/utility_modules.hpp"
 #include "rtc/rtc.hpp"
+#include "sas/sas.hpp"
 #include "kernel/early_kernel.hpp"
 #include "kernel/interrupts.hpp"
 #include "kernel/sync.hpp"
@@ -122,6 +123,8 @@ int main(int argc, char **argv) {
         sarusaru::modules::register_utility_modules(utility_modules, runtime);
         sarusaru::audio::Audio audio(early_kernel);
         sarusaru::audio::register_audio(audio, runtime);
+        sarusaru::sas::SasCore sas;
+        sarusaru::sas::register_sas(sas, runtime);
 
         // Provisional single-thread module-start context, not a PSP kernel.
         // Stack and arguments are above the main image and within 32 MiB RAM.

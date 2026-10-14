@@ -146,8 +146,9 @@ networking (`sceNet*`, 21 in total).
         GE state; framebuffer presentation. Largest single item.
 12. [~] Audio: `sceAudio` output channels are modeled headless on the
         virtual clock (blocking output paces the audio thread; samples are
-        counted, not played). Still to come: `sceSasCore`, `sceAtrac`, and
-        host output through SDL3 audio.
+        counted, not played). `sceSasCore` synthesizes VAG voices with
+        envelopes and mixes grains (reverb recorded, not applied). Still to
+        come: `sceAtrac`, reverb, and host output through SDL3 audio.
 13. [ ] Movies: `scePsmfPlayer`/`sceMpeg` playback, if the game uses them
         on the path to gameplay.
 14. [ ] Utility dialogs: message dialog, OSK, savedata (feeds milestone 3).
