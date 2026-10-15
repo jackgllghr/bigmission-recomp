@@ -285,7 +285,7 @@ code, unless that changes.
       game-mode configuration. Builds a debug APK; not yet run on a device.
 - [ ] Run the launcher on a device: Vulkan, touch, the back button, the
       lifecycle (pause and resume while the launcher and the game run).
-- [ ] Android in CI: build the APK on every push.
+- [x] Android in CI: build the APK on every push.
 - [ ] Disc access through the system document picker (no
       `MANAGE_EXTERNAL_STORAGE`): `DiscImage` reads from a file descriptor.
 - [ ] A `DocumentsProvider` exposing saves and settings to the Files app.
