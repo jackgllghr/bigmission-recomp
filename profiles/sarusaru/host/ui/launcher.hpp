@@ -16,6 +16,7 @@
 #include "install/pack_download.hpp"
 #include "install/texture_build.hpp"
 #include "install/toolchain.hpp"
+#include "install/update_check.hpp"
 #include "ui/bindings.hpp"
 #include "shell/settings.hpp"
 #include "ui/layer.hpp"
@@ -102,6 +103,10 @@ private:
     std::uint32_t texture_scale_{4};
     std::unique_ptr<install::TextureBuild> texture_build_;
     std::string texture_error_;
+
+    std::unique_ptr<install::UpdateCheck> update_check_;
+    void check_updates();
+    void updates(float width);
 
     ImTextureID title_art_{};
     ImVec2 title_size_{};

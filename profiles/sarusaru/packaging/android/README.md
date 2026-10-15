@@ -45,8 +45,9 @@ cd profiles/sarusaru/packaging/android
 ```
 
 The APK is `app/build/outputs/apk/debug/app-debug.apk`. The first build
-cross-compiles FFmpeg, as the desktop builds do. Release builds are unsigned
-until the release policy settles signing.
+cross-compiles FFmpeg, as the desktop builds do. Release builds require a permanent signing keystore and increasing release
+versions. See [release/update setup](../../docs/auto-updates.md) for the local
+environment variables, GitHub signing secrets, and Obtainium onboarding.
 
 ## The compiler the app ships
 

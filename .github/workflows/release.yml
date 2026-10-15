@@ -18,8 +18,24 @@ permissions:
   contents: read
 
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release version
+        id: version
+        shell: bash
+        run: |
+          version="$(cat profiles/sarusaru/VERSION)"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; fi
+          version="$(python3 profiles/sarusaru/scripts/release_metadata.py "$version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   package:
     name: ${{ matrix.host }}
+    needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -75,7 +91,8 @@ jobs:
             macOS) extra+=(-DCMAKE_OSX_ARCHITECTURES=arm64 "-DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET") ;;
           esac
           cmake -S . -B out/${{ matrix.host }} -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_GAME_MODULE=OFF "${extra[@]}"
+            -DPSPRECOMP_PROFILE=sarusaru -DSARUSARU_GAME_MODULE=OFF \
+            -DSARUSARU_RELEASE_VERSION=${{ needs.version.outputs.version }} "${extra[@]}"
 
       - name: Build
         run: cmake --build out/${{ matrix.host }} --parallel 4
@@ -86,8 +103,7 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME}"
-          if [ "${GITHUB_REF_TYPE}" != tag ]; then version="$(git describe --tags --always)"; fi
+          version="v${{ needs.version.outputs.version }}"
           python3 profiles/sarusaru/scripts/package.py --build out/${{ matrix.host }} \
             --host ${{ matrix.host }} --version "$version" --out out/dist
           if [ "${{ runner.os }}" = Linux ]; then
@@ -105,6 +121,7 @@ jobs:
   # own job, in a container that can run flatpak-builder.
   flatpak:
     name: ${{ matrix.host }} flatpak
+    needs: version
     runs-on: ${{ matrix.runner }}
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
@@ -126,8 +143,7 @@ jobs:
         shell: bash
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          version="${GITHUB_REF_NAME}"
-          if [ "${GITHUB_REF_TYPE}" != tag ]; then version="$(git describe --tags --always)"; fi
+          version="v${{ needs.version.outputs.version }}"
           profiles/sarusaru/packaging/linux/build_flatpak.sh "$version" out/dist
 
       - uses: actions/upload-artifact@v4
@@ -136,14 +152,83 @@ jobs:
           path: out/dist/*
           if-no-files-found: error
 
+  android:
+    name: android-arm64 release APK
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      SARUSARU_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+      SARUSARU_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      SARUSARU_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Prepare release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          test -n "$KEYSTORE_BASE64" && test -n "$SARUSARU_ANDROID_STORE_PASSWORD" && test -n "$SARUSARU_ANDROID_KEY_ALIAS" && test -n "$SARUSARU_ANDROID_KEY_PASSWORD" || {
+            echo "Configure the four Android release signing secrets documented in profiles/sarusaru/docs/auto-updates.md"; exit 1;
+          }
+          umask 077
+          keystore="$RUNNER_TEMP/sarusaru-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          echo "SARUSARU_ANDROID_KEYSTORE=$keystore" >> "$GITHUB_ENV"
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build glslang-tools make patch
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+            "platforms;android-36" "ndk;29.0.14206865" "cmake;4.1.2" "build-tools;36.0.0"
+      - name: Cache staged Android compiler
+        id: compiler
+        uses: actions/cache@v4
+        with:
+          path: out/android-toolchain/stage
+          key: android-compiler-${{ hashFiles('profiles/sarusaru/packaging/android/toolchain/build_toolchain.py') }}
+      - name: Build the on-device compiler
+        if: steps.compiler.outputs.cache-hit != 'true'
+        run: python3 profiles/sarusaru/packaging/android/toolchain/build_toolchain.py --jobs 2
+      - name: Build signed APK
+        working-directory: profiles/sarusaru/packaging/android
+        run: ./gradlew assembleRelease -PreleaseVersion=${{ needs.version.outputs.version }}
+      - name: Verify and package APK
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          apk=profiles/sarusaru/packaging/android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          python3 profiles/sarusaru/scripts/check_android_apk.py "$apk"
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test "$("$analyzer" manifest version-name "$apk")" = "$VERSION"
+          test "$("$analyzer" manifest version-code "$apk")" = "$(python3 profiles/sarusaru/scripts/release_metadata.py "$VERSION" --android-code)"
+          mkdir -p out/dist
+          cp "$apk" "out/dist/SaruSaruRecomp-v$VERSION-android-arm64.apk"
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sarusaru-release.jks"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-arm64-release
+          path: out/dist/*.apk
+          if-no-files-found: error
+
   release:
     name: Draft release
     if: github.ref_type == 'tag'
-    needs: [package, flatpak]
+    needs: [version, package, flatpak, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -153,10 +238,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          python3 profiles/sarusaru/scripts/release_metadata.py "$GITHUB_REF_NAME" --assets dist
           cd dist
           sha256sum * > SHA256SUMS.txt
           cat > notes.md <<'EOF'
-          Launcher packages for Windows x64, Linux x64 and arm64, and macOS arm64.
+          Launcher packages for Windows x64, Linux x64 and arm64, macOS arm64, and Android arm64.
+          Android: install the signed APK and add this repository to Obtainium for updates.
           Linux has three: a .tar.gz, an AppImage, and a .flatpak bundle
           (`flatpak install --user <file>.flatpak`; it brings its own compiler).
 
@@ -167,4 +254,4 @@ jobs:
           EOF
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
             --title "SaruSaru Recomp $GITHUB_REF_NAME" --notes-file notes.md \
-            ./*.zip ./*.tar.gz ./*.AppImage ./*.flatpak SHA256SUMS.txt
+            ./*.zip ./*.tar.gz ./*.AppImage ./*.flatpak ./*.apk update-info.txt SHA256SUMS.txt

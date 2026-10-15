@@ -1,4 +1,7 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Version.cmake")
+
+include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
 # Every program of the profile goes to bin/, beside the shared runtime and
 # the other libraries (on Windows the only place it looks for them).
@@ -54,7 +57,7 @@ if(SARUSARU_HAS_RENDERER)
         host/textures/disc_textures.cpp host/textures/recipe.cpp host/textures/image.cpp)
     target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu sarusaru_disc SDL3::SDL3)
     add_library(sarusaru_install STATIC host/install/process.cpp host/install/download.cpp host/install/toolchain.cpp
-        host/install/game_builder.cpp host/install/pack_download.cpp host/install/texture_build.cpp)
+        host/install/game_builder.cpp host/install/pack_download.cpp host/install/texture_build.cpp host/install/update_check.cpp)
     target_link_libraries(sarusaru_install PUBLIC sarusaru_game_module sarusaru_disc sarusaru_textures SDL3::SDL3)
     add_dependencies(sarusaru_install psp_recomp)
 endif()
@@ -146,6 +149,11 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
         set_target_properties(sarusaru_launcher_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
         add_test(NAME sarusaru_launcher_tests COMMAND sarusaru_launcher_tests)
+        add_executable(sarusaru_update_tests tests/update_tests.cpp)
+        target_link_libraries(sarusaru_update_tests PRIVATE sarusaru_install)
+        set_target_properties(sarusaru_update_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+        add_test(NAME sarusaru_update_tests COMMAND sarusaru_update_tests)
         add_executable(sarusaru_button_prompt_tests tests/button_prompt_tests.cpp host/shell/button_prompts.cpp)
         target_link_libraries(sarusaru_button_prompt_tests PRIVATE sarusaru_ui)
         set_target_properties(sarusaru_button_prompt_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

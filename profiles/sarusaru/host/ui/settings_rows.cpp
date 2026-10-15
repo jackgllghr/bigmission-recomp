@@ -12,8 +12,9 @@ constexpr SettingRow kGraphics[] = {SettingRow::Fullscreen, SettingRow::WindowSi
     SettingRow::FrameRate, SettingRow::Fov, SettingRow::CelShading, SettingRow::Textures};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone};
 constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::Subtitles, SettingRow::ConfirmButton, SettingRow::ControllerButtons, SettingRow::SkipIntroLogos};
+constexpr SettingRow kUpdates[] = {SettingRow::AutomaticUpdates};
 constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabControls, kControls},
-                                 {Text::TabInterface, kInterface}};
+                                 {Text::TabInterface, kInterface}, {Text::TabUpdates, kUpdates}};
 
 // Native, a cap of 30 and 60 FPS motion (shell::interpolates).
 constexpr double kFrameRates[] = {0, 30, 60};
@@ -131,6 +132,16 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
         view.value = number("%.0f%%", settings.controls.dead_zone * 100.0);
         view.description = text(Text::DescDeadZone);
         break;
+    case SettingRow::AutomaticUpdates:
+        view.label = text(Text::RowAutomaticUpdates);
+        view.value = on_off(settings.check_for_updates);
+        view.description = text(Text::DescAutomaticUpdates);
+#if defined(__ANDROID__)
+        view.enabled = false;
+        view.value = "Obtainium";
+        view.description = text(Text::UpdatesAndroid);
+#endif
+        break;
     case SettingRow::Language:
         view.label = text(Text::RowLanguage);
         // Each language is named in itself, so it can be found in either.
@@ -212,6 +223,11 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
         settings.controls.dead_zone = static_cast<float>(step_value(steps, settings.controls.dead_zone, direction));
         break;
     }
+    case SettingRow::AutomaticUpdates:
+#if !defined(__ANDROID__)
+        settings.check_for_updates = !settings.check_for_updates;
+#endif
+        break;
     case SettingRow::Language: {
         constexpr shell::Language kOrder[] = {shell::Language::Auto, shell::Language::English, shell::Language::Japanese};
         const auto index = static_cast<int>(settings.language) + (direction > 0 ? 1 : 2);

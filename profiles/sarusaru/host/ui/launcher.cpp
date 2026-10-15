@@ -7,6 +7,8 @@
 #include "ui/text.hpp"
 #include "ui/theme.hpp"
 #include "ui/ui_script.hpp"
+#include "release_version.hpp"
+#include <ctime>
 #include "ui/widgets.hpp"
 
 #include "imgui_internal.h"
@@ -120,6 +122,10 @@ Launcher::Outcome Launcher::run(UiScript *script) {
         go(Screen::Paused, "resume");
     else
         go(Screen::Home, start_failure_.empty() ? "play" : "problem_ok");
+#if !defined(__ANDROID__)
+    if (!in_game() && settings_.check_for_updates && !update_check_ &&
+        install::update_check_due(std::time(nullptr), settings_.last_update_check)) check_updates();
+#endif
     layer_.set_frame_hook(script != nullptr ? std::function<void(Layer &)>([script](Layer &l) { script->tick(l); })
                                             : std::function<void(Layer &)>());
     layer_.set_event_filter([this](const SDL_Event &event) { return capture_event(event); });
@@ -232,7 +238,9 @@ void Launcher::home() {
     const bool ready = disc_check_ && disc_check_->supported();
     const ImVec2 button(300.0f * u, 48.0f * u);
     const float gap = 12.0f * u, status_height = 30.0f * u, bottom = 88.0f * u;
-    const float buttons_height = 3.0f * button.y + 2.0f * gap;
+    const auto update = update_check_ ? update_check_->result() : install::UpdateResult{};
+    const bool has_update = update_check_ && update.state == install::UpdateResult::State::Available;
+    const float buttons_height = (has_update ? 4.0f : 3.0f) * button.y + (has_update ? 3.0f : 2.0f) * gap;
     float art_height = 0.0f, art_width = 0.0f;
     if (title_art_ != ImTextureID{}) {
         const float aspect = title_size_.x / title_size_.y;
@@ -284,6 +292,14 @@ void Launcher::home() {
     if (menu_button(layer_, "settings", tr(Text::Settings), button)) go(Screen::Settings, "row0");
     place(2);
     if (menu_button(layer_, "quit", tr(Text::Quit), button)) outcome_ = Outcome::Quit;
+
+    if (has_update) {
+        place(3);
+        if (menu_button(layer_, "update_notice", format(Text::UpdateAvailable, {update.version}), button)) {
+            tab_ = static_cast<int>(settings_tabs().size()) - 1;
+            go(Screen::Settings, "row0");
+        }
+    }
 
     // The disclaimer along the bottom left, on the swoosh.
     {
@@ -589,6 +605,7 @@ void Launcher::settings() {
         if (ImGui::IsItemFocused())
             description = tr(Text::BindingsDescription);
     }
+    if (tabs[static_cast<std::size_t>(tab_)].title == Text::TabUpdates) updates(row_width);
     end_list(layer_);
 
     // What the focused setting does.
@@ -1062,4 +1079,44 @@ void Launcher::capture_overlay() {
     centred(body, 15.0f * u, tr(Text::CapturePointerCancel), colors::kInkDim);
 }
 
+} // namespace sarusaru::ui
+
+namespace sarusaru::ui {
+void Launcher::check_updates() {
+#if !defined(__ANDROID__)
+    if (update_check_ && update_check_->result().state == install::UpdateResult::State::Checking) return;
+    update_check_ = std::make_unique<install::UpdateCheck>();
+    settings_.last_update_check = std::time(nullptr);
+    save();
+#endif
+}
+void Launcher::updates(float width) {
+    paragraph(layer_, format(Text::InstalledVersion, {release_version}), width);
+#if defined(__ANDROID__)
+    paragraph(layer_, tr(Text::UpdatesAndroid), width);
+    if (action_row(layer_, "obtainium", tr(Text::UpdatesObtainium), "", width)) {
+        if (!SDL_OpenURL(std::string(install::kObtainium).c_str()))
+            SDL_OpenURL("https://obtainium.imranr.dev/");
+    }
+#else
+    const auto result = update_check_ ? update_check_->result() : install::UpdateResult{};
+    const bool checking = update_check_ && result.state == install::UpdateResult::State::Checking;
+    if (action_row(layer_, "update_check", tr(checking ? Text::UpdatesChecking : Text::UpdatesCheck), "", width, !checking))
+        check_updates();
+    if (update_check_) {
+        using State = install::UpdateResult::State;
+        switch (result.state) {
+        case State::Checking: break;
+        case State::Available: paragraph(layer_, format(Text::UpdateAvailable, {result.version}), width, colors::kGood); break;
+        case State::Current: paragraph(layer_, tr(Text::UpdatesCurrent), width); break;
+        case State::Unsupported: paragraph(layer_, tr(Text::UpdatesUnsupported), width); break;
+        case State::Failed: paragraph(layer_, tr(Text::UpdatesFailed), width, colors::kRed); break;
+        }
+    }
+    if (std::getenv("FLATPAK_ID")) paragraph(layer_, tr(Text::UpdatesFlatpak), width);
+    else paragraph(layer_, tr(Text::UpdatesDownloadHelp), width);
+#endif
+    if (action_row(layer_, "update_download", tr(Text::UpdatesDownloads), "", width))
+        SDL_OpenURL(std::string(install::kReleasePage).c_str());
+}
 } // namespace sarusaru::ui

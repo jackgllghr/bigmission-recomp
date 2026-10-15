@@ -21,6 +21,7 @@
 #include "shell/audio_output.hpp"
 #include "shell/ge_renderer.hpp"
 #include "shell/input.hpp"
+#include "release_version.hpp"
 #include "shell/presentation_clock.hpp"
 #include "shell/vulkan_context.hpp"
 #include "ui/launcher.hpp"
@@ -59,6 +60,7 @@ constexpr const char *kUsage =
     "  --translation-pack FILE  select an English menu texture pack for this run\n"
     "  --texture-pack DIR  use this HD texture pack for this run (none: the original textures)\n"
     "  --dump-textures DIR  write every texture the game draws to DIR, once each, as PNG\n"
+    "  --version  print the launcher release version and exit\n"
     "  --print-default-settings  print the settings file template and exit\n"
     "  --install ISO  build the game from your disc without the window, as the launcher's Install does\n"
     "Alt+Enter or F11 toggles fullscreen.\n"
@@ -588,6 +590,10 @@ int main(int argc, char **argv) {
     std::vector<std::string_view> paths;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
+        if (arg == "--version") {
+            std::cout << "SaruSaru Recomp " << sarusaru::release_version << '\n';
+            return 0;
+        }
         if (arg == "--help") {
             std::cout << kUsage;
             return 0;

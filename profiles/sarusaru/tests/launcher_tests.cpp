@@ -250,9 +250,9 @@ void rows() {
     step(SettingRow::Subtitles, settings, 1);
     require(!settings.subtitles && describe(SettingRow::Subtitles, settings).value == "Off", "subtitles did not turn off");
     step(SettingRow::Subtitles, settings, 1);
-    require(seen == 14, "settings rows missing from the tabs");
+    require(seen == 15, "settings rows missing from the tabs");
     const auto graphics = settings_tabs().front().rows;
-    require(settings_tabs().size() == 3u && graphics.size() == 7u && graphics[0] == SettingRow::Fullscreen &&
+    require(settings_tabs().size() == 4u && graphics.size() == 7u && graphics[0] == SettingRow::Fullscreen &&
                 graphics[1] == SettingRow::WindowSize && graphics[5] == SettingRow::CelShading &&
                 graphics[6] == SettingRow::Textures,
             "Graphics rows not in order: full screen and window size first, cel shading and textures last");

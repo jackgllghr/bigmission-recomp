@@ -185,6 +185,12 @@ button chords); unbound actions show a dash. They work with the original
 Japanese textures, translation packs and HD textures. Only source-verified
 button regions are replaced; captions retain their selected language.
 
+Settings' **Updates** tab shows the launcher version, checks published stable
+GitHub releases in the background once a day, and opens release downloads.
+Automatic checks can be disabled there. Android links to Obtainium for APK
+updates. See [release/update setup](docs/auto-updates.md), including Android
+signing requirements and the desktop installation phases still to come.
+
 Every screen works with each device alone. The arrow keys, d-pad or left stick
 move the focus; Enter or the confirm button activates; Esc, the other face
 button, a mouse's back button or Android's Back go back; Q/W or L1/R1 switch

@@ -10,12 +10,23 @@ plugins {
 val repository: File = rootDir.resolve("../../../..").canonicalFile
 val profile: File = repository.resolve("profiles/sarusaru")
 
-// One pin for everything: the version comes from the CMake project, and
+// One release identity for CMake, packaging and the APK;
 // SDL's Java half from the same release (and hash) as its C half.
 fun cmakeValue(file: File, pattern: String): String =
     Regex(pattern).find(file.readText())?.groupValues?.get(1)
         ?: throw GradleException("cannot find $pattern in $file")
-val portVersion = cmakeValue(repository.resolve("CMakeLists.txt"), """project\(PSPRecomp VERSION ([0-9.]+)""")
+val portVersion = providers.gradleProperty("releaseVersion").orElse(provider {
+    profile.resolve("VERSION").readText().trim()
+}).get()
+val versionParts = Regex("""(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)""").matchEntire(portVersion)
+    ?.groupValues?.drop(1)?.map { it.toLong() }
+    ?: throw GradleException("releaseVersion must be X.Y.Z")
+if (versionParts[1] > 999 || versionParts[2] > 999) throw GradleException("minor and patch must be at most 999")
+val releaseVersionCode = versionParts[0] * 1_000_000L + versionParts[1] * 1_000L + versionParts[2] + 1L
+if (releaseVersionCode !in 1..2_100_000_000L) throw GradleException("releaseVersion is outside Android's versionCode range")
+val signingStore = providers.environmentVariable("SARUSARU_ANDROID_KEYSTORE").orNull
+val releaseRequested = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (releaseRequested && signingStore.isNullOrBlank()) throw GradleException("Release builds require SARUSARU_ANDROID_KEYSTORE and signing credentials")
 val graphics = profile.resolve("cmake/Graphics.cmake")
 val sdlVersion = cmakeValue(graphics, """set\(SARUSARU_SDL3_VERSION ([0-9.]+)\)""")
 val sdlSha256 = cmakeValue(graphics, """set\(SARUSARU_SDL3_SHA256 ([0-9a-f]{64})\)""")
@@ -107,7 +118,7 @@ android {
         // Android 10: Vulkan 1.1 on every device that has it.
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
+        versionCode = releaseVersionCode.toInt()
         versionName = portVersion
         ndk {
             abiFilters += "arm64-v8a"
@@ -116,6 +127,7 @@ android {
             cmake {
                 arguments += listOf(
                     "-DPSPRECOMP_PROFILE=sarusaru",
+                    "-DSARUSARU_RELEASE_VERSION=$portVersion",
                     "-DPSPRECOMP_BUILD_TESTS=OFF",
                     "-DPSPRECOMP_BUILD_PROFILE_TESTS=OFF",
                     // One C++ runtime for libmain.so, the shared PSPRecomp
@@ -127,6 +139,14 @@ android {
         }
     }
 
+    signingConfigs {
+        if (!signingStore.isNullOrBlank()) create("release") {
+            storeFile = file(signingStore)
+            storePassword = providers.environmentVariable("SARUSARU_ANDROID_STORE_PASSWORD").get()
+            keyAlias = providers.environmentVariable("SARUSARU_ANDROID_KEY_ALIAS").get()
+            keyPassword = providers.environmentVariable("SARUSARU_ANDROID_KEY_PASSWORD").get()
+        }
+    }
     buildTypes {
         all {
             // Filled by the native build: the shipped resources and the SDK
@@ -145,7 +165,8 @@ android {
         }
         release {
             isMinifyEnabled = false
-            // Unsigned until the release policy (PLAN.md, milestone 7) settles signing.
+            if (!signingStore.isNullOrBlank()) signingConfig = signingConfigs.getByName("release")
+            externalNativeBuild.cmake.arguments += "-DCMAKE_BUILD_TYPE=Release"
         }
     }
 
@@ -174,4 +195,11 @@ android {
 tasks.configureEach {
     val variant = Regex("""^merge(\w+)(Assets|JniLibFolders)$""").find(name)?.groupValues?.get(1)
     if (variant != null) dependsOn("externalNativeBuild$variant")
+}
+
+// Aggregate tasks (assemble/build) also must not silently produce unsigned APKs.
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        if (signingStore.isNullOrBlank()) throw GradleException("Release builds require SARUSARU_ANDROID_KEYSTORE and signing credentials")
+    }
 }

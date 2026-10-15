@@ -354,7 +354,10 @@ def main():
     args = parser.parse_args()
     try:
         host = args.host or host_name()
-        version = args.version or default_version()
+        installed = args.build.resolve() / "sarusaru-version.txt"
+        version = args.version or (installed.read_text().strip() if installed.is_file() else default_version())
+        if installed.is_file() and version.removeprefix("v") != installed.read_text().strip():
+            raise ValueError("package version differs from the built launcher; configure SARUSARU_RELEASE_VERSION first")
         if args.format != "archive" and not host.startswith("linux"):
             raise ValueError(f"--format {args.format} is for Linux hosts only")
         if args.format == "prefix":

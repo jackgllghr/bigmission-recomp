@@ -236,6 +236,12 @@ Settings parse_settings(std::string_view text) {
                 settings.skip_intro_logos = integer(value, 0, 1) != 0;
             } else if (full == "game.disc") {
                 settings.game_disc = decode_path(value);
+            } else if (full == "interface.check_for_updates") {
+                settings.check_for_updates = integer(value, 0, 1) != 0;
+            } else if (full == "interface.last_update_check") {
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(), settings.last_update_check);
+                if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || settings.last_update_check < 0)
+                    throw std::runtime_error("last_update_check must be a nonnegative timestamp");
             } else if (full == "interface.confirm") {
                 if (value != "east" && value != "south") throw std::runtime_error("confirm must be east or south");
                 settings.confirm_south = value == "south";
@@ -296,6 +302,8 @@ std::string serialize_settings(const Settings &settings) {
         << (settings.skip_intro_logos ? 1 : 0) << '\n'
         << "\n[interface]\n# The gamepad button that confirms in the launcher: south (cross) or east (circle, as in the game).\n"
         << "confirm = " << (settings.confirm_south ? "south" : "east") << '\n'
+        << "check_for_updates = " << (settings.check_for_updates ? 1 : 0) << '\n'
+        << "last_update_check = " << settings.last_update_check << '\n'
         << "controller_buttons = " << kPromptStyleNames[static_cast<std::size_t>(settings.prompt_style)] << '\n'
         << "# The launcher's language: auto (the system's), en or ja. The game's own text stays Japanese.\n"
         << "language = "

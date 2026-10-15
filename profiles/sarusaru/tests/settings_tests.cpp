@@ -44,6 +44,12 @@ int main() {
             ps_prompts.gamepad && ps_prompts.type == SDL_GAMEPAD_TYPE_PS5 &&
             !resolve_prompts(PromptStyle::Keyboard, true, SDL_GAMEPAD_TYPE_XBOXONE).gamepad,
             "explicit prompt style did not override detected input");
+    const auto updates = parse_settings("[interface]\ncheck_for_updates = 0\nlast_update_check = 1234567890\n");
+    require(defaults.check_for_updates && !updates.check_for_updates && updates.last_update_check == 1234567890 &&
+            parse_settings(serialize_settings(updates)) == updates, "update preferences do not round-trip");
+    rejects("[interface]\ncheck_for_updates = 2");
+    rejects("[interface]\nlast_update_check = -1");
+    rejects("[interface]\nlast_update_check = 9223372036854775808");
     require(!defaults.skip_intro_logos, "intro logos must play by default");
     require(defaults.subtitles, "movie subtitles must default to on");
     const auto unsubtitled = parse_settings("[translation]\nsubtitles = 0\n");
