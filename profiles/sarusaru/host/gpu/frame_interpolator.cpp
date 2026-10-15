@@ -68,18 +68,20 @@ bool small_step(const std::array<float, 3> &from, const std::array<float, 3> &to
 
 void FrameInterpolator::end_frame() {
     previous_.swap(current_);
-    current_.clear();
+    previous_count_ = current_count_;
+    current_count_ = 0u;
+    cameras_.clear();
     exact_.clear();
     loose_.clear();
-    for (std::uint32_t i = 0; i < previous_.size(); ++i) {
+    for (std::uint32_t i = 0; i < previous_count_; ++i) {
         exact_[previous_[i].exact_key].records.push_back(i);
         loose_[previous_[i].loose_key].records.push_back(i);
     }
 }
 
 void FrameInterpolator::reset() {
-    previous_.clear();
-    current_.clear();
+    previous_count_ = current_count_ = 0u;
+    cameras_.clear();
     exact_.clear();
     loose_.clear();
 }
@@ -112,9 +114,16 @@ FrameInterpolator::Record *FrameInterpolator::match(const Record &current) {
     return nullptr;
 }
 
+FrameInterpolator::Camera *FrameInterpolator::camera(const DrawCall &call) {
+    for (Camera &known : cameras_)
+        if (known.view == call.view && known.projection == call.projection) return &known;
+    return nullptr;
+}
+
 bool FrameInterpolator::interpolate(const DrawCall &call, float t, DrawCall &out) {
     out = call;
-    Record record;
+    if (current_count_ == current_.size()) current_.emplace_back();
+    Record &record = current_[current_count_++];
     // Where the vertices come from tells instances of static meshes apart;
     // dynamic buffers move between frames, so the loose key leaves it out.
     // The render target is not part of either: the game alternates two
@@ -134,66 +143,91 @@ bool FrameInterpolator::interpolate(const DrawCall &call, float t, DrawCall &out
     record.offset_u = call.texture.offset_u;
     record.offset_v = call.texture.offset_v;
     record.material_color = call.material_color;
-    record.vertices = call.vertices;
+    record.vertices.assign(call.vertices.begin(), call.vertices.end());
+    record.anchor = {};
+    record.used = false;
     const Matrix view_world = multiply(call.view, call.world);
     if (!call.vertices.empty())
         record.anchor = call.through ? std::array<float, 3>{call.vertices[0].position[0], call.vertices[0].position[1], 0.0f}
                                      : transform(view_world, call.vertices[0].position);
 
     Record *previous = call.vertices.empty() ? nullptr : match(record);
-    bool blended = false;
-    if (previous == nullptr) {
-        ++stats_.unmatched;
-    } else {
-        previous->used = true;
-        if (!small_step(previous->anchor, record.anchor, call.through)) {
-            ++stats_.snapped;
-        } else {
-            blended = true;
-            if (!call.through) {
-                for (int i = 0; i < 16; ++i) {
-                    out.world[i] = lerp(previous->world[i], call.world[i], t);
-                    out.view[i] = lerp(previous->view[i], call.view[i], t);
-                    out.projection[i] = lerp(previous->projection[i], call.projection[i], t);
-                }
-            }
-            // Scrolling textures; a wrap back to the start is not motion.
-            if (std::fabs(call.texture.offset_u - previous->offset_u) < 0.25f)
-                out.texture.offset_u = lerp(previous->offset_u, call.texture.offset_u, t);
-            if (std::fabs(call.texture.offset_v - previous->offset_v) < 0.25f)
-                out.texture.offset_v = lerp(previous->offset_v, call.texture.offset_v, t);
-            out.material_color = lerp_color(previous->material_color, call.material_color, t);
+    if (previous != nullptr) previous->used = true;
+    const bool moves = previous != nullptr && small_step(previous->anchor, record.anchor, call.through);
 
-            // Vertices the CPU moved (skinned meshes, particles, 2D layout).
-            // Texture coordinates stay: blending them would show a mixture of
-            // two animation cells. One vertex jumping means the buffer was
-            // reused for something else, so then none are blended.
-            const auto &before = previous->vertices;
-            if (before.size() == call.vertices.size()) {
-                const Matrix previous_view_world = multiply(previous->view, previous->world);
-                bool motion = true;
-                for (std::size_t i = 0; i < before.size() && motion; ++i) {
-                    if (before[i].position == call.vertices[i].position) continue;
-                    motion = call.through
-                        ? small_step({before[i].position[0], before[i].position[1], 0.0f},
-                                     {call.vertices[i].position[0], call.vertices[i].position[1], 0.0f}, true)
-                        : small_step(transform(previous_view_world, before[i].position),
-                                     transform(view_world, call.vertices[i].position), false);
-                }
-                if (motion) {
-                    for (std::size_t i = 0; i < before.size(); ++i) {
-                        auto &vertex = out.vertices[i];
-                        for (int c = 0; c < 4; ++c) vertex.position[c] = lerp(before[i].position[c], vertex.position[c], t);
-                        for (int c = 0; c < 3; ++c) vertex.normal[c] = lerp(before[i].normal[c], vertex.normal[c], t);
-                        vertex.color = lerp_color(before[i].color, vertex.color, t);
-                    }
-                }
+    // The camera: an object that did not move between the frames moved on
+    // screen only with the camera, so when its step is motion it fixes the
+    // in-between camera. After a cut no such object moves little enough, no
+    // camera is fixed, and every draw stays as the newer frame has it.
+    Camera *view = nullptr;
+    if (!call.through) {
+        view = camera(call);
+        if (view == nullptr && moves && previous->world == call.world) {
+            Camera &added = cameras_.emplace_back();
+            added.view = call.view;
+            added.projection = call.projection;
+            for (int i = 0; i < 16; ++i) {
+                added.blended_view[i] = lerp(previous->view[i], call.view[i], t);
+                added.blended_projection[i] = lerp(previous->projection[i], call.projection[i], t);
             }
-            ++stats_.matched;
+            view = &added;
+        }
+        if (view != nullptr) {
+            out.view = view->blended_view;
+            out.projection = view->blended_projection;
         }
     }
-    current_.push_back(std::move(record));
-    return blended;
+
+    if (previous == nullptr) {
+        ++stats_.unmatched;
+        return false;
+    }
+    if (!moves) {
+        ++stats_.snapped;
+        return false;
+    }
+    if (!call.through) {
+        for (int i = 0; i < 16; ++i) out.world[i] = lerp(previous->world[i], call.world[i], t);
+        if (view == nullptr)
+            for (int i = 0; i < 16; ++i) {
+                out.view[i] = lerp(previous->view[i], call.view[i], t);
+                out.projection[i] = lerp(previous->projection[i], call.projection[i], t);
+            }
+    }
+    // Scrolling textures; a wrap back to the start is not motion.
+    if (std::fabs(call.texture.offset_u - previous->offset_u) < 0.25f)
+        out.texture.offset_u = lerp(previous->offset_u, call.texture.offset_u, t);
+    if (std::fabs(call.texture.offset_v - previous->offset_v) < 0.25f)
+        out.texture.offset_v = lerp(previous->offset_v, call.texture.offset_v, t);
+    out.material_color = lerp_color(previous->material_color, call.material_color, t);
+
+    // Vertices the CPU moved (skinned meshes, particles, 2D layout).
+    // Texture coordinates stay: blending them would show a mixture of
+    // two animation cells. One vertex jumping means the buffer was
+    // reused for something else, so then none are blended.
+    const auto &before = previous->vertices;
+    if (before.size() == call.vertices.size()) {
+        const Matrix previous_view_world = multiply(previous->view, previous->world);
+        bool motion = true;
+        for (std::size_t i = 0; i < before.size() && motion; ++i) {
+            if (before[i].position == call.vertices[i].position) continue;
+            motion = call.through
+                ? small_step({before[i].position[0], before[i].position[1], 0.0f},
+                             {call.vertices[i].position[0], call.vertices[i].position[1], 0.0f}, true)
+                : small_step(transform(previous_view_world, before[i].position),
+                             transform(view_world, call.vertices[i].position), false);
+        }
+        if (motion) {
+            for (std::size_t i = 0; i < before.size(); ++i) {
+                auto &vertex = out.vertices[i];
+                for (int c = 0; c < 4; ++c) vertex.position[c] = lerp(before[i].position[c], vertex.position[c], t);
+                for (int c = 0; c < 3; ++c) vertex.normal[c] = lerp(before[i].normal[c], vertex.normal[c], t);
+                vertex.color = lerp_color(before[i].color, vertex.color, t);
+            }
+        }
+    }
+    ++stats_.matched;
+    return true;
 }
 
 } // namespace sarusaru::gpu

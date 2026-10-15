@@ -134,6 +134,17 @@ private:
     Buffer vertices_, uniforms_, staging_;
     VkDeviceSize vertex_cursor_{}, uniform_cursor_{}, staging_cursor_{};
     std::uint32_t frame_sets_{};
+    // This frame's texture descriptor sets, by image view and sampler: a
+    // texture drawn again reuses its set, so the in-between picture of 60 FPS
+    // motion does not run the pool dry (which forced a stalling flush).
+    std::unordered_map<std::uint64_t, VkDescriptorSet> frame_set_cache_;
+    // The texture the latest game draw sampled, for queue_interpolated to
+    // reuse instead of hashing the texture a second time.
+    struct LastTexture {
+        bool valid{};
+        VkImageView view{VK_NULL_HANDLE};
+        float u_scale{1.0f}, v_scale{1.0f};
+    } last_game_texture_;
     Image white_;
     bool white_ready_{};
     Image upload_;  // the displayed framebuffer when the CPU drew it

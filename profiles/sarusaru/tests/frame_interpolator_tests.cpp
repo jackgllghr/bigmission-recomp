@@ -144,6 +144,32 @@ int main() {
         require(!interpolator.interpolate(retextured, 0.5f, out) && interpolator.stats().unmatched == 2u,
                 "draws with different textures were paired");
     }
+    {
+        // The camera is blended once for the frame: once an unmoved object has
+        // fixed it, a draw with no previous-frame match, or one that snapped,
+        // is still seen from the in-between camera, so seams between
+        // neighbouring pieces of scenery stay closed.
+        FrameInterpolator interpolator;
+        interpolator.interpolate(mesh(0.0f, 0.0f), 0.5f, out);
+        interpolator.interpolate(mesh(0.0f, 0.0f, 0x08910000u), 0.5f, out);
+        interpolator.end_frame();
+        require(interpolator.interpolate(mesh(0.0f, 1.0f), 0.5f, out) && near(out.view[12], -0.5f),
+                "camera not blended");
+        DrawCall fresh = mesh(5.0f, 1.0f, 0x08920000u);
+        fresh.texture.address = 0x09500000u;
+        require(!interpolator.interpolate(fresh, 0.5f, out) && near(out.view[12], -0.5f) && near(out.world[12], 5.0f),
+                "unmatched draw left on the newer camera");
+        require(!interpolator.interpolate(mesh(40.0f, 1.0f, 0x08910000u), 0.5f, out) && near(out.view[12], -0.5f) &&
+                    near(out.world[12], 40.0f),
+                "snapped draw left on the newer camera");
+        // A cut fixes no camera: everything is drawn as the newer frame.
+        interpolator.end_frame();
+        require(!interpolator.interpolate(mesh(0.0f, 60.0f), 0.5f, out) && near(out.view[12], -60.0f),
+                "cut camera blended");
+        DrawCall after_cut = mesh(5.0f, 60.0f, 0x08920000u);
+        after_cut.texture.address = 0x09500000u;
+        require(!interpolator.interpolate(after_cut, 0.5f, out) && near(out.view[12], -60.0f), "draw after a cut blended");
+    }
     std::cout << "frame interpolator tests passed\n";
     return 0;
 }

@@ -35,6 +35,23 @@ int main() {
     require(render(ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_PS5) != ps, "rebound trigger ignored");
     controls.gamepad[static_cast<unsigned>(shell::Action::Circle)].clear();
     require(render(ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_PS5) != ps, "unbound action retained PSP glyph");
+    // Original button art fills the complete 24px row, including the space
+    // around our smaller replacement glyphs. None may show through.
+    for (unsigned scale : {1u, 4u}) {
+        std::vector<std::uint32_t> hints(128 * 256 * scale * scale, 0x12345678);
+        prompts.apply(3, hints, 128 * scale, scale);
+        for (unsigned row = 0; row < 9; ++row) {
+            const unsigned left = row < 2 ? 88 : 0;
+            const unsigned right = row < 2 ? 128 : 32;
+            for (unsigned y = row * 24 * scale; y < (row + 1) * 24 * scale; ++y)
+                for (unsigned x = left * scale; x < right * scale; ++x)
+                    require(hints[y * 128 * scale + x] != 0x12345678, "original hint artwork shows behind host glyphs");
+        }
+        require(hints[50 * scale] == 0x12345678, "hint cleanup erased the caption");
+        std::vector<std::uint32_t> shortcuts(128 * 128 * scale * scale, 0x12345678);
+        prompts.apply(2, shortcuts, 128 * scale, scale);
+        require(shortcuts[0] != 0x12345678, "original shortcut artwork remains around host glyphs");
+    }
     gpu::TextureState texture; texture.width = texture.buffer_width = 128; texture.height = 128;
     require(shell::ButtonPrompts::identify(texture, {}) == 0, "short pixels accepted");
     std::vector<std::uint32_t> unrelated(128*128);

@@ -16,6 +16,13 @@
 // vertex lies nearest wins. A draw that has no match, or moved too far to be
 // the same motion (a camera cut, a teleport, a recycled sprite), is drawn as
 // it is in the newer frame.
+//
+// The camera is blended once per frame, not per draw: the first unmoved
+// object that blends with its previous-frame draw fixes the in-between view and
+// projection for its camera, and every later draw with that camera uses them,
+// matched or not. Blending each draw's camera on its own let a draw that was
+// unmatched or snapped keep the newer camera while its neighbours took the
+// in-between one, opening cracks along the seams of the scenery.
 #include "gpu/ge_state.hpp"
 
 #include <cstdint>
@@ -60,10 +67,21 @@ private:
         std::size_t first_unused{};
     };
 
+    // A camera of the current frame and the in-between camera it is drawn with.
+    struct Camera {
+        std::array<float, 16> view{}, projection{};
+        std::array<float, 16> blended_view{}, blended_projection{};
+    };
+
     [[nodiscard]] Record *match(const Record &current);
     Record *best_of(Candidates &candidates, const Record &current);
+    [[nodiscard]] Camera *camera(const DrawCall &call);
 
+    // Records are reused from frame to frame (their vertex buffers keep their
+    // capacity); only the first *_count_ of each are live.
     std::vector<Record> previous_, current_;
+    std::size_t previous_count_{}, current_count_{};
+    std::vector<Camera> cameras_;
     std::unordered_map<std::uint64_t, Candidates> exact_, loose_;
     Stats stats_;
 };

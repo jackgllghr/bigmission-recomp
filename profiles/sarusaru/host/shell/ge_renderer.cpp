@@ -258,6 +258,7 @@ void GeRenderer::begin_frame(VkCommandBuffer commands) {
     if (trace_ != 0u) --trace_;
     vertex_cursor_ = uniform_cursor_ = staging_cursor_ = 0u;
     vk_.vkResetDescriptorPool(vk_.device, frame_pool_, 0u);
+    frame_set_cache_.clear();
     frame_sets_ = 0u;
     pass_target_ = nullptr;
     ++frame_;
@@ -282,6 +283,7 @@ void GeRenderer::flush() {
     commands_ = vk_.flush();
     vertex_cursor_ = uniform_cursor_ = staging_cursor_ = 0u;
     vk_.vkResetDescriptorPool(vk_.device, frame_pool_, 0u);
+    frame_set_cache_.clear();
     frame_sets_ = 0u;
 }
 
@@ -546,6 +548,9 @@ VkImageView GeRenderer::sample_target(Target &source, const gpu::TextureState &t
 }
 
 VkDescriptorSet GeRenderer::texture_set(VkImageView view, VkSampler sampler) {
+    const std::uint64_t key = reinterpret_cast<std::uintptr_t>(view) * 0x9E3779B97F4A7C15ull ^
+                              reinterpret_cast<std::uintptr_t>(sampler);
+    if (const auto found = frame_set_cache_.find(key); found != frame_set_cache_.end()) return found->second;
     VkDescriptorSetAllocateInfo allocate{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     allocate.descriptorPool = frame_pool_;
     allocate.descriptorSetCount = 1u;
@@ -560,6 +565,7 @@ VkDescriptorSet GeRenderer::texture_set(VkImageView view, VkSampler sampler) {
     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     write.pImageInfo = &image;
     vk_.vkUpdateDescriptorSets(vk_.device, 1u, &write, 0u, nullptr);
+    frame_set_cache_.emplace(key, set);
     return set;
 }
 
@@ -635,6 +641,7 @@ VkPipeline GeRenderer::pipeline(const PipelineKey &key) {
 }
 
 void GeRenderer::draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call) {
+    last_game_texture_.valid = false;
     draw_into(kGame, &memory, call, nullptr);
 }
 
@@ -651,8 +658,14 @@ void GeRenderer::queue_interpolated(const psprecomp::GuestMemory &memory, const 
         queued.texture.render_target = true;
         return;
     }
-    // The game's own draw has just looked this texture up, so this finds it
-    // in the cache: it is the texture as guest memory holds it now.
+    // The game's own draw has just looked this texture up: it is the texture
+    // as guest memory holds it now.
+    if (last_game_texture_.valid) {
+        queued.texture.view = last_game_texture_.view;
+        queued.texture.u_scale = last_game_texture_.u_scale;
+        queued.texture.v_scale = last_game_texture_.v_scale;
+        return;
+    }
     queued.texture.view = texture_view(memory, call, queued.texture.u_scale, queued.texture.v_scale);
 }
 
@@ -713,6 +726,7 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
     VkImageView view = VK_NULL_HANDLE;
     if (textured && queued == nullptr) {
         view = texture_view(*memory, call, u_scale, v_scale);
+        if (layer == kGame) last_game_texture_ = {true, view, u_scale, v_scale};
     } else if (textured && queued->render_target) {
         // The in-between picture samples in-between render targets; the
         // game's own is the fallback for one only the game has drawn yet.

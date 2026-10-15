@@ -132,13 +132,28 @@ void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, uns
 }
 void ButtonPrompts::apply(unsigned atlas, std::vector<std::uint32_t> &pixels, unsigned width, unsigned scale) const {
     if (font_.empty()) return; // Retain the original if packaged resources are missing.
+    const auto clear = [&](unsigned x, unsigned y, unsigned w, unsigned h) {
+        for (unsigned py = y * scale; py < (y + h) * scale; ++py)
+            for (unsigned px = x * scale; px < (x + w) * scale && px < width; ++px) {
+                const auto offset = static_cast<std::size_t>(py) * width + px;
+                if (offset < pixels.size()) pixels[offset] = 0;
+            }
+    };
     const auto button = [&](int x, int y, int w, int h, Action a) { draw(pixels, width, scale, x,y,w,h,a); };
     if (atlas == 1) {
         constexpr Action actions[] = {Action::Square, Action::Triangle, Action::Circle, Action::Cross};
         for (int i = 0; i < 4; ++i) button(i*24, 0, 24, 24, actions[i]);
     } else if (atlas == 2) {
-        for (int i = 0; i < 5; ++i) button(0, i*24+6, 26, 14, i < 3 ? Action::Start : Action::Select);
+        for (int i = 0; i < 5; ++i) {
+            clear(0, i * 24, 32, 24);
+            button(0, i*24+6, 26, 14, i < 3 ? Action::Start : Action::Select);
+        }
     } else if (atlas == 3) {
+        // The PSP artwork extends around and between the replacement glyphs.
+        // Remove its entire region, after translation/HD art, not just the
+        // smaller rectangles occupied by our buttons. Captions start at x=32.
+        for (unsigned row = 0; row < 9; ++row)
+            clear(row < 2 ? 88 : 0, row * 24, row < 2 ? 40 : 32, 24);
         // Paired icons are alternatives, not a chord. Each retains its own binding.
         for (int row : {0,1,4}) {
             const int x = row < 2 ? 88 : 0;
