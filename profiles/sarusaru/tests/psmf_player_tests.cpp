@@ -104,6 +104,7 @@ int main() {
     std::uint32_t pts = 0u;
     require(static_cast<std::uint32_t>(player.video(runtime.memory(), handle, 512u, 0x04000000u, pts)) == psmf_error::kNoMoreData,
             "no pictures in an empty stream");
+    require(!player.playing(), "no movie position before a picture is shown");
     cpu.set_gpr(4u, 2'000'000u);
     cpu.pc = 0x08A00000u; cpu.set_gpr(31u, 0x08804100u);
     runtime.invoke_import("ThreadManForUser", 0xCEADEB47u, cpu);

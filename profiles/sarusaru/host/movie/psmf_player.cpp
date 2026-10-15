@@ -123,6 +123,7 @@ std::int32_t PsmfPlayer::set_psmf(std::uint32_t handle, const std::string &path)
     if (!file) return static_cast<std::int32_t>(psmf_error::kInvalidParam);
     const auto info = parse_psmf(*file);
     if (!info) return static_cast<std::int32_t>(psmf_error::kInvalidStream);
+    player->path = path;
     player->file = std::move(*file);
     player->info = *info;
     player->status = psmf_status::kStandby;
@@ -276,6 +277,7 @@ std::int32_t PsmfPlayer::video(psprecomp::GuestMemory &memory, std::uint32_t han
     if (destination == nullptr) return static_cast<std::int32_t>(psmf_error::kInvalidParam);
     convert_picture(picture, player->pixel_type, frame_width, destination);
     pts = player->picture_pts;
+    shown_ = handle;
     if (trace_enabled() && player->pictures_out % 300u == 1u)
         std::cerr << "[movie] picture " << player->pictures_out << " " << picture.width << "x" << picture.height
                   << " pts " << pts << " centre luma " << int(picture.y[picture.y.size() / 2u]) << "\n";
@@ -303,6 +305,14 @@ std::int32_t PsmfPlayer::audio(psprecomp::GuestMemory &memory, std::uint32_t han
     for (std::size_t i = 0; i < samples.size(); ++i)
         memory.store16(buffer + static_cast<std::uint32_t>(i) * 2u, static_cast<std::uint16_t>(samples[i]));
     return unit || !player->video_ended ? 0 : static_cast<std::int32_t>(psmf_error::kNoMoreData);
+}
+
+std::optional<MoviePosition> PsmfPlayer::playing() const {
+    const Player *player = shown_ ? find(*shown_) : nullptr;
+    if (player == nullptr || !player->picture ||
+        (player->status != psmf_status::kPlaying && player->status != psmf_status::kFinished))
+        return std::nullopt;
+    return MoviePosition{player->path, (player->picture_pts - player->info.start_pts) / 90u};
 }
 
 void register_psmf_player(PsmfPlayer &player, psprecomp::Runtime &runtime) {

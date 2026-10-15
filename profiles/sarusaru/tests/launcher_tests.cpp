@@ -245,7 +245,12 @@ void rows() {
             "logo skip did not turn on");
     step(SettingRow::SkipIntroLogos, settings, -1);
     require(!settings.skip_intro_logos, "logo skip did not turn off");
-    require(seen == 13, "settings rows missing from the tabs");
+    require(!restart_only(SettingRow::Subtitles) && describe(SettingRow::Subtitles, settings).value == "On",
+            "subtitles must start on and apply live");
+    step(SettingRow::Subtitles, settings, 1);
+    require(!settings.subtitles && describe(SettingRow::Subtitles, settings).value == "Off", "subtitles did not turn off");
+    step(SettingRow::Subtitles, settings, 1);
+    require(seen == 14, "settings rows missing from the tabs");
     const auto graphics = settings_tabs().front().rows;
     require(settings_tabs().size() == 3u && graphics.size() == 7u && graphics[0] == SettingRow::Fullscreen &&
                 graphics[1] == SettingRow::WindowSize && graphics[5] == SettingRow::CelShading &&

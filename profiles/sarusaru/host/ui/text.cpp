@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <atomic>
 #include <cstring>
 
 namespace sarusaru::ui {
@@ -17,7 +18,8 @@ constexpr std::array<Entry, static_cast<std::size_t>(Text::Count)> kTexts = {{
 #undef X
 }};
 
-shell::Language g_language = shell::Language::English;
+// Atomic: the installation's threads read it for its notification.
+std::atomic<shell::Language> g_language{shell::Language::English};
 
 shell::Language system_language() {
     int count = 0;

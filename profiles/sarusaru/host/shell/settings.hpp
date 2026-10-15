@@ -56,6 +56,9 @@ struct Settings {
     std::string translation_language{"ja"};
     // Relative paths resolve beside the selected settings file.
     std::filesystem::path translation_pack;
+    // Subtitles over the movies, where there are subtitle files for them
+    // (movie/subtitles.hpp).
+    bool subtitles{true};
     std::uint32_t internal_resolution{2};
     // 0 = original, 1 = banded, 2 = banded with black world and character silhouettes.
     std::uint32_t cel_shading{0};

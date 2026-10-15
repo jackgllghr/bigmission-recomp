@@ -17,7 +17,9 @@ if(ANDROID)
     if(NOT SARUSARU_HAS_RENDERER)
         message(FATAL_ERROR "sarusaru: Android builds need the host shell (SARUSARU_RENDERER)")
     endif()
-    # The app's storage is SDL's to report (SDL_GetAndroidInternalStoragePath).
+    # The app's storage is SDL's to report (SDL_GetAndroidInternalStoragePath),
+    # and the activity keeps long work running behind other apps.
+    target_sources(sarusaru_platform PRIVATE host/platform/background_work.cpp)
     target_link_libraries(sarusaru_platform PUBLIC SDL3::SDL3)
 endif()
 # Recognising the player's disc image, for the launcher and the game session.
@@ -45,7 +47,7 @@ if(SARUSARU_HAS_RENDERER)
     target_include_directories(sarusaru_ui_logic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_ui_logic PUBLIC sarusaru_controls)
     add_library(sarusaru_ui STATIC host/ui/layer.cpp host/ui/ui_renderer.cpp host/ui/theme.cpp host/ui/widgets.cpp
-        host/ui/launcher.cpp host/ui/ui_script.cpp)
+        host/ui/launcher.cpp host/ui/ui_script.cpp host/ui/subtitles.cpp)
     target_link_libraries(sarusaru_ui PUBLIC sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install)
     # Texture dump mode and on-device HD texture packs (PNG through SDL).
     add_library(sarusaru_textures STATIC host/textures/texture_dump.cpp host/textures/hd_pack.cpp
@@ -66,13 +68,20 @@ if(Iconv_FOUND)
     target_compile_definitions(sarusaru_text PRIVATE SARUSARU_HAS_ICONV=1)
 endif()
 add_library(sarusaru_atrac STATIC host/audio/atrac.cpp host/audio/atrac_decoder.cpp
-    host/movie/psmf_demuxer.cpp host/movie/avc_decoder.cpp host/movie/psmf_player.cpp)
+    host/movie/psmf_demuxer.cpp host/movie/avc_decoder.cpp host/movie/psmf_player.cpp host/movie/subtitles.cpp)
 target_include_directories(sarusaru_atrac PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_atrac PUBLIC psprecomp_runtime)
 if(SARUSARU_HAS_FFMPEG)
     target_compile_definitions(sarusaru_atrac PRIVATE SARUSARU_HAS_FFMPEG=1)
     target_link_libraries(sarusaru_atrac PUBLIC sarusaru_ffmpeg)
 endif()
+# The movies' soundtracks as WAV files, for transcribing them into subtitles
+# (docs/movie-subtitles.md). A developer's tool: it reads the player's disc.
+add_executable(sarusaru_dump_movie_audio tools/dump_movie_audio.cpp)
+target_link_libraries(sarusaru_dump_movie_audio PRIVATE sarusaru_atrac sarusaru_disc)
+sarusaru_use_ffmpeg(sarusaru_dump_movie_audio)
+set_target_properties(sarusaru_dump_movie_audio PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
 
 # GE display-list state and texture decoding (adapted from Yakumo).
 add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gameplay_camera.cpp host/game/intro_logos.cpp host/game/orbit_camera.cpp)
@@ -253,6 +262,10 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_link_libraries(sarusaru_psmf_player_tests PRIVATE sarusaru_atrac)
     sarusaru_use_ffmpeg(sarusaru_psmf_player_tests)
     add_test(NAME sarusaru_psmf_player_tests COMMAND sarusaru_psmf_player_tests)
+    add_executable(sarusaru_subtitle_tests tests/subtitle_tests.cpp)
+    target_link_libraries(sarusaru_subtitle_tests PRIVATE sarusaru_atrac)
+    sarusaru_use_ffmpeg(sarusaru_subtitle_tests)
+    add_test(NAME sarusaru_subtitle_tests COMMAND sarusaru_subtitle_tests)
     add_executable(sarusaru_module_manager_tests tests/module_manager_tests.cpp host/modules/module_manager.cpp
         host/kernel/early_kernel.cpp)
     target_include_directories(sarusaru_module_manager_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")

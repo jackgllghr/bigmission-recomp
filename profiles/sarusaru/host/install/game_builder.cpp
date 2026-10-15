@@ -59,8 +59,10 @@ std::uint32_t compile_jobs(int cores, int memory_mib) {
     return std::clamp(std::min(by_cores, by_memory), 1u, 32u);
 }
 
-GameBuilder::GameBuilder(std::filesystem::path iso, const DiscIdentity &identity, std::uint64_t download_bytes)
-    : iso_(std::move(iso)), identity_(identity), jobs_(compile_jobs(SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM())) {
+GameBuilder::GameBuilder(std::filesystem::path iso, const DiscIdentity &identity, std::uint64_t download_bytes,
+                         Observer observer)
+    : iso_(std::move(iso)), identity_(identity), jobs_(compile_jobs(SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM())),
+      observer_(std::move(observer)) {
     progress_.total = download_bytes;
     thread_ = std::thread([this] { run(); });
 }
@@ -82,10 +84,20 @@ Progress GameBuilder::progress() const {
 
 void GameBuilder::set(Progress::Step step, std::uint64_t done, std::uint64_t total) {
     if (cancelled_) throw Cancelled{};
-    std::lock_guard lock(mutex_);
-    progress_.step = step;
-    progress_.done = done;
-    progress_.total = total;
+    {
+        std::lock_guard lock(mutex_);
+        progress_.step = step;
+        progress_.done = done;
+        progress_.total = total;
+    }
+    report();
+}
+
+void GameBuilder::report() {
+    if (!observer_) return;
+    // Copied under the observer's lock, so the calls see the progress in order.
+    std::lock_guard lock(observer_mutex_);
+    observer_(progress());
 }
 
 void GameBuilder::run() {
@@ -99,6 +111,7 @@ void GameBuilder::run() {
         progress_.step = cancelled_ ? Progress::Step::Cancelled : Progress::Step::Failed;
         progress_.error = failure.what();
     }
+    if (progress().step != Progress::Step::Done) report();
 }
 
 void GameBuilder::install() {
@@ -127,8 +140,11 @@ void GameBuilder::install() {
     set(Progress::Step::Downloading, 0u, progress().total);
     std::string error;
     const auto toolchain = prepare_toolchain(processes_, *kit, [this](std::uint64_t bytes) {
-        std::lock_guard lock(mutex_);
-        progress_.done = bytes;
+        {
+            std::lock_guard lock(mutex_);
+            progress_.done = bytes;
+        }
+        report();
     }, error);
     if (cancelled_) throw Cancelled{};
     if (!toolchain) throw psprecomp::Error(error);
@@ -187,8 +203,11 @@ void GameBuilder::install() {
                 return;
             }
             const auto done = ++compiled;
-            std::lock_guard lock(mutex_);
-            progress_.done = done;
+            {
+                std::lock_guard lock(mutex_);
+                progress_.done = std::max(progress_.done, done);
+            }
+            report();
         }
     };
     {

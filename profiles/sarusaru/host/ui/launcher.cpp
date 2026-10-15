@@ -1,6 +1,7 @@
 #include "ui/launcher.hpp"
 
 #include "game_module.hpp"
+#include "platform/background_work.hpp"
 #include "platform/documents.hpp"
 
 #include "ui/text.hpp"
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -384,6 +386,36 @@ std::string install_step(const install::Progress &progress) {
     return {};
 }
 
+// How far the step has got, while that is known.
+std::optional<float> install_fraction(const install::Progress &progress) {
+    using Step = install::Progress::Step;
+    if ((progress.step == Step::Compiling || progress.step == Step::Downloading) && progress.total != 0u)
+        return static_cast<float>(progress.done) / static_cast<float>(progress.total);
+    return std::nullopt;
+}
+
+// The installation's progress for the system (platform/background_work.hpp),
+// on the installation's own threads: the launcher's may be paused meanwhile.
+install::GameBuilder::Observer install_notification() {
+    using Clock = std::chrono::steady_clock;
+    using Step = install::Progress::Step;
+    return [last = std::optional<Step>{}, shown = Clock::time_point{}](const install::Progress &progress) mutable {
+        const auto title = tr(Text::InstallNotifyTitle);
+        if (progress.finished()) {
+            if (progress.step == Step::Done) platform::end_background_work(title, tr(Text::InstallNotifyDone));
+            else if (progress.step == Step::Failed) platform::end_background_work(title, tr(Text::InstallNotifyFailed));
+            else platform::end_background_work(title, "");
+            return;
+        }
+        // Each step at once; counts within one at most twice a second.
+        const auto now = Clock::now();
+        if (last == progress.step && now - shown < std::chrono::milliseconds(500)) return;
+        last = progress.step;
+        shown = now;
+        platform::show_background_work(title, install_step(progress), install_fraction(progress));
+    };
+}
+
 // A bar of `fraction` in [0, 1], or a sweeping block while the end is unknown.
 void progress_bar(const Layer &layer, float width, std::optional<float> fraction) {
     const float u = layer.unit(), height = 22.0f * u, radius = height * 0.5f;
@@ -439,10 +471,7 @@ void Launcher::install() {
         const auto progress = builder_->progress();
         paragraph(layer_, install_step(progress), width);
         ImGui::Dummy(ImVec2(0, 4.0f * u));
-        std::optional<float> fraction;
-        if ((progress.step == Step::Compiling || progress.step == Step::Downloading) && progress.total != 0u)
-            fraction = static_cast<float>(progress.done) / static_cast<float>(progress.total);
-        progress_bar(layer_, width, fraction);
+        progress_bar(layer_, width, install_fraction(progress));
         ImGui::Dummy(ImVec2(0, 8.0f * u));
         if (action_row(layer_, "install_cancel", tr(Text::InstallCancel), "", width)) builder_->cancel();
     } else {
@@ -452,7 +481,8 @@ void Launcher::install() {
         }
         const auto start = [this] {
             install_error_.clear();
-            builder_ = std::make_unique<install::GameBuilder>(settings_.game_disc, identity_, toolchain_->download_bytes);
+            builder_ = std::make_unique<install::GameBuilder>(settings_.game_disc, identity_, toolchain_->download_bytes,
+                                                              install_notification());
             focus_control("install_cancel");
         };
         switch (toolchain_->status) {

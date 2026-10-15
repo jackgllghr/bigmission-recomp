@@ -57,6 +57,13 @@ struct PsmfInfo {
 // pixels with a stride of `stride` pixels.
 void convert_picture(const Picture &picture, PixelType type, std::uint32_t stride, std::uint8_t *out);
 
+// The movie whose picture the game last took, and how far into it that
+// picture is: what subtitles follow (movie/subtitles.hpp).
+struct MoviePosition {
+    std::string path;
+    std::uint64_t position_ms{};
+};
+
 class PsmfPlayer {
 public:
     using FileReader = std::function<std::optional<std::vector<std::uint8_t>>(const std::string &)>;
@@ -78,12 +85,15 @@ public:
                                      std::uint32_t buffer, std::uint32_t &pts);
     // Writes 2048 stereo 16-bit samples.
     [[nodiscard]] std::int32_t audio(psprecomp::GuestMemory &memory, std::uint32_t handle, std::uint32_t buffer);
+    // Nothing once that movie has stopped, or before any picture.
+    [[nodiscard]] std::optional<MoviePosition> playing() const;
 
 private:
     struct Player {
         std::uint32_t status{psmf_status::kInit};
         PixelType pixel_type{PixelType::Rgba8888};
         bool loop{};
+        std::string path;
         std::vector<std::uint8_t> file;
         PsmfInfo info;
         PsmfDemuxer demuxer;
@@ -100,6 +110,8 @@ private:
     kernel::EarlyKernel *kernel_;
     FileReader reader_;
     std::map<std::uint32_t, Player> players_;
+    // The player GetVideoData last gave a picture from.
+    std::optional<std::uint32_t> shown_;
 
     [[nodiscard]] Player *find(std::uint32_t handle) noexcept;
     [[nodiscard]] const Player *find(std::uint32_t handle) const noexcept;

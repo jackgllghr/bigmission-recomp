@@ -102,6 +102,9 @@ X(ValueGameEnglish, "English (unofficial)", "英語（非公式）")
 X(DescGameText,
   "The language of the game's own menus, names and tutorials. English is an unofficial machine translation, downloaded the first time it is chosen.",
   "ゲーム本編のメニュー・名前・チュートリアルの言語です。英語は非公式の機械翻訳で、はじめて選んだときにダウンロードします。")
+X(RowSubtitles, "Movie Subtitles", "ムービーの字幕")
+X(DescSubtitles, "English subtitles over the cutscene movies, for the movies that have subtitles installed.",
+  "ムービーシーンに英語の字幕を表示します。字幕が入っているムービーだけに表示されます。")
 
 X(RowTextures, "Textures", "テクスチャ")
 X(ValueTexturesOriginal, "Original", "オリジナル")
@@ -190,9 +193,17 @@ X(ActionMenu, "Pause menu", "ポーズメニュー")
 
 // Installing the game from the disc
 X(InstallTitle, "Install the Game", "ゲームのインストール")
+#if defined(__ANDROID__)
+// A phone takes longer, and the installation carries on behind other apps
+// (SaruSaruActivity's InstallService).
+X(InstallIntro,
+  "Before the first game, the launcher builds the game for this device from your disc. It takes about ten minutes, carries on if you switch to another app, and is needed again only after an update. Nothing from your disc leaves this device.",
+  "はじめてあそぶ前に、ランチャーがお手持ちのディスクからこの端末用にゲームを作ります。10分ほどかかり、ほかのアプリに切り替えても続きます。次に必要になるのはアップデートのあとだけです。ディスクの内容がこの端末の外に送られることはありません。")
+#else
 X(InstallIntro,
   "Before the first game, the launcher builds the game for this computer from your disc. It takes a few minutes and is needed again only after an update. Nothing from your disc leaves this computer.",
   "はじめてあそぶ前に、ランチャーがお手持ちのディスクからこのコンピューター用にゲームを作ります。数分かかりますが、次に必要になるのはアップデートのあとだけです。ディスクの内容がこのコンピューターの外に送られることはありません。")
+#endif
 X(InstallStart, "Install", "インストールする")
 X(InstallDownloadNote, "First the compiler is downloaded ({0} MB).", "まずコンパイラーをダウンロードします（{0} MB）。")
 X(InstallNeedXcode, "This needs Apple's Command Line Tools, which macOS can install for you.",
@@ -215,6 +226,10 @@ X(InstallStepLinking, "Putting it together…", "仕上げています…")
 X(InstallCancel, "Cancel", "キャンセル")
 X(InstallFailed, "The installation did not finish: {0}", "インストールが完了しませんでした：{0}")
 X(InstallTryAgain, "Try again", "もう一度ためす")
+// The notification while the game installs behind other apps (Android)
+X(InstallNotifyTitle, "Installing the game", "ゲームをインストールしています")
+X(InstallNotifyDone, "The game is installed. Tap to play.", "ゲームのインストールが完了しました。タップしてあそびましょう。")
+X(InstallNotifyFailed, "The installation did not finish. Tap to see why.", "インストールが完了しませんでした。タップして理由を確認してください。")
 X(HintCancel, "Cancel", "キャンセル")
 
 // Problems

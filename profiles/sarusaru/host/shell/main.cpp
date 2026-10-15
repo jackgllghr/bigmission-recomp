@@ -16,6 +16,7 @@
 #include "gpu/fov.hpp"
 #include "gpu/frame_interpolator.hpp"
 #include "kernel/guest_clock.hpp"
+#include "movie/subtitles.hpp"
 #include "psprecomp/common.hpp"
 #include "shell/audio_output.hpp"
 #include "shell/ge_renderer.hpp"
@@ -23,6 +24,7 @@
 #include "shell/presentation_clock.hpp"
 #include "shell/vulkan_context.hpp"
 #include "ui/launcher.hpp"
+#include "ui/subtitles.hpp"
 #include "ui/ui_script.hpp"
 
 #include <SDL3/SDL.h>
@@ -209,6 +211,23 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                       << " menu textures, " << translation_pack->string_count()
                       << " text strings, " << translation_pack->dialogue_count()
                       << " compact messages); untranslated screens retain Japanese\n";
+        }
+        // The movies' English subtitles: from SARUSARU_SUBTITLES, else the
+        // subtitles folder beside the translation pack or the settings file.
+        sarusaru::movie::SubtitleLibrary subtitles;
+        {
+            std::vector<std::filesystem::path> folders;
+            if (const char *folder = std::getenv("SARUSARU_SUBTITLES"); folder != nullptr && *folder != '\0')
+                folders.emplace_back(folder);
+            if (!current.translation_pack.empty()) folders.push_back(current.translation_pack.parent_path() / "subtitles");
+            folders.push_back(settings_path.parent_path() / "subtitles");
+            for (const auto &folder : folders) {
+                std::error_code missing;
+                if (!std::filesystem::is_directory(folder, missing)) continue;
+                subtitles.load_directory(folder, "en");
+                std::cout << "Subtitles: " << subtitles.size() << " movies from " << folder.string() << '\n';
+                break;
+            }
         }
         std::optional<sarusaru::textures::HdTexturePack> hd_textures;
         std::optional<sarusaru::textures::TextureDump> texture_dump;
@@ -431,7 +450,25 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 vulkan.copy_to_buffer(*image, width, height, capture);
                 next_capture_us = game.kernel.now_us() + capture_every_us;
             }
-            vulkan.end_frame(image, width, height, presentation.due(game.kernel.now_us()));
+            // A movie's subtitle line is drawn over the picture as it is presented.
+            const sarusaru::movie::Cue *cue = nullptr;
+            if (current.subtitles && subtitles.size() != 0u)
+                if (const auto movie = game.psmf_player.playing()) cue = subtitles.at(movie->path, movie->position_ms);
+            const bool due = presentation.due(game.kernel.now_us());
+            if (cue != nullptr && due && image != nullptr) {
+                vulkan.end_frame(image, width, height, false);
+                if (capturing) {
+                    char name[64];
+                    std::snprintf(name, sizeof name, "/subtitled_%04u_%08llums.bmp", captures,
+                                  static_cast<unsigned long long>(game.kernel.now_us() / 1000u));
+                    layer.capture_next(std::string(capture_directory) + name);
+                }
+                layer.present_over(image, width, height, [cue](ImVec2 origin, ImVec2 size) {
+                    sarusaru::ui::draw_subtitle(cue->text, origin, size);
+                });
+            } else {
+                vulkan.end_frame(image, width, height, due);
+            }
             if (open_menu) {
                 // The game waits in this callback until the menu closes, over
                 // its last picture; nothing it queued plays meanwhile.

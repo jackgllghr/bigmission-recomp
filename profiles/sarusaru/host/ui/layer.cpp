@@ -226,6 +226,26 @@ void Layer::begin_frame(bool confirm_south) {
             ImGui::IsKeyPressed(pad_back, false) || ImGui::IsMouseClicked(3, false);
 }
 
+void Layer::present_over(const shell::Image *image, std::uint32_t width, std::uint32_t height,
+                         const std::function<void(ImVec2 origin, ImVec2 size)> &draw) {
+    if (image == nullptr || width == 0u || height == 0u) return;
+    renderer_.set_backdrop(image, width, height);
+    update_time();
+    ImGuiIO &io = ImGui::GetIO();
+    // The game owns the pointer meanwhile: Dear ImGui leaves it as it is.
+    const ImGuiConfigFlags flags = io.ConfigFlags;
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+    // Letterboxed as the game is shown.
+    const float scale = std::min(io.DisplaySize.x / static_cast<float>(width), io.DisplaySize.y / static_cast<float>(height));
+    const ImVec2 size{static_cast<float>(width) * scale, static_cast<float>(height) * scale};
+    draw({(io.DisplaySize.x - size.x) / 2.0f, (io.DisplaySize.y - size.y) / 2.0f}, size);
+    present();
+    io.ConfigFlags = flags;
+    renderer_.set_backdrop(nullptr, 0u, 0u);
+}
+
 void Layer::present() {
     ImGui::Render();
     int width = 0, height = 0;

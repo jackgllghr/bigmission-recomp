@@ -52,7 +52,7 @@ APPIMAGE_SHA256 = {
 APPIMAGE_ARCH = {"linux-x64": "x86_64", "linux-arm64": "aarch64"}
 
 # Built files that are for developers only.
-DEVELOPER_ONLY = ("sarusaru_bootstrap", "sarusaru_vulkan_probe", "psp_analyze", "glslang", "glslangValidator")
+DEVELOPER_ONLY = ("sarusaru_bootstrap", "sarusaru_vulkan_probe", "sarusaru_dump_movie_audio", "psp_analyze", "glslang", "glslangValidator")
 
 PLAYER_README = """\
 SaruSaru Recomp {version} ({host})
@@ -93,8 +93,8 @@ def is_game_derived(path):
 
 
 def is_translation(path):
-    """A translation pack or catalog: published apart from the port, never in it."""
-    return path.suffix == ".sstp" or (path.suffix == ".json" and path.name.startswith("english-"))
+    """A translation pack, catalog or movie subtitles: published apart from the port, never in it."""
+    return path.suffix in (".sstp", ".srt") or (path.suffix == ".json" and path.name.startswith("english-"))
 
 
 def is_texture_set(path):

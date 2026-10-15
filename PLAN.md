@@ -312,8 +312,15 @@ code, unless that changes.
       against the phone's own C library. The APK grows from 17 to 60 MB.
       The launcher installs the game there in about 8 minutes (2.5 to
       generate the code, 5.5 to compile with 8 jobs) and the game then
-      starts. Still to do: the installation in a foreground service (it
-      stops if the app is left), phone wording on the install screen, the
+      starts. The installation runs in a foreground service
+      (`InstallService`, `dataSync` type) so it carries on behind other
+      apps: the builder's threads report progress through
+      `platform/background_work.hpp` to `SaruSaruActivity.backgroundWork`
+      (JNI), which starts the service with an ongoing progress notification
+      (asking for `POST_NOTIFICATIONS` on Android 13+), and on the end stops
+      it, leaving "installed" or "did not finish" if the player is away. The
+      install screen says "this device" on Android. Still to do: verify the
+      service on the OnePlus 13 (leave the app mid-build and come back), the
       toolchain build in CI.
 - [ ] Fallback for phones that cannot compile: the desktop launcher
       cross-compiles an Android module that the app imports.

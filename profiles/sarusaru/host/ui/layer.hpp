@@ -53,6 +53,12 @@ public:
     void set_backdrop(const shell::Image *image, std::uint32_t width, std::uint32_t height) {
         renderer_.set_backdrop(image, width, height);
     }
+    // Presents `image` (the game's picture, as for set_backdrop) with what
+    // `draw` adds over it, given the picture's place in the window in
+    // points: a frame of the interface that takes no input, for drawing over
+    // the running game (subtitles).
+    void present_over(const shell::Image *image, std::uint32_t width, std::uint32_t height,
+                      const std::function<void(ImVec2 origin, ImVec2 size)> &draw);
     // Forgets the keys and buttons Dear ImGui last saw: the interface does
     // not see the window's input while the game has it, so a key let go
     // meanwhile would otherwise stay held when it comes back.

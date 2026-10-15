@@ -228,6 +228,8 @@ Settings parse_settings(std::string_view text) {
             } else if (full == "translation.pack") {
                 if (value.empty()) throw std::runtime_error("pack needs a path or none");
                 settings.translation_pack = value == "none" ? std::filesystem::path{} : std::filesystem::path(value);
+            } else if (full == "translation.subtitles") {
+                settings.subtitles = integer(value, 0, 1) != 0;
             } else if (full == "input.dead_zone") {
                 settings.controls.dead_zone = number(value, 0.0f, 0.95f);
             } else if (full == "game.skip_intro_logos") {
@@ -286,6 +288,7 @@ std::string serialize_settings(const Settings &settings) {
         << "language = " << settings.translation_language << '\n'
         << "# Pack path relative to this settings file, or none.\npack = "
         << (settings.translation_pack.empty() ? "none" : settings.translation_pack.generic_string()) << '\n'
+        << "# 1 = subtitles over the movies that have them.\nsubtitles = " << (settings.subtitles ? 1 : 0) << '\n'
         << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n'
         << "\n[game]\n# The disc image (.iso) the launcher plays; empty until one is chosen. % and # are written as %XX.\n"
         << "disc = " << encode_path(settings.game_disc) << '\n'

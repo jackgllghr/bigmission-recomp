@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -32,8 +33,15 @@ struct Progress {
 
 class GameBuilder {
 public:
+    // Called on the installation's threads, one call at a time, whenever the
+    // progress changes, and last with the finished progress (also when the
+    // builder is destroyed first). Lets the progress be shown while the
+    // launcher's own thread is paused, as on Android behind another app.
+    using Observer = std::function<void(const Progress &)>;
+
     // Starts installing from `iso`, which must be the disc `identity` describes.
-    GameBuilder(std::filesystem::path iso, const DiscIdentity &identity, std::uint64_t download_bytes);
+    GameBuilder(std::filesystem::path iso, const DiscIdentity &identity, std::uint64_t download_bytes,
+                Observer observer = {});
     // Cancels an installation still under way and waits for it to stop.
     ~GameBuilder();
     GameBuilder(const GameBuilder &) = delete;
@@ -53,11 +61,15 @@ private:
     std::atomic<bool> cancelled_{false};
     mutable std::mutex mutex_;
     Progress progress_;
+    Observer observer_;
+    std::mutex observer_mutex_;
     std::thread thread_;
 
     void run();
     void install();
     void set(Progress::Step step, std::uint64_t done = 0u, std::uint64_t total = 0u);
+    // Tells the observer the current progress.
+    void report();
 };
 
 // Compiler jobs for `cores` logical cores and `memory_mib` of RAM: each

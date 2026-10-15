@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SaruSaru Recomp</string>
+    <!-- The notification channel InstallService posts in, as the system's settings name it.
+         The notifications' own texts come from the launcher (host/ui/texts.inc). -->
+    <string name="install_channel">Game installation</string>
 </resources>

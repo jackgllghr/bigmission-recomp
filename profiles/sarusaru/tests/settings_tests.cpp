@@ -45,6 +45,11 @@ int main() {
             !resolve_prompts(PromptStyle::Keyboard, true, SDL_GAMEPAD_TYPE_XBOXONE).gamepad,
             "explicit prompt style did not override detected input");
     require(!defaults.skip_intro_logos, "intro logos must play by default");
+    require(defaults.subtitles, "movie subtitles must default to on");
+    const auto unsubtitled = parse_settings("[translation]\nsubtitles = 0\n");
+    require(!unsubtitled.subtitles && parse_settings(serialize_settings(unsubtitled)) == unsubtitled,
+            "subtitle option does not round-trip");
+    rejects("[translation]\nsubtitles = 2");
     const auto skipped = parse_settings("[game]\nskip_intro_logos = 1\n");
     require(skipped.skip_intro_logos && parse_settings(serialize_settings(skipped)) == skipped,
             "intro logo option does not round-trip");

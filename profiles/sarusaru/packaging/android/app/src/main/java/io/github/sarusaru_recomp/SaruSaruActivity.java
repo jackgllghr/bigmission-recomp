@@ -1,11 +1,14 @@
 package io.github.sarusaru_recomp;
 
+import android.Manifest;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.system.ErrnoException;
 import android.system.Os;
@@ -36,6 +39,10 @@ import java.util.zip.ZipInputStream;
  * through SDL (host/platform/documents.hpp); the activity keeps the right to
  * read it, so the disc saved in the settings still opens after a restart.
  *
+ * Installing the game goes on behind other apps: the launcher reports it
+ * through backgroundWork (host/platform/background_work.cpp), which runs
+ * InstallService for as long as it lasts.
+ *
  * Command-line arguments come from the "args" string-array extra, for
  * development: adb shell am start -n io.github.sarusaru_recomp.SaruSaruRecomp/io.github.sarusaru_recomp.SaruSaruActivity --esa args --scale,2
  */
@@ -43,6 +50,12 @@ public class SaruSaruActivity extends SDLActivity {
     private static final String TAG = "sarusaru";
     private static final String ASSETS = "resources";
     private static final String SDK_ARCHIVE = "sdk.zip";
+    // Not one of SDL's (SDL_RequestAndroidPermission counts its own up from 0).
+    private static final int NOTIFICATIONS_REQUEST = 0x5a5a;
+
+    // Whether the player is in the app, and was asked to allow notifications (main thread only).
+    private boolean resumed;
+    private boolean askedToNotify;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,6 +67,48 @@ public class SaruSaruActivity extends SDLActivity {
             Log.e(TAG, "cannot copy the shipped resources", error);
         }
         super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        resumed = true;
+        InstallService.clearResult(this);
+    }
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        super.onPause();
+    }
+
+    /**
+     * Called by the port through JNI, on any thread: long work started or
+     * goes on (`ongoing`, `permille` -1 while the end is unknown), or ended
+     * with `text` as its result.
+     */
+    public void backgroundWork(String title, String text, int permille, boolean ongoing) {
+        if (ongoing) {
+            runOnUiThread(this::askToNotify);
+            InstallService.show(this, title, text, permille);
+        } else {
+            runOnUiThread(() -> InstallService.end(this, title, text, !resumed));
+        }
+    }
+
+    /** The progress notification needs the player's leave from Android 13; the work goes on without it. */
+    private void askToNotify() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
+        if (askedToNotify) return;
+        askedToNotify = true;
+        requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATIONS_REQUEST);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == NOTIFICATIONS_REQUEST) return;  // not one SDL is waiting for
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
     @Override
