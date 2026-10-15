@@ -45,7 +45,7 @@ std::optional<std::string> UiScript::from_environment() {
 
 UiScript::UiScript(std::string_view text) {
     constexpr std::pair<std::string_view, std::size_t> kVerbs[] = {
-        {"wait", 1}, {"key", 1}, {"pad", 1}, {"padhold", 2}, {"axis", 2}, {"padtype", 1}, {"move", 2}, {"click", 2}, {"tap", 2},
+        {"wait", 1}, {"key", 1}, {"pad", 1}, {"padchord", 2}, {"padhold", 2}, {"axis", 2}, {"padtype", 1}, {"move", 2}, {"click", 2}, {"tap", 2},
         {"drag", 4}, {"wheel", 1}, {"drop", 1}, {"capture", 1}, {"quit", 0}};
     while (!text.empty()) {
         const auto end = text.find(';');
@@ -75,7 +75,7 @@ UiScript::UiScript(std::string_view text) {
             }
         if (!known) throw std::runtime_error("SARUSARU_UI_SCRIPT: unknown command " + command.verb);
         for (const auto &argument : command.arguments)
-            if (command.verb != "key" && command.verb != "pad" && command.verb != "padtype" && command.verb != "drop" &&
+            if (command.verb != "key" && command.verb != "pad" && command.verb != "padchord" && command.verb != "padtype" && command.verb != "drop" &&
                 command.verb != "capture" && command.verb != "padhold" && command.verb != "axis")
                 (void)number(argument);
         if (command.verb == "padhold" || command.verb == "axis") (void)number(command.arguments[1]);
@@ -118,6 +118,16 @@ void UiScript::open_pad() {
     pad_ = SDL_OpenJoystick(pad_id_);
 }
 
+namespace {
+// Face buttons by position as well as by SDL's names (a, b, x, y).
+SDL_GamepadButton pad_button(const std::string &text) {
+    const std::string name = text == "south" ? "a" : text == "east" ? "b" : text == "west" ? "x" : text == "north" ? "y" : text;
+    const SDL_GamepadButton button = SDL_GetGamepadButtonFromString(name.c_str());
+    if (button == SDL_GAMEPAD_BUTTON_INVALID) throw std::runtime_error("SARUSARU_UI_SCRIPT: unknown button " + text);
+    return button;
+}
+} // namespace
+
 void UiScript::start(const Command &command, Layer &layer) {
     const auto &a = command.arguments;
     const ImVec2 display = ImGui::GetIO().DisplaySize;
@@ -137,11 +147,18 @@ void UiScript::start(const Command &command, Layer &layer) {
         open_pad();
         const float value = std::clamp(number(a[1]), -1.0f, 1.0f);
         SDL_SetJoystickVirtualAxis(pad_, axis, static_cast<Sint16>(value * 32767.0f));
+    } else if (command.verb == "padchord") {
+        const SDL_GamepadButton first = pad_button(a[0]), second = pad_button(a[1]);
+        open_pad();
+        SDL_SetJoystickVirtualButton(pad_, first, true);
+        SDL_SetJoystickVirtualButton(pad_, second, true);
+        pending_.push_back([](Layer &) {});
+        pending_.push_back([this, first, second](Layer &) {
+            SDL_SetJoystickVirtualButton(pad_, first, false);
+            SDL_SetJoystickVirtualButton(pad_, second, false);
+        });
     } else if (command.verb == "pad" || command.verb == "padhold") {
-        // Face buttons by position as well as by SDL's names (a, b, x, y).
-        const std::string name = a[0] == "south" ? "a" : a[0] == "east" ? "b" : a[0] == "west" ? "x" : a[0] == "north" ? "y" : a[0];
-        const SDL_GamepadButton button = SDL_GetGamepadButtonFromString(name.c_str());
-        if (button == SDL_GAMEPAD_BUTTON_INVALID) throw std::runtime_error("SARUSARU_UI_SCRIPT: unknown button " + a[0]);
+        const SDL_GamepadButton button = pad_button(a[0]);
         open_pad();
         SDL_SetJoystickVirtualButton(pad_, button, true);
         if (command.verb == "padhold") {

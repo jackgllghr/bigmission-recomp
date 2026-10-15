@@ -76,7 +76,9 @@ double step_value(std::span<const double> values, double current, int direction)
     return below != values.begin() ? *(below - 1) : values.back();
 }
 
-RowView describe(SettingRow row, const shell::Settings &settings) {
+bool restart_only(SettingRow row) { return row == SettingRow::GameText || row == SettingRow::SkipIntroLogos; }
+
+RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) {
     RowView view;
     const auto text = [](Text id) { return std::string(tr(id)); };
     switch (row) {
@@ -154,6 +156,7 @@ RowView describe(SettingRow row, const shell::Settings &settings) {
         view.description = text(Text::DescConfirm);
         break;
     }
+    if (in_game && restart_only(row)) view.description += " " + text(Text::AppliesNextStart);
     return view;
 }
 

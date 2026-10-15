@@ -74,8 +74,10 @@ void status_dot(ImDrawList *draw, ImVec2 center, float radius, ImU32 color) {
 
 } // namespace
 
-Launcher::Launcher(Layer &layer, shell::Settings &settings, std::filesystem::path settings_path, DiscIdentity identity)
-    : layer_(layer), settings_(settings), settings_path_(std::move(settings_path)), identity_(identity) {
+Launcher::Launcher(Layer &layer, shell::Settings &settings, std::filesystem::path settings_path, DiscIdentity identity,
+                   Mode mode)
+    : layer_(layer), mode_(mode), settings_(settings), settings_path_(std::move(settings_path)), identity_(identity) {
+    if (in_game()) return;
     if (!settings_.game_disc.empty()) disc_check_ = check_disc(settings_.game_disc, identity_);
     load_title_art();
 }
@@ -110,8 +112,11 @@ void Launcher::load_title_art() {
 
 Launcher::Outcome Launcher::run(UiScript *script) {
     outcome_.reset();
-    screen_ = Screen::Home;
-    go(Screen::Home, start_failure_.empty() ? "play" : "problem_ok");
+    settings_error_.clear();
+    if (in_game())
+        go(Screen::Paused, "resume");
+    else
+        go(Screen::Home, start_failure_.empty() ? "play" : "problem_ok");
     layer_.set_frame_hook(script != nullptr ? std::function<void(Layer &)>([script](Layer &l) { script->tick(l); })
                                             : std::function<void(Layer &)>());
     layer_.set_event_filter([this](const SDL_Event &event) { return capture_event(event); });
@@ -173,7 +178,11 @@ void Launcher::save() {
 
 void Launcher::frame() {
     set_language(resolve_language(settings_.language));
-    draw_backdrop(layer_);
+    if (in_game())
+        // The paused game, dimmed in the series' blue.
+        ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), display(), IM_COL32(8, 26, 102, 170));
+    else
+        draw_backdrop(layer_);
     if (const auto dropped = layer_.take_dropped_file()) choose_disc(*dropped);
     {
         std::optional<std::filesystem::path> chosen;
@@ -200,6 +209,7 @@ void Launcher::frame() {
         case Screen::Bindings: bindings(); break;
         case Screen::Pack: pack(); break;
         case Screen::Textures: textures(); break;
+        case Screen::Paused: paused(); break;
         }
     }
     ImGui::End();
@@ -282,6 +292,27 @@ void Launcher::home() {
     }
     if (layer_.back()) outcome_ = Outcome::Quit;
     hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Back, tr(Text::HintQuit)}});
+}
+
+// --- The pause menu ----------------------------------------------------------
+
+void Launcher::paused() {
+    const float u = layer_.unit();
+    const float top = screen_title(layer_, tr(Text::PausedTitle));
+    const ImVec2 size = display();
+    const ImVec2 button(300.0f * u, 48.0f * u);
+    const float gap = 12.0f * u;
+    const float x = (size.x - button.x) * 0.5f;
+    const float y = std::max(top + 10.0f * u, (size.y - 88.0f * u - 3.0f * button.y - 2.0f * gap) * 0.5f);
+    const auto place = [&](int index) { ImGui::SetCursorScreenPos(ImVec2(x, y + static_cast<float>(index) * (button.y + gap))); };
+    place(0);
+    if (menu_button(layer_, "resume", tr(Text::Resume), button, true)) outcome_ = Outcome::Resume;
+    place(1);
+    if (menu_button(layer_, "settings", tr(Text::Settings), button)) go(Screen::Settings, "row0");
+    place(2);
+    if (menu_button(layer_, "quit", tr(Text::QuitGame), button)) outcome_ = Outcome::Quit;
+    if (layer_.back()) outcome_ = Outcome::Resume;
+    hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Back, tr(Text::HintResume)}});
 }
 
 // --- The game disc ---------------------------------------------------------
@@ -486,7 +517,7 @@ void Launcher::settings() {
     const auto &rows = tabs[static_cast<std::size_t>(tab_)].rows;
     const float row_width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
     for (std::size_t i = 0; i < rows.size(); ++i) {
-        const RowView view = describe(rows[i], settings_);
+        const RowView view = describe(rows[i], settings_, in_game());
         const int change = setting_row(layer_, "row" + std::to_string(i), view, row_width);
         if (change != 0 && rows[i] == SettingRow::Textures) {
             choose_textures(change);
@@ -499,6 +530,8 @@ void Launcher::settings() {
                 settings_.translation_pack = *kept;
                 settings_.translation_language = "en";
                 save();
+            } else if (in_game()) {
+                settings_error_ = tr(Text::GameTextInLauncher);
             } else {
                 pack_error_.clear();
                 go(Screen::Pack, "pack_download");
@@ -513,7 +546,7 @@ void Launcher::settings() {
                                   static_cast<int>(settings_.window_height));
             save();
         }
-        if (ImGui::IsItemFocused()) description = describe(rows[i], settings_).description;
+        if (ImGui::IsItemFocused()) description = describe(rows[i], settings_, in_game()).description;
     }
     if (tabs[static_cast<std::size_t>(tab_)].title == Text::TabControls) {
         if (action_row(layer_, "bindings", tr(Text::Bindings), tr(Text::BindingsDetail), row_width))
@@ -533,7 +566,8 @@ void Launcher::settings() {
     else
         paragraph(layer_, description, inner.GetWidth() - 2.0f * pad - 16.0f * u, colors::kInkDim);
 
-    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) go(Screen::Home, "settings");
+    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back())
+        go(in_game() ? Screen::Paused : Screen::Home, "settings");
     hints(layer_, {{Control::Change, tr(Text::HintChange)}, {Control::Tabs, tr(Text::HintTabs)},
                    {Control::Back, tr(Text::HintBack)}});
 }
@@ -559,12 +593,19 @@ void Launcher::choose_textures(int direction) {
     }
     const auto recipe = install::texture_recipe_source();
     const auto directory = recipe ? install::texture_pack_directory(*recipe, scale) : std::nullopt;
-    if (directory && install::texture_pack_state(*directory) == install::TexturePackState::Ready) {
+    // In game a pack made before serves as it is, even with textures collected to add to it.
+    const auto state = directory ? install::texture_pack_state(*directory) : install::TexturePackState::Missing;
+    if (state == install::TexturePackState::Ready || (in_game() && state == install::TexturePackState::Collected)) {
         settings_.texture_pack = *directory;
         save();
         return;
     }
-    // Not made yet, or the game collected textures to add: the screen that makes them.
+    // Not made yet, or the game collected textures to add: the screen that
+    // makes them, which is the launcher's.
+    if (in_game()) {
+        settings_error_ = tr(Text::MakeInLauncher);
+        return;
+    }
     texture_scale_ = scale;
     texture_error_.clear();
     go(Screen::Textures, "textures_make");

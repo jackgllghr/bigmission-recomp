@@ -119,10 +119,10 @@ Text action_text(shell::Action action) {
     case Action::CameraDown: return Text::ActionCameraDown;
     case Action::CameraReset: return Text::ActionCameraReset;
     case Action::FastForward: return Text::ActionFastForward;
-    case Action::Quit:
+    case Action::Menu:
     case Action::Count: break;
     }
-    return Text::ActionQuit;
+    return Text::ActionMenu;
 }
 
 const std::vector<Binding> &bindings_of(const shell::ControlSettings &controls, BindingDevice device, Action action) {
@@ -172,7 +172,10 @@ Glyph glyph(const Binding &binding, SDL_GamepadType type) {
         break;
     case Binding::Kind::Button: {
         const auto button = static_cast<SDL_GamepadButton>(binding.code);
-        if (button == SDL_GAMEPAD_BUTTON_SOUTH || button == SDL_GAMEPAD_BUTTON_EAST || button == SDL_GAMEPAD_BUTTON_WEST ||
+        if (binding.chord >= 0) {
+            out.kind = Glyph::Kind::Pill;
+            out.label = button_label(button, type) + "+" + button_label(static_cast<SDL_GamepadButton>(binding.chord), type);
+        } else if (button == SDL_GAMEPAD_BUTTON_SOUTH || button == SDL_GAMEPAD_BUTTON_EAST || button == SDL_GAMEPAD_BUTTON_WEST ||
             button == SDL_GAMEPAD_BUTTON_NORTH) {
             out.kind = Glyph::Kind::Face;
             out.button = button;

@@ -91,6 +91,12 @@ void Layer::destroy() {
 }
 
 void Layer::handle(const SDL_Event &event) {
+    if (observe(event)) return;
+    if (event_filter_ && event_filter_(event)) return;
+    ImGui_ImplSDL3_ProcessEvent(&event);
+}
+
+bool Layer::observe(const SDL_Event &event) {
     switch (event.type) {
     case SDL_EVENT_QUIT:
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
@@ -139,12 +145,11 @@ void Layer::handle(const SDL_Event &event) {
             const std::string utf8 = event.drop.data;
             dropped_ = std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
         }
-        return;
+        return true;
     default:
         break;
     }
-    if (event_filter_ && event_filter_(event)) return;
-    ImGui_ImplSDL3_ProcessEvent(&event);
+    return false;
 }
 
 void Layer::block_pads(bool blocked) {
@@ -175,9 +180,20 @@ std::optional<std::filesystem::path> Layer::take_dropped_file() {
     return dropped;
 }
 
+void Layer::reset_input() {
+    ImGuiIO &io = ImGui::GetIO();
+    io.ClearEventsQueue();
+    io.ClearInputKeys();
+    io.ClearInputMouse();
+}
+
+void Layer::update_time() {
+    time_ = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
+}
+
 void Layer::begin_frame(bool confirm_south) {
     confirm_south_ = confirm_south;
-    time_ = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
+    update_time();
     if (pads_quiet_ && !pads_blocked_ && !pad_input_held(pads_)) {
         pads_quiet_ = false;
         ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_AutoAll);

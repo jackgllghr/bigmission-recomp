@@ -17,11 +17,13 @@ struct GamepadState {
 };
 struct InputState {
     ctrl::Controller::Pad pad;
-    bool fast_forward{}, quit{};
+    bool fast_forward{}, menu{};
     float camera_x{}, camera_y{};
     bool camera_reset{};
 };
 // Pure mapping shared by live polling and synthetic tests (no window/device required).
+// A pad's button chord (two buttons held together) takes those buttons for
+// itself: while it is held, neither also triggers its own single-button actions.
 [[nodiscard]] InputState map_input(const ControlSettings &settings, std::span<const bool> keys,
                                    std::span<const GamepadState> gamepads);
 class Input {

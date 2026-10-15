@@ -40,7 +40,13 @@ struct RowView {
     // A gamepad face button drawn before the value, as the player's pad labels it.
     SDL_GamepadButton face{SDL_GAMEPAD_BUTTON_INVALID};
 };
-[[nodiscard]] RowView describe(SettingRow row, const shell::Settings &settings);
+// `in_game`: shown in the pause menu, where a row that only takes effect at
+// startup says so (restart_only()).
+[[nodiscard]] RowView describe(SettingRow row, const shell::Settings &settings, bool in_game = false);
+
+// Rows the running game cannot apply: the game text is patched in and the
+// intro logos are skipped as it boots. Every other row applies at once.
+[[nodiscard]] bool restart_only(SettingRow row);
 
 // Moves the row's value one step in `direction` (+1 or -1), wrapping around
 // at the ends. A value set by hand that is not one of the row's steps moves

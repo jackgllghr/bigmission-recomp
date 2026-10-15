@@ -8,6 +8,7 @@
 //   key NAME              press and release a key (SDL key name: Return, Down, Escape, Q)
 //   pad BUTTON            press and release a button of a virtual gamepad
 //                         (SDL names: south, east, dpdown, leftshoulder...)
+//   padchord BUTTON BUTTON  press and release two buttons together (leftstick rightstick)
 //   padhold BUTTON SECONDS  hold a button that long, then release it
 //   axis NAME VALUE       set a stick or trigger of the virtual gamepad (-1..1;
 //                         SDL names: leftx, lefty, rightx, righty, lefttrigger...)

@@ -14,9 +14,10 @@ from their own disc (see [Releases](#releases-and-installing-the-game)). File-ba
 keyboard/gamepad rebinding are available, as are 60 FPS frame interpolation at
 the original game speed, a FOV override and window size/fullscreen settings.
 A first launcher chooses the disc image and edits the main settings with a
-gamepad, keyboard, mouse or touch screen. The in-game settings UI, binding
-capture, save management, timing-correct higher simulation rates and
-translation are still to come. Native game cadence overrides are available as
+gamepad, keyboard, mouse or touch screen, and the same settings and bindings
+screens open over the paused game as a pause menu (Escape, or a gamepad's
+Guide/Home button or L3+R3 together). Save management, timing-correct higher simulation rates
+and translation are still to come. Native game cadence overrides are available as
 an explicit experiment.
 The complete project plan is in [`../../PLAN.md`](../../PLAN.md).
 
@@ -244,7 +245,8 @@ are drawn, and upscaled the next time the pack is chosen.
 dumps and the maintainer's disc. `--texture-pack DIR` (or `none`) overrides
 the pack for one run. See [`docs/hd-textures.md`](docs/hd-textures.md).
 
-`SARUSARU_UI_SCRIPT` drives the launcher without a person, for checks with
+`SARUSARU_UI_SCRIPT` drives the launcher (and, once the game runs, its pause
+menu: `pad guide` or `padchord leftstick rightstick` opens it) without a person, for checks with
 each device: keys through SDL, buttons through an SDL virtual gamepad (which
 can claim to be a PlayStation, Xbox or Switch pad), mouse and touch input
 straight to Dear ImGui, file drops, and `capture FILE` to save a BMP of the
@@ -263,8 +265,19 @@ a scratch file rather than the committed `resources/settings.ini`.
 (1-8 times 480x272, default 2). Default keys: arrows d-pad, Z circle
 (confirm in this Japanese release), X cross,
 A square, S triangle, Q/W L/R, Enter start, Backspace select, I/J/K/L the
-analog stick, Tab (held) fast-forward, Escape quit. Gamepads map by button
-position. Saves go to the same per-user memory stick as the bootstrap's.
+analog stick, Tab (held) fast-forward, Escape the pause menu. Gamepads map by
+button position; Guide (Home), or L3 and R3 pressed together where the system
+keeps the Guide button for itself, opens the pause menu.
+
+### Pause menu
+
+The menu action pauses the game under a menu over its last picture: Resume,
+Settings (the launcher's settings and bindings screens) and Quit game. Changes
+are saved as they are made and apply when the game resumes, including the
+resolution, frame rate, FOV, cel shading, HD textures and bindings; the game
+text and skipping the intro logos say they apply the next time the game
+starts. Making HD textures and downloading English stay in the launcher. A
+settings file from an earlier version keeps its `quit` key for the menu. Saves go to the same per-user memory stick as the bootstrap's.
 
 ### Settings and rebinding
 
@@ -308,8 +321,12 @@ analog_down = axis:righty+
 Omitted settings retain their defaults. Keyboard names are SDL **physical
 scancode** names, independent of the active keyboard layout; `scancode:N`
 also works for keys whose names contain a comma or `#`. Multiple bindings are
-comma-separated; `none` unbinds an action. Both PSP controls and the host's
-`quit`/`fast_forward` actions can be rebound.
+comma-separated; `none` unbinds an action. Two gamepad buttons held together
+are written `a+b` (the pause menu's default `leftstick+rightstick`); while
+such a chord is held, its buttons do not also trigger their own actions, so
+L3+R3 does not reset the camera as R3 alone does. Chords are set in the file;
+the bindings screen shows them but captures single inputs. Both PSP controls and the host's
+`menu`/`fast_forward` actions can be rebound.
 
 SDL's gamepad string names use `a/b/x/y` for south/east/west/north, `dpup`,
 `dpdown`, `dpleft`, `dpright`, `leftshoulder`, `rightshoulder`, `start`, `back`,
@@ -751,7 +768,7 @@ These are game-neutral fixes; game identity and bootstrap choices stay here.
 
 The acceptance run with real input (new game, a level, save and reload),
 then writing GPU results back to guest memory, the GE registers GeState does
-not model yet, the rest of the launcher (save management, an in-game menu, Android
+not model yet, the rest of the launcher (save management, Android
 document picking) and translation. For releases: the first run of the release
 workflow, installing and playing on Windows and Linux x86-64, macOS signing and
 notarisation, and a Windows build without a console window. See

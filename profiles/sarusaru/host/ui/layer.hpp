@@ -37,11 +37,28 @@ public:
     void destroy();
 
     void handle(const SDL_Event &event);
+    // Only notes the device in use, a gamepad coming or going, a dropped
+    // file or the window closing: for events the game takes while it runs,
+    // which Dear ImGui would otherwise queue until the interface's next frame.
+    // True when the event is the layer's alone (a dropped file).
+    bool observe(const SDL_Event &event);
     // Starts a frame of the interface. `confirm_south` picks the gamepad's
     // confirm button (east otherwise).
     void begin_frame(bool confirm_south);
     // Draws and presents it, and saves it as a BMP if a capture was asked for.
     void present();
+    // Draws the interface over the game's picture (UiRenderer::set_backdrop);
+    // null for the launcher's own sky.
+    void set_backdrop(const shell::Image *image, std::uint32_t width, std::uint32_t height) {
+        renderer_.set_backdrop(image, width, height);
+    }
+    // Forgets the keys and buttons Dear ImGui last saw: the interface does
+    // not see the window's input while the game has it, so a key let go
+    // meanwhile would otherwise stay held when it comes back.
+    void reset_input();
+    // Moves time() on without a frame of the interface, for a UI script
+    // ticked while the game runs.
+    void update_time();
     // The next present() also saves the picture to `path` (for scripted checks).
     void capture_next(std::filesystem::path path) { capture_ = std::move(path); }
     // Runs at the start of every frame, after the window's input has been

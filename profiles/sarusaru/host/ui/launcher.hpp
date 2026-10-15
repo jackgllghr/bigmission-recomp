@@ -7,6 +7,10 @@
 // first time), the settings, the keyboard and gamepad bindings, and
 // downloading the optional English game text. Every screen works with a gamepad, a keyboard, a
 // mouse or a touch screen alone.
+//
+// In game, the same settings and bindings screens make the pause menu (Resume,
+// Settings, Quit game) over the paused game's picture. Installing, choosing a
+// disc and making packs stay in the launcher.
 #include "game_disc.hpp"
 #include "install/game_builder.hpp"
 #include "install/pack_download.hpp"
@@ -30,10 +34,12 @@ class UiScript;
 
 class Launcher {
 public:
-    enum class Outcome { Play, Quit };
+    enum class Outcome { Play, Quit, Resume };
+    enum class Mode { Launcher, InGame };
 
     // `settings` is edited in place and saved to `settings_path` as it changes.
-    Launcher(Layer &layer, shell::Settings &settings, std::filesystem::path settings_path, DiscIdentity identity);
+    Launcher(Layer &layer, shell::Settings &settings, std::filesystem::path settings_path, DiscIdentity identity,
+             Mode mode = Mode::Launcher);
     ~Launcher();
     Launcher(const Launcher &) = delete;
     Launcher &operator=(const Launcher &) = delete;
@@ -43,13 +49,15 @@ public:
     void show_start_failure(std::string detail);
 
     // Runs the screens until the player chooses to play (with a supported disc
-    // in settings.game_disc) or to quit. `script` drives them, when given.
+    // in settings.game_disc) or to quit; in game, to resume or quit the game.
+    // `script` drives them, when given.
     Outcome run(UiScript *script = nullptr);
 
 private:
-    enum class Screen { Home, Install, Settings, Bindings, Pack, Textures };
+    enum class Screen { Home, Install, Settings, Bindings, Pack, Textures, Paused };
 
     Layer &layer_;
+    Mode mode_;
     shell::Settings &settings_;
     std::filesystem::path settings_path_;
     DiscIdentity identity_;
@@ -100,6 +108,8 @@ private:
 
     void frame();
     void home();
+    void paused();
+    [[nodiscard]] bool in_game() const noexcept { return mode_ == Mode::InGame; }
     void install();
     void settings();
     void problem();

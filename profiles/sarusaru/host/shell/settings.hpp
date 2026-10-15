@@ -13,12 +13,12 @@ namespace sarusaru::shell {
 
 enum class Action : std::size_t {
     Up, Down, Left, Right, Circle, Cross, Square, Triangle, L, R, Start, Select,
-    AnalogLeft, AnalogRight, AnalogUp, AnalogDown, FastForward, Quit, CameraLeft, CameraRight, CameraUp, CameraDown, CameraReset, Count
+    AnalogLeft, AnalogRight, AnalogUp, AnalogDown, FastForward, Menu, CameraLeft, CameraRight, CameraUp, CameraDown, CameraReset, Count
 };
 inline constexpr std::size_t kActionCount = static_cast<std::size_t>(Action::Count);
 inline constexpr std::array<std::string_view, kActionCount> kActionNames = {
     "up", "down", "left", "right", "circle", "cross", "square", "triangle", "l", "r", "start", "select",
-    "analog_left", "analog_right", "analog_up", "analog_down", "fast_forward", "quit",
+    "analog_left", "analog_right", "analog_up", "analog_down", "fast_forward", "menu",
     "camera_left", "camera_right", "camera_up", "camera_down", "camera_reset"
 };
 struct Binding {
@@ -26,6 +26,9 @@ struct Binding {
     Kind kind;
     int code;
     int direction{1};
+    // A Button binding of two buttons held together (written a+b): the other
+    // button, or -1. Stored with the lower button in `code`.
+    int chord{-1};
     bool operator==(const Binding &) const = default;
 };
 struct ControlSettings {
@@ -74,6 +77,8 @@ struct Settings {
 
 [[nodiscard]] Settings default_settings();
 // Partial files inherit defaults. Unknown/duplicate keys and invalid bindings throw.
+// An earlier version's quit binding becomes the menu's, unless the file binds menu too
+// or unbinds quit (the overlay's Quit game replaced it).
 // Files from earlier versions still load: experimental_game_frame_rate is
 // ignored, and frame_interpolation = 1 becomes frame_rate = 60.
 [[nodiscard]] Settings parse_settings(std::string_view text);

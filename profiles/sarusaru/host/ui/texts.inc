@@ -11,6 +11,16 @@ X(FallbackTitle, "SaruSaru Daisakusen", "サルサル大作戦")
 X(StatusReady, "Game disc ready", "ゲームディスクの準備OK")
 X(StatusChoose, "Locate your disc image of {0} to play", "あそぶには {0} のディスクイメージを選んでください")
 X(LocateDisc, "Locate game disc", "ゲームディスクを探す")
+// The pause menu over the game
+X(PausedTitle, "Paused", "ポーズ")
+X(Resume, "Resume", "つづける")
+X(QuitGame, "Quit game", "ゲームをやめる")
+X(HintResume, "Resume", "つづける")
+X(AppliesNextStart, "Applies the next time the game starts.", "次にゲームを起動したときに反映されます。")
+X(MakeInLauncher, "This choice is made from the launcher's settings; here you can switch between packs already made.",
+  "この選択肢はランチャーの設定で作成します。ここでは作成済みのパックだけを切り替えられます。")
+X(GameTextInLauncher, "English is downloaded from the launcher's settings first.",
+  "英語は先にランチャーの設定からダウンロードしてください。")
 X(Disclaimer, "Unofficial fan project. Not affiliated with or endorsed by Sony Interactive Entertainment.",
   "非公式のファンプロジェクトです。株式会社ソニー・インタラクティブエンタテインメントとは関係がなく、承認も受けていません。")
 
@@ -176,7 +186,7 @@ X(ActionCameraUp, "Camera ↑", "カメラ ↑")
 X(ActionCameraDown, "Camera ↓", "カメラ ↓")
 X(ActionCameraReset, "Reset camera", "カメラをリセット")
 X(ActionFastForward, "Fast forward (hold)", "早送り（押している間）")
-X(ActionQuit, "Quit the game", "ゲームを終了")
+X(ActionMenu, "Pause menu", "ポーズメニュー")
 
 // Installing the game from the disc
 X(InstallTitle, "Install the Game", "ゲームのインストール")

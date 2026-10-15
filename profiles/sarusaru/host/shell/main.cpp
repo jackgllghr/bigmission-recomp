@@ -1,7 +1,9 @@
 // The windowed game: GameSession driven at real time, the GE's draws rendered
 // with Vulkan, sound through SDL, and the keyboard or a gamepad as the pad.
 // Started without a disc image, it opens the launcher (ui/launcher.hpp) in
-// the same window first.
+// the same window first. While playing, the menu action (Escape by default)
+// pauses the game under the launcher's pause menu, whose settings apply when
+// the game resumes.
 //
 // Everything runs on the main thread. The game runs inside GameSession::run;
 // at each vblank of the guest's virtual clock the kernel calls back here, and
@@ -27,6 +29,7 @@
 
 #include <cstdint>
 #include <charconv>
+#include <filesystem>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -52,7 +55,7 @@ constexpr const char *kUsage =
     "  --install ISO  build the game from your disc without the window, as the launcher's Install does\n"
     "Alt+Enter or F11 toggles fullscreen.\n"
     "Default keys: arrows d-pad, Z circle, X cross, A square, S triangle, Q/W L/R, Enter start,\n"
-    "      Backspace select, I/J/K/L analog stick, Tab (held) fast forward, Escape quit.\n"
+    "      Backspace select, I/J/K/L analog stick, Tab (held) fast forward, Escape pause menu.\n"
     "Environment: SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
     "  seconds of game time (default 5) as BMP files, from SARUSARU_CAPTURE_FROM seconds if set;\n"
     "  SARUSARU_INPUT scripts the pad; SARUSARU_UI_SCRIPT scripts the launcher (ui/ui_script.hpp).\n";
@@ -76,31 +79,59 @@ void set_window_icon(SDL_Window *window) {
     SDL_DestroySurface(icon);
 }
 
+// The settings the game runs with: the file's, with the command line's
+// overrides and paths relative to the settings file resolved.
+struct GameOverrides {
+    std::optional<std::uint32_t> scale;
+    std::filesystem::path translation_pack;
+    std::optional<std::filesystem::path> texture_pack;
+};
+sarusaru::shell::Settings game_settings(const sarusaru::shell::Settings &settings, const GameOverrides &overrides,
+                                        const std::filesystem::path &settings_path) {
+    sarusaru::shell::Settings game = settings;
+    if (overrides.scale) game.internal_resolution = *overrides.scale;
+    if (!overrides.translation_pack.empty()) {
+        game.translation_language = "en";
+        game.translation_pack = overrides.translation_pack;
+    } else if (!game.translation_pack.empty() && game.translation_pack.is_relative()) {
+        game.translation_pack = settings_path.parent_path() / game.translation_pack;
+    }
+    if (overrides.texture_pack)
+        game.texture_pack = *overrides.texture_pack;
+    else if (game.texture_pack.is_relative() && !game.texture_pack.empty())
+        game.texture_pack = settings_path.parent_path() / game.texture_pack;
+    return game;
+}
+
 // Plays the game in `window` until the player quits or it stops. Returns the
 // exit status; a game that could not start sets `start_failure` and returns 1.
-int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::shell::Settings settings,
+// `settings` is the file's, which the pause menu edits and saves.
+int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::ui::Layer &layer,
+         sarusaru::shell::Settings &settings, const std::filesystem::path &settings_path, const GameOverrides &overrides,
          const std::filesystem::path &executable, const std::filesystem::path &iso,
-         const std::filesystem::path &texture_dump_directory, std::string &start_failure) {
+         const std::filesystem::path &texture_dump_directory, sarusaru::ui::UiScript *script, std::string &start_failure) {
     int status = 0;
     std::string error;
-    sarusaru::shell::GeRenderer renderer(vulkan, settings.internal_resolution);
-    renderer.set_cel_shading(settings.cel_shading);
+    // What the game runs with now; the pause menu's changes are applied to it as the game resumes.
+    sarusaru::shell::Settings current = game_settings(settings, overrides, settings_path);
+    std::unique_ptr<sarusaru::shell::GeRenderer> renderer;
     sarusaru::shell::AudioOutput audio;
-    sarusaru::shell::Input input(settings.controls);
+    std::optional<sarusaru::shell::Input> input;
+    input.emplace(current.controls);
     // 60 FPS motion shows a picture at every vblank: the game's frames and those in between.
-    const bool interpolating = sarusaru::shell::interpolates(settings);
-    sarusaru::shell::PresentationClock presentation(interpolating ? 0u : settings.frame_rate);
+    bool interpolating = sarusaru::shell::interpolates(current);
+    sarusaru::shell::PresentationClock presentation(interpolating ? 0u : current.frame_rate);
     sarusaru::shell::Buffer capture;
     try {
-        if (!renderer.create(error)) throw psprecomp::Error(error);
         if (!audio.open(error)) std::cerr << "sarusaru: no sound: " << error << '\n';
 
         sarusaru::SessionOptions options;
         options.memory_stick = sarusaru::utility::default_memory_stick();
-        options.skip_intro_logos = settings.skip_intro_logos;
+        options.skip_intro_logos = current.skip_intro_logos;
         options.camera_control = true;
-        const sarusaru::gpu::FovOverride fov(settings.fov_degrees);
-        options.track_gameplay_camera = fov.enabled();
+        // Always watched, so the pause menu can turn the FOV override on.
+        sarusaru::gpu::FovOverride fov(current.fov_degrees);
+        options.track_gameplay_camera = true;
         // A game that cannot start (a moved or changed disc image) goes back
         // to the launcher with the reason.
         std::unique_ptr<sarusaru::GameSession> session;
@@ -112,9 +143,10 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
             throw;
         }
         auto &game = *session;
+        // The game text is patched into the game as it starts: a change waits for the next start.
         std::optional<sarusaru::translation::TexturePack> translation_pack;
-        if (settings.translation_language == "en") {
-            translation_pack = sarusaru::translation::TexturePack::load(settings.translation_pack,
+        if (current.translation_language == "en") {
+            translation_pack = sarusaru::translation::TexturePack::load(current.translation_pack,
                 sarusaru::disc_id, sarusaru::executable_sha256, [&](std::string_view path) {
                     const auto entry = game.disc.find(path);
                     if (!entry || entry->directory || entry->size > 32u * 1024u * 1024u)
@@ -128,36 +160,54 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
                     if (uid < 0) return 0u;
                     return game.kernel.block_head_address(uid);
                 });
-            renderer.set_translation_pack(&*translation_pack);
             std::cout << "Translation: " << translation_pack->locale() << " (" << translation_pack->size()
                       << " menu textures, " << translation_pack->string_count()
                       << " text strings, " << translation_pack->dialogue_count()
                       << " dialogue messages); untranslated screens retain Japanese\n";
         }
         std::optional<sarusaru::textures::HdTexturePack> hd_textures;
-        if (!settings.texture_pack.empty()) {
-            hd_textures = sarusaru::textures::HdTexturePack::load(settings.texture_pack, sarusaru::disc_id);
-            renderer.set_hd_textures(&*hd_textures);
-            std::cout << "HD textures: " << hd_textures->size() << " at " << hd_textures->scale() << "x from "
-                      << settings.texture_pack.string() << '\n';
-        }
         std::optional<sarusaru::textures::TextureDump> texture_dump;
-        if (!texture_dump_directory.empty()) {
-            texture_dump.emplace(texture_dump_directory);
-            renderer.set_texture_dump(&*texture_dump);
-            std::cout << "Dumping textures to " << texture_dump_directory.string() << " (" << texture_dump->known()
-                      << " already there)\n";
-        } else if (hd_textures) {
-            // Textures the pack's recipe could not find on the disc are kept
-            // as they are drawn, for the launcher to upscale next time.
-            if (auto wanted = hd_textures->wanted()) {
-                const auto count = wanted->size();
-                texture_dump.emplace(hd_textures->directory() / sarusaru::textures::HdTexturePack::kCollectedName,
-                                     std::move(wanted));
-                renderer.set_texture_dump(&*texture_dump);
-                std::cout << "Collecting up to " << count << " textures for the HD pack\n";
+        // The HD pack, and where textures it lacks are collected. At startup
+        // a pack that cannot load stops the game; from the pause menu it
+        // leaves the original textures.
+        const auto load_textures = [&](const std::filesystem::path &pack) {
+            texture_dump.reset();
+            hd_textures.reset();
+            if (!pack.empty()) {
+                hd_textures = sarusaru::textures::HdTexturePack::load(pack, sarusaru::disc_id);
+                std::cout << "HD textures: " << hd_textures->size() << " at " << hd_textures->scale() << "x from "
+                          << pack.string() << '\n';
             }
-        }
+            if (!texture_dump_directory.empty()) {
+                texture_dump.emplace(texture_dump_directory);
+                std::cout << "Dumping textures to " << texture_dump_directory.string() << " (" << texture_dump->known()
+                          << " already there)\n";
+            } else if (hd_textures) {
+                // Textures the pack's recipe could not find on the disc are kept
+                // as they are drawn, for the launcher to upscale next time.
+                if (auto wanted = hd_textures->wanted()) {
+                    const auto count = wanted->size();
+                    texture_dump.emplace(hd_textures->directory() / sarusaru::textures::HdTexturePack::kCollectedName,
+                                         std::move(wanted));
+                    std::cout << "Collecting up to " << count << " textures for the HD pack\n";
+                }
+            }
+        };
+        load_textures(current.texture_pack);
+        // A renderer for `current`; another replaces it when the resolution or textures change.
+        const auto make_renderer = [&] {
+            if (renderer) {
+                vulkan.vkDeviceWaitIdle(vulkan.device);
+                renderer->destroy();
+            }
+            renderer = std::make_unique<sarusaru::shell::GeRenderer>(vulkan, current.internal_resolution);
+            renderer->set_cel_shading(current.cel_shading);
+            if (translation_pack) renderer->set_translation_pack(&*translation_pack);
+            if (hd_textures) renderer->set_hd_textures(&*hd_textures);
+            if (texture_dump) renderer->set_texture_dump(&*texture_dump);
+            if (!renderer->create(error)) throw psprecomp::Error(error);
+        };
+        make_renderer();
         auto &memory = game.runtime.memory();
         // Frame interpolation: each draw is also blended with its match in
         // the previous game frame, for the in-between picture. A game frame
@@ -169,19 +219,18 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
         // projection is rescaled before the draw reaches the renderer (and
         // the interpolator, which then eases the change over a frame).
         // The title, menus and cutscenes keep the native projection.
-        if (fov.enabled())
-            game.ge.state().set_view_hook([&fov, &game](sarusaru::gpu::DrawCall &call) {
-                if (game.gameplay_camera.active()) fov.apply(call);
-            });
+        game.ge.state().set_view_hook([&fov, &game](sarusaru::gpu::DrawCall &call) {
+            if (fov.enabled() && game.gameplay_camera.active()) fov.apply(call);
+        });
         const auto render_draw = [&](const sarusaru::gpu::DrawCall &call) {
-            renderer.draw(memory, call);
+            renderer->draw(memory, call);
             if (!interpolating) return;
             if (const auto requests = game.display.framebuffer_requests(); requests != frame_requests) {
                 frame_requests = requests;
                 interpolator.end_frame();
             }
             interpolator.interpolate(call, 0.5f, between);
-            renderer.queue_interpolated(memory, between);
+            renderer->queue_interpolated(memory, between);
         };
         game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) {
             if (translation_pack) translation_pack->translate_draw(memory, call, render_draw);
@@ -192,6 +241,47 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
                                 std::uint32_t left, std::uint32_t right) {
             audio.play(channel, samples, mono, left, right);
         });
+
+        // Applies what the pause menu changed, between two frames.
+        const auto apply_settings = [&] {
+            const sarusaru::shell::Settings next = game_settings(settings, overrides, settings_path);
+            if (next.controls != current.controls) input.emplace(next.controls);
+            if (next.fov_degrees != current.fov_degrees) fov = sarusaru::gpu::FovOverride(next.fov_degrees);
+            if (next.frame_rate != current.frame_rate) {
+                interpolating = sarusaru::shell::interpolates(next);
+                presentation = sarusaru::shell::PresentationClock(interpolating ? 0u : next.frame_rate);
+                // The next game frame starts the in-between pictures afresh.
+                interpolator.reset();
+                frame_requests = game.display.framebuffer_requests();
+                latches = game.display.framebuffer_latches(game.kernel.now_us());
+                latch_vblank = sarusaru::kernel::vblanks_by(game.kernel.now_us());
+            }
+            const bool new_textures = next.texture_pack != current.texture_pack;
+            const bool new_renderer = new_textures || next.internal_resolution != current.internal_resolution;
+            // Kept for the next start: the game text and the intro logos.
+            const auto translation_language = current.translation_language;
+            const auto translation_pack_path = current.translation_pack;
+            const bool skip_intro_logos = current.skip_intro_logos;
+            current = next;
+            current.translation_language = translation_language;
+            current.translation_pack = translation_pack_path;
+            current.skip_intro_logos = skip_intro_logos;
+            if (new_textures) {
+                if (renderer) {
+                    vulkan.vkDeviceWaitIdle(vulkan.device);
+                    renderer->destroy();
+                    renderer.reset();
+                }
+                try {
+                    load_textures(current.texture_pack);
+                } catch (const std::exception &failure) {
+                    std::cerr << "sarusaru: " << failure.what() << "; the original textures are used\n";
+                    load_textures({});
+                }
+            }
+            if (new_renderer) make_renderer();
+            else renderer->set_cel_shading(current.cel_shading);
+        };
 
         // SARUSARU_INPUT scripts the pad, as in the bootstrap; the
         // keyboard and gamepads are then ignored.
@@ -219,13 +309,25 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
         if (const char *trace = std::getenv("SARUSARU_TRACE_DRAWS"); trace != nullptr && *trace != '\0')
             trace_at_us = static_cast<std::uint64_t>(std::strtod(trace, nullptr) * 1e6);
 
-        renderer.begin_frame(vulkan.begin_frame());
+        // The pause menu, made once for the session.
+        sarusaru::ui::Launcher menu(layer, settings, settings_path, sarusaru::supported_disc(),
+                                    sarusaru::ui::Launcher::Mode::InGame);
+        // The menu opens when its action is pressed, not while it stays held,
+        // and the game sees nothing until whatever closed the menu is let go.
+        bool menu_held = true, settling = false;
+
+        renderer->begin_frame(vulkan.begin_frame());
         std::uint64_t real_origin_ns = SDL_GetTicksNS();
         std::uint64_t guest_origin_us = game.kernel.now_us();
         bool quit = false;
         game.kernel.set_frame_observer([&] {
             if (quit) return;
             if (translation_pack) translation_pack->flush_draws(render_draw);
+            // A UI script carries on while the game runs (to open the pause menu).
+            if (script != nullptr) {
+                layer.update_time();
+                script->tick(layer);
+            }
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
                 if (event.type == SDL_EVENT_QUIT) quit = true;
@@ -237,10 +339,22 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
                     SDL_SetWindowFullscreen(window, (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == 0);
                     continue;
                 }
-                input.handle(event);
+                input->handle(event);
+                // Dear ImGui's backend reopens its gamepads after these; anything else it would only queue.
+                if (event.type == SDL_EVENT_GAMEPAD_ADDED || event.type == SDL_EVENT_GAMEPAD_REMOVED)
+                    layer.handle(event);
+                else
+                    layer.observe(event);
             }
-            const auto controls = input.sample();
-            quit = quit || controls.quit;
+            auto controls = input->sample();
+            const bool open_menu = controls.menu && !menu_held && !quit;
+            menu_held = controls.menu;
+            // What opened the menu (L3+R3, say) does nothing in the game.
+            if (open_menu) controls = {};
+            if (settling) {
+                settling = controls.pad.buttons != 0u || controls.menu || controls.fast_forward || controls.camera_reset;
+                controls = {};
+            }
             if (!scripted) game.controller.set_pad(controls.pad);
             game.orbit_camera.set_input({controls.camera_x, controls.camera_y, controls.camera_reset});
 
@@ -252,7 +366,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
             // of one leaves no vblank to show the in-between picture at.
             bool in_between = false;
             if (interpolating) {
-                renderer.draw_interpolated();
+                renderer->draw_interpolated();
                 const auto now = game.kernel.now_us();
                 if (const auto latched = game.display.framebuffer_latches(now); latched != latches) {
                     const auto vblank = sarusaru::kernel::vblanks_by(now);
@@ -261,7 +375,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
                     latch_vblank = vblank;
                 }
             }
-            const auto *image = renderer.presentable(memory, framebuffer, width, height, in_between);
+            const auto *image = renderer->presentable(memory, framebuffer, width, height, in_between);
             const bool capturing = capture.buffer != VK_NULL_HANDLE && image != nullptr &&
                                    game.kernel.now_us() >= next_capture_us;
             if (capturing) {
@@ -271,10 +385,26 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
                 next_capture_us = game.kernel.now_us() + capture_every_us;
             }
             vulkan.end_frame(image, width, height, presentation.due(game.kernel.now_us()));
-            renderer.begin_frame(vulkan.begin_frame());
+            if (open_menu) {
+                // The game waits in this callback until the menu closes, over
+                // its last picture; nothing it queued plays meanwhile.
+                audio.clear();
+                game.controller.set_pad({});
+                layer.reset_input();
+                layer.set_backdrop(image, width, height);
+                if (menu.run(script) == sarusaru::ui::Launcher::Outcome::Quit) quit = true;
+                layer.set_backdrop(nullptr, 0u, 0u);
+                if (!quit) apply_settings();
+                settling = true;
+                menu_held = true;
+                // Pacing starts again from now rather than catching up.
+                real_origin_ns = SDL_GetTicksNS();
+                guest_origin_us = game.kernel.now_us();
+            }
+            renderer->begin_frame(vulkan.begin_frame());
             if (game.kernel.now_us() >= trace_at_us) {
                 std::fprintf(stderr, "frame at %llu us\n", static_cast<unsigned long long>(game.kernel.now_us()));
-                renderer.trace_frames(2u);
+                renderer->trace_frames(2u);
                 trace_at_us = std::numeric_limits<std::uint64_t>::max();
             }
             if (capturing) {
@@ -314,7 +444,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::s
         status = 1;
     }
     vulkan.destroy_buffer(capture);
-    renderer.destroy();
+    if (renderer) renderer->destroy();
     return status;
 }
 
@@ -365,9 +495,7 @@ int install_from_command_line(const std::filesystem::path &iso) {
 } // namespace
 
 int main(int argc, char **argv) {
-    std::optional<std::uint32_t> scale;
-    std::filesystem::path translation_override;
-    std::optional<std::filesystem::path> texture_pack_override;
+    GameOverrides overrides;
     std::filesystem::path texture_dump_directory;
     std::filesystem::path settings_path;
     std::vector<std::string_view> paths;
@@ -387,12 +515,12 @@ int main(int argc, char **argv) {
             continue;
         }
         if (arg == "--translation-pack" && i + 1 < argc) {
-            translation_override = std::filesystem::absolute(argv[++i]);
+            overrides.translation_pack = std::filesystem::absolute(argv[++i]);
             continue;
         }
         if (arg == "--texture-pack" && i + 1 < argc) {
             const std::string_view value = argv[++i];
-            texture_pack_override = value == "none" ? std::filesystem::path{} : std::filesystem::absolute(value);
+            overrides.texture_pack = value == "none" ? std::filesystem::path{} : std::filesystem::absolute(value);
             continue;
         }
         if (arg == "--dump-textures" && i + 1 < argc) {
@@ -407,7 +535,7 @@ int main(int argc, char **argv) {
                 std::cerr << "sarusaru: --scale takes 1 to 8\n";
                 return 2;
             }
-            scale = parsed;
+            overrides.scale = parsed;
             continue;
         }
         if (arg.starts_with("--")) {
@@ -431,7 +559,7 @@ int main(int argc, char **argv) {
         if (settings_path.empty()) settings_path = sarusaru::shell::default_settings_path();
         settings = sarusaru::shell::load_settings(settings_path);
         std::cout << "Settings: " << settings_path.string() << '\n';
-        if (launcher) ui_script = sarusaru::ui::UiScript::from_environment();
+        ui_script = sarusaru::ui::UiScript::from_environment();
     } catch (const std::exception &error) {
         std::cerr << "sarusaru: " << error.what() << '\n';
         // Started from Finder or Explorer there is no terminal for the error.
@@ -460,14 +588,14 @@ int main(int argc, char **argv) {
             set_window_icon(window);
             if (!vulkan.create(window, error)) throw psprecomp::Error(error);
             std::string start_failure;
+            // The interface lives for the whole session: the launcher's, then the game's pause menu.
+            sarusaru::ui::Layer layer(window, vulkan);
+            if (!layer.create(error)) throw psprecomp::Error(error);
             // The script carries on where it left off if the launcher returns.
             std::optional<sarusaru::ui::UiScript> script;
             if (ui_script) script.emplace(*ui_script);
             for (;;) {
                 if (launcher) {
-                    // The launcher's interface lives only until the game starts.
-                    sarusaru::ui::Layer layer(window, vulkan);
-                    if (!layer.create(error)) throw psprecomp::Error(error);
                     sarusaru::ui::Launcher menu(layer, settings, settings_path, sarusaru::supported_disc());
                     if (!start_failure.empty()) menu.show_start_failure(start_failure);
                     if (menu.run(script ? &*script : nullptr) == sarusaru::ui::Launcher::Outcome::Quit) {
@@ -476,22 +604,12 @@ int main(int argc, char **argv) {
                     }
                     iso = settings.game_disc;
                 }
-                sarusaru::shell::Settings game_settings = settings;
-                if (scale) game_settings.internal_resolution = *scale;
-                if (!translation_override.empty()) {
-                    game_settings.translation_language = "en";
-                    game_settings.translation_pack = translation_override;
-                } else if (!game_settings.translation_pack.empty() && game_settings.translation_pack.is_relative()) {
-                    game_settings.translation_pack = settings_path.parent_path() / game_settings.translation_pack;
-                }
-                if (texture_pack_override)
-                    game_settings.texture_pack = *texture_pack_override;
-                else if (game_settings.texture_pack.is_relative() && !game_settings.texture_pack.empty())
-                    game_settings.texture_pack = settings_path.parent_path() / game_settings.texture_pack;
-                if (game_settings.translation_language == "en" && game_settings.translation_pack.empty())
+                const auto resolved = game_settings(settings, overrides, settings_path);
+                if (resolved.translation_language == "en" && resolved.translation_pack.empty())
                     throw std::runtime_error("English needs a translation pack; use --translation-pack FILE or [translation] pack");
                 start_failure.clear();
-                status = play(window, vulkan, game_settings, executable, iso, texture_dump_directory, start_failure);
+                status = play(window, vulkan, layer, settings, settings_path, overrides, executable, iso,
+                              texture_dump_directory, script ? &*script : nullptr, start_failure);
                 if (!launcher || start_failure.empty()) break;
             }
         } catch (const std::exception &failure) {

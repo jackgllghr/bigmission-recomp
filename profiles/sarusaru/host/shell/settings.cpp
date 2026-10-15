@@ -1,5 +1,6 @@
 #include "shell/settings.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -63,8 +64,20 @@ std::vector<Binding> bindings(std::string_view value, bool keyboard) {
             if (binding.code == SDL_GAMEPAD_AXIS_INVALID) throw std::runtime_error("unknown gamepad axis: " + std::string(token));
         } else {
             binding.kind = Binding::Kind::Button;
-            binding.code = static_cast<int>(SDL_GetGamepadButtonFromString(std::string(token).c_str()));
-            if (binding.code == SDL_GAMEPAD_BUTTON_INVALID) throw std::runtime_error("unknown gamepad button: " + std::string(token));
+            const auto button = [](std::string_view name) {
+                const auto code = static_cast<int>(SDL_GetGamepadButtonFromString(std::string(name).c_str()));
+                if (code == SDL_GAMEPAD_BUTTON_INVALID) throw std::runtime_error("unknown gamepad button: " + std::string(name));
+                return code;
+            };
+            // Two buttons held together: leftstick+rightstick.
+            if (const auto plus = token.find('+'); plus != token.npos) {
+                const int first = button(trim(token.substr(0, plus))), second = button(trim(token.substr(plus + 1)));
+                if (first == second) throw std::runtime_error("a button chord needs two different buttons");
+                binding.code = std::min(first, second);
+                binding.chord = std::max(first, second);
+            } else {
+                binding.code = button(token);
+            }
         }
         result.push_back(binding);
         if (comma == value.npos) break;
@@ -86,6 +99,10 @@ std::string binding_names(const std::vector<Binding> &bindings) {
                 ? name : "scancode:" + std::to_string(binding.code);
         } else if (binding.kind == Binding::Kind::Button) {
             out += SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(binding.code));
+            if (binding.chord >= 0) {
+                out += '+';
+                out += SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(binding.chord));
+            }
         } else {
             out += "axis:";
             out += SDL_GetGamepadStringForAxis(static_cast<SDL_GamepadAxis>(binding.code));
@@ -138,7 +155,7 @@ Settings default_settings() {
                           "J", "L", "I", "K", "Tab", "Escape", "Keypad 4", "Keypad 6", "Keypad 8", "Keypad 2", "Keypad 5"};
     const char *pads[] = {"dpup", "dpdown", "dpleft", "dpright", "b", "a", "x", "y",
                          "leftshoulder, axis:lefttrigger+", "rightshoulder, axis:righttrigger+", "start", "back",
-                         "axis:leftx-", "axis:leftx+", "axis:lefty-", "axis:lefty+", "none", "none",
+                         "axis:leftx-", "axis:leftx+", "axis:lefty-", "axis:lefty+", "none", "guide, leftstick+rightstick",
                          "axis:rightx-", "axis:rightx+", "axis:righty-", "axis:righty+", "rightstick"};
     for (std::size_t i = 0; i < kActionCount; ++i) {
         settings.controls.keyboard[i] = bindings(keys[i], true);
@@ -154,6 +171,7 @@ Settings parse_settings(std::string_view text) {
     std::set<std::string> seen;
     std::size_t line_number = 0;
     std::optional<bool> legacy_interpolation;
+    std::array<std::optional<std::vector<Binding>>, 2> legacy_quit;  // keyboard, gamepad
     while (std::getline(in, line)) {
         ++line_number;
         auto content = trim(std::string_view(line).substr(0, line.find('#')));
@@ -174,7 +192,8 @@ Settings parse_settings(std::string_view text) {
             if (!seen.insert(full).second) throw std::runtime_error("duplicate setting: " + full);
             if (section == "keyboard" || section == "gamepad") {
                 auto &controls = section == "keyboard" ? settings.controls.keyboard : settings.controls.gamepad;
-                controls[action_index(key)] = bindings(value, section == "keyboard");
+                if (key == "quit") legacy_quit[section == "keyboard" ? 0 : 1] = bindings(value, section == "keyboard");
+                else controls[action_index(key)] = bindings(value, section == "keyboard");
             } else if (full == "graphics.internal_resolution") {
                 settings.internal_resolution = static_cast<std::uint32_t>(integer(value, 1, 8));
             } else if (full == "graphics.window_width") {
@@ -224,6 +243,12 @@ Settings parse_settings(std::string_view text) {
             throw std::runtime_error("settings line " + std::to_string(line_number) + ": " + error.what());
         }
     }
+    for (std::size_t i = 0; i < 2u; ++i) {
+        const std::string menu = i == 0u ? "keyboard.menu" : "gamepad.menu";
+        if (legacy_quit[i] && !legacy_quit[i]->empty() && !seen.contains(menu))
+            (i == 0u ? settings.controls.keyboard : settings.controls.gamepad)[static_cast<std::size_t>(Action::Menu)] =
+                *legacy_quit[i];
+    }
     // An earlier version's interpolation; its cap of 60 alone showed the game's own frames.
     if (legacy_interpolation && *legacy_interpolation) settings.frame_rate = 60u;
     else if (legacy_interpolation && settings.frame_rate == 60u) settings.frame_rate = 0u;
@@ -235,7 +260,7 @@ std::string serialize_settings(const Settings &settings) {
     out.imbue(std::locale::classic());
     out << "# SaruSaru settings. Restart the game after editing.\n"
            "# Keyboard values: SDL physical key names or scancode:N; comma separates alternatives.\n"
-           "# Gamepad values: SDL button names or axis:NAME+ / axis:NAME-; none unbinds.\n"
+           "# Gamepad values: SDL button names, two held together as a+b, or axis:NAME+ / axis:NAME-; none unbinds.\n"
            "[graphics]\n# Rendering scale: 1-8 times the PSP's 480x272.\ninternal_resolution = " << settings.internal_resolution << '\n'
         << "# Cel shading: 0 = off, 1 = banded, 2 = banded with black world and character outlines.\n"
         << "cel_shading = " << settings.cel_shading << '\n'

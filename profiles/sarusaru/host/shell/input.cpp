@@ -39,11 +39,24 @@ InputState map_input(const ControlSettings &settings, std::span<const bool> keys
         for (const auto &binding : settings.keyboard[i])
             if (binding.code >= 0 && static_cast<std::size_t>(binding.code) < keys.size() && keys[binding.code])
                 values[i] = 1.0f;
-        for (const auto &pad : gamepads) {
+    }
+    for (const auto &pad : gamepads) {
+        // Chords first: the buttons of one held are not also single presses.
+        std::array<bool, SDL_GAMEPAD_BUTTON_COUNT> chorded{};
+        for (std::size_t i = 0; i < kActionCount; ++i)
+            for (const auto &binding : settings.gamepad[i])
+                if (binding.kind == Binding::Kind::Button && binding.chord >= 0 && pad.buttons[binding.code] &&
+                    pad.buttons[binding.chord]) {
+                    values[i] = 1.0f;
+                    chorded[binding.code] = chorded[binding.chord] = true;
+                }
+        for (std::size_t i = 0; i < kActionCount; ++i) {
             for (const auto &binding : settings.gamepad[i]) {
                 float value = 0.0f;
-                if (binding.kind == Binding::Kind::Button) value = pad.buttons[binding.code] ? 1.0f : 0.0f;
-                else {
+                if (binding.kind == Binding::Kind::Button) {
+                    if (binding.chord >= 0) continue;
+                    value = pad.buttons[binding.code] && !chorded[binding.code] ? 1.0f : 0.0f;
+                } else {
                     const auto raw = pad.axes[binding.code];
                     value = static_cast<float>(raw) / (raw < 0 ? 32768.0f : 32767.0f);
                     value *= static_cast<float>(binding.direction);
@@ -70,7 +83,7 @@ InputState map_input(const ControlSettings &settings, std::span<const bool> keys
     result.camera_y = value(Action::CameraDown) - value(Action::CameraUp);
     result.camera_reset = value(Action::CameraReset) > 0.5f;
     result.fast_forward = value(Action::FastForward) > 0.5f;
-    result.quit = value(Action::Quit) > 0.5f;
+    result.menu = value(Action::Menu) > 0.5f;
     return result;
 }
 InputState Input::sample() const {

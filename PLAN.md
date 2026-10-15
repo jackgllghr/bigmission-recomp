@@ -119,9 +119,11 @@ chunk).
 - [x] Window size at startup and fullscreen (Alt+Enter/F11 toggle).
 - [ ] Verify interpolation in stages, cutscenes and dialogs; higher simulation
       rates remain uncompensated; the presentation cap does not change simulation speed.
-- [~] Expose settings and binding capture in the launcher's in-game screen.
-      The launcher edits every setting, including bindings with capture;
-      an in-game menu is still to come.
+- [x] Expose settings and binding capture in the launcher's in-game screen.
+      The launcher edits every setting, including bindings with capture, and
+      its settings and bindings screens are the pause menu over the paused
+      game; changes apply as it resumes, except the game text and intro
+      logo skip, which wait for the next start.
 
 ### Launcher chunk (milestone 5)
 
@@ -359,8 +361,8 @@ networking (`sceNet*`, 21 in total).
        time at each vblank of the virtual clock (Tab fast-forwards),
        keyboard and gamepad input into `sceCtrl`, and `sceAudio` output
        through SDL audio streams. File-based settings and keyboard/gamepad
-       rebinding are available and editable in the launcher; an in-game menu
-       is still to come.
+       rebinding are available and editable in the launcher and in the
+       pause menu over the game.
 11. [~] GE rendering: Yakumo's GeState now decodes every draw (vertices,
         textures, blend, depth, lighting, fog, matrices) behind the headless
         GE, and GE block transfers are carried out in guest memory. A Vulkan
@@ -469,5 +471,5 @@ In priority order:
   compile the game; next are the unit-span choice and the app shell.
 - Interpolation and FOV are unverified in cutscenes, dialogs and other stage
   types; higher simulation rates remain uncompensated.
-- Launcher: save management, in-game menu, on-screen keyboard; removal of
+- Launcher: save management, on-screen keyboard; removal of
   modules for older runtime interfaces.

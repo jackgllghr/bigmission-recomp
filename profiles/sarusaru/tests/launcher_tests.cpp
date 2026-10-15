@@ -217,7 +217,18 @@ void rows() {
             ++seen;
             const auto view = describe(row, settings);
             require(!view.label.empty() && !view.value.empty() && !view.description.empty(), "row without text");
+            // In the pause menu, only the rows the game applies as it starts say they wait for it.
+            const auto in_game = describe(row, settings, true);
+            const std::string_view note = tr(Text::AppliesNextStart);
+            require(in_game.value == view.value && in_game.label == view.label, "pause menu row reads differently");
+            require(in_game.description.ends_with(note) == restart_only(row),
+                    "a row in the pause menu says it waits for the next start, or does not and should");
+            require(!view.description.ends_with(note), "a launcher row says it waits for the next start");
         }
+    require(restart_only(SettingRow::GameText) && restart_only(SettingRow::SkipIntroLogos) &&
+                !restart_only(SettingRow::InternalResolution) && !restart_only(SettingRow::Textures) &&
+                !restart_only(SettingRow::FrameRate) && !restart_only(SettingRow::Fov),
+            "rows applied live or at the next start changed");
     require(describe(SettingRow::SkipIntroLogos, settings).value == "Off", "logo skip must start off");
     step(SettingRow::SkipIntroLogos, settings, 1);
     require(settings.skip_intro_logos && describe(SettingRow::SkipIntroLogos, settings).value == "On",
@@ -237,6 +248,11 @@ void bindings() {
     using sarusaru::shell::Action;
     using sarusaru::shell::Binding;
     const Binding key_z{Binding::Kind::Key, SDL_SCANCODE_Z};
+    {
+        const Binding l3_r3{Binding::Kind::Button, SDL_GAMEPAD_BUTTON_LEFT_STICK, 1, SDL_GAMEPAD_BUTTON_RIGHT_STICK};
+        const auto ps = glyph(l3_r3, SDL_GAMEPAD_TYPE_PS5), xbox = glyph(l3_r3, SDL_GAMEPAD_TYPE_XBOXONE);
+        require(ps.kind == Glyph::Kind::Pill && ps.label == "L3+R3" && xbox.label == "LS+RS", "a button chord's glyph is wrong");
+    }
     const Binding key_c{Binding::Kind::Key, SDL_SCANCODE_C};
     const Binding east{Binding::Kind::Button, SDL_GAMEPAD_BUTTON_EAST};
 
