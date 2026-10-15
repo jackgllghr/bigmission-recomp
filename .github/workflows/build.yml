@@ -1,6 +1,6 @@
-# Builds the framework and the SaruSaru profile (with its launcher) on every
-# target desktop host and runs their tests, and builds the Android launcher
-# APK. No game files exist here, so the game module (code generated from the
+# PRs and pushes build and test the framework and SaruSaru launcher on Linux
+# x64. Weekly and manual runs cover every desktop host and the Android APK.
+# No game files exist here, so the game module (code generated from the
 # player's own disc) is not built.
 name: Build
 
@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
 jobs:
   build:
     name: ${{ matrix.host }}
@@ -20,15 +24,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - host: windows-x64
-            runner: windows-2022
-          - host: linux-x64
-            runner: ubuntu-24.04
-          - host: linux-arm64
-            runner: ubuntu-24.04-arm
-          - host: macos-arm64
-            runner: macos-14
+        include: >-
+          ${{ fromJSON(
+            (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+            && '[{"host":"windows-x64","runner":"windows-2022"},{"host":"linux-x64","runner":"ubuntu-24.04"},{"host":"linux-arm64","runner":"ubuntu-24.04-arm"},{"host":"macos-arm64","runner":"macos-14"}]'
+            || '[{"host":"linux-x64","runner":"ubuntu-24.04"}]'
+          ) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +70,7 @@ jobs:
       # built against (SDL3, FFmpeg, MoltenVK on macOS, fonts, licences). The
       # game itself is not here: it is compiled from the player's own disc.
       - name: Package
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           build=out/${{ matrix.host }}
@@ -92,6 +94,7 @@ jobs:
           fi
 
       - name: Upload
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: sarusaru-${{ matrix.host }}
@@ -104,6 +107,7 @@ jobs:
   # Like the desktop packages, it holds the launcher, never the game.
   android:
     name: android-arm64
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     defaults:
       run:
