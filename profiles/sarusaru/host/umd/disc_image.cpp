@@ -1,9 +1,15 @@
 #include "umd/disc_image.hpp"
 
+#include "platform/documents.hpp"
 #include "psprecomp/common.hpp"
 
 #include <algorithm>
 #include <array>
+
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace sarusaru::umd {
 namespace {
@@ -28,11 +34,48 @@ bool same_name(std::string_view left, std::string_view right) noexcept {
 }
 }
 
-DiscImage::DiscImage(const std::filesystem::path &path) : stream_(path, std::ios::binary) {
+#if defined(_WIN32)
+DiscImage::Descriptor &DiscImage::Descriptor::operator=(Descriptor &&other) noexcept {
+    value_ = std::exchange(other.value_, -1);
+    return *this;
+}
+DiscImage::Descriptor::~Descriptor() = default;
+#else
+DiscImage::Descriptor &DiscImage::Descriptor::operator=(Descriptor &&other) noexcept {
+    if (this != &other) {
+        if (value_ >= 0) close(value_);
+        value_ = std::exchange(other.value_, -1);
+    }
+    return *this;
+}
+DiscImage::Descriptor::~Descriptor() {
+    if (value_ >= 0) close(value_);
+}
+
+DiscImage::DiscImage(int descriptor) : descriptor_(descriptor) {
+    struct stat status {};
+    if (descriptor < 0) throw psprecomp::Error("Cannot open disc image");
+    if (fstat(descriptor, &status) != 0 || !S_ISREG(status.st_mode)) throw psprecomp::Error("Cannot size disc image");
+    open(static_cast<std::uint64_t>(status.st_size));
+}
+#endif
+
+DiscImage::DiscImage(const std::filesystem::path &path) {
+#if !defined(_WIN32)
+    if (platform::is_document(path)) {
+        *this = DiscImage(platform::open_document(path));
+        return;
+    }
+#endif
+    stream_.open(path, std::ios::binary);
     if (!stream_) throw psprecomp::Error("Cannot open disc image");
     std::error_code error;
     const auto file_bytes = std::filesystem::file_size(path, error);
     if (error) throw psprecomp::Error("Cannot size disc image");
+    open(file_bytes);
+}
+
+void DiscImage::open(std::uint64_t file_bytes) {
     volume_bytes_ = file_bytes;
     std::array<std::uint8_t, kSectorSize> pvd{};
     read_exact(16u * kSectorSize, pvd);
@@ -51,6 +94,17 @@ DiscImage::DiscImage(const std::filesystem::path &path) : stream_(path, std::ios
 
 void DiscImage::read_exact(std::uint64_t offset, std::span<std::uint8_t> out) {
     if (offset > volume_bytes_ || out.size() > volume_bytes_ - offset) throw psprecomp::Error("ISO extent outside image");
+#if !defined(_WIN32)
+    if (descriptor_.get() >= 0) {
+        for (std::size_t done = 0; done < out.size();) {
+            const ssize_t got = pread(descriptor_.get(), out.data() + done, out.size() - done,
+                                      static_cast<off_t>(offset + done));
+            if (got <= 0) throw psprecomp::Error("Short ISO read");
+            done += static_cast<std::size_t>(got);
+        }
+        return;
+    }
+#endif
     stream_.clear();
     stream_.seekg(static_cast<std::streamoff>(offset));
     stream_.read(reinterpret_cast<char *>(out.data()), static_cast<std::streamsize>(out.size()));

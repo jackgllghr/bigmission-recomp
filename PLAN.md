@@ -285,9 +285,17 @@ code, unless that changes.
       game-mode configuration. Builds a debug APK; not yet run on a device.
 - [ ] Run the launcher on a device: Vulkan, touch, the back button, the
       lifecycle (pause and resume while the launcher and the game run).
+      On the OnePlus 13 the launcher runs in landscape, survives leaving and
+      returning (the surface is recreated) and takes taps; the game itself,
+      the back button and rotating between the two landscapes are untested.
+      The compositor rotates each frame (the swapchain is not pre-rotated),
+      which costs some GPU time to measure once the game runs.
 - [x] Android in CI: build the APK on every push.
-- [ ] Disc access through the system document picker (no
-      `MANAGE_EXTERNAL_STORAGE`): `DiscImage` reads from a file descriptor.
+- [x] Disc access through the system document picker (no
+      `MANAGE_EXTERNAL_STORAGE`): `DiscImage` reads from a file descriptor,
+      opened from the picker's `content://` URI through SDL, with a persisted
+      read permission. Verified on a OnePlus 13 (Android 16): picked, checked
+      as the supported disc, and reopened after a restart.
 - [ ] A `DocumentsProvider` exposing saves and settings to the Files app.
 - [ ] In-process generator, clang and lld; installation in a foreground
       service, with job count from available memory; APK size measured.

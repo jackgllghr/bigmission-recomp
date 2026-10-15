@@ -128,3 +128,52 @@ def import_dialogue(bundle_path, catalog):
         result['pages'].append(entry)
     validated_pages(result, rows)
     return result
+
+
+def compact_name_records(boot, catalog, metadata=None, glyphs=None):
+    """Translate the capture/collection lookup, whose indices differ from record IDs.
+
+    Match decoded source names to the independently source-checked CP932 catalog;
+    never assume that the two name tables use the same order.
+    """
+    from extract_translation_labels import extract as extract_labels, rodata_range
+    from translation_drafts import validated_drafts
+    from dialogue_assets import decode_message
+    if metadata is None:
+        metadata = json.loads((PROFILE / 'resources/translations/extraction-context.json').read_text(encoding='utf-8'))
+    table = metadata.get('compact_monkey_names')
+    if table is None:
+        return struct.pack('<H', 0), 0
+    if glyphs is None:
+        context = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text(encoding='utf-8'))
+        at = int(context['kanji_table'], 0)
+        glyphs = GlyphMap(boot[at:at + context['kanji_bytes']])
+    rows, _ = extract_labels(boot, metadata, {})
+    originals = {row['source_ja']: row for row in rows if row['kind'] == 'monkey_name'}
+    entries = {row['source_ja']: entry for entry, row in validated_drafts(catalog, rows) if row['kind'] == 'monkey_name'}
+    lo, hi = rodata_range(boot)
+    records, seen = [], set()
+    for index in range(table['count']):
+        pointer_offset = int(table['offset'], 0) + index * 4
+        if pointer_offset < 0 or pointer_offset + 4 > len(boot):
+            raise ValueError('Compact name lookup outside executable')
+        source_offset = struct.unpack_from('<I', boot, pointer_offset)[0] + 0x74
+        if not lo <= source_offset < hi:
+            raise ValueError('Compact name outside read-only data')
+        message = decode_message(boot, source_offset, hi, glyphs)
+        if len(message.pages) != 1 or message.pages[0] not in originals or message.pages[0] in seen:
+            raise ValueError('Unknown/duplicate compact monkey name')
+        source = message.pages[0]
+        seen.add(source)
+        if source not in entries:
+            continue
+        entry = entries[source]
+        text = entry.get('runtime_text', entry['text'])
+        if len(text) > 20:
+            raise ValueError('Compact monkey name exceeds 20 glyph cells')
+        payload = encode_english(text, glyphs) + b'\0'
+        key = (entry['id'] + '.compact').encode('ascii')
+        records.append(struct.pack('<H', len(key)) + key +
+            struct.pack('<III', pointer_offset, source_offset, message.end - source_offset) +
+            sha(boot[source_offset:message.end]).encode('ascii') + struct.pack('<I', len(payload)) + payload)
+    return struct.pack('<H', len(records)) + b''.join(records), len(records)

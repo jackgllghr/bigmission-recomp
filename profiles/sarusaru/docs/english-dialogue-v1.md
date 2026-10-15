@@ -7,7 +7,7 @@ review is pending. The English-only source is
 `english-dialogue-v1.json` (in the separate [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) repository).
 These are coding-assistant translations, not official localization wording.
 
-The combined pack includes the existing English menus, logo, 193 gameplay labels
+The combined pack includes the existing English menus, logo, 400 gameplay labels
 and these 71 dialogue messages. It covers tutorials, laboratory explanations,
 encouragement, character comments and reminders. Other unidentified text,
 cinematic/movie subtitles and Japanese audio remain outside this v1.
@@ -53,7 +53,7 @@ showing each source page's exact wrapped English pages for review.
 V4 appends a `u16` message count to the V3 layout. Each message contains a
 length-prefixed ASCII ID, `u32` pointer-slot file offset, source file offset and
 source byte length, 64-byte source SHA-256, then `u32` replacement byte length
-and the compact stream. Limits are 88 messages, 16 KiB per stream and 512 KiB
+and the compact stream. Limits are 512 compact records, 16 KiB per stream and 512 KiB
 total replacement bytes. The current English streams use 8,132 bytes.
 
 At startup the adapter checks source extents in `.rodata`, pointer slots in
@@ -116,3 +116,9 @@ need human acceptance testing. English v1 is a runtime translation draft,
 not a claim of full-game translation or end-to-end game/save compatibility.
 The tools never write original executables, discs or saves. Local extracted
 Japanese text, diagnostic assets and generated packs stay Git-ignored.
+
+
+The current combined pack also redirects 201 compact monkey-name captions using
+the same validated record format (272 compact records with dialogue). See
+[expanded screen coverage](english-expanded-ui.md). Existing page-alignment and
+protected-token rules still apply; captions do not add dialogue pages.

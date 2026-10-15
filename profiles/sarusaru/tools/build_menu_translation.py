@@ -20,6 +20,15 @@ PROFILE = Path(__file__).resolve().parents[1]
 ROOT = PROFILE.parents[1]
 SOURCE_PATH = 'PSP_GAME/USRDIR/Minigames/Menkolzs2.pac'
 COMMON_SOURCE_PATH = 'PSP_GAME/USRDIR/data/common.lzs'
+CONTROLS_SOURCE_PATH = 'PSP_GAME/USRDIR/data/common00.lzs'
+ARCHIVES = {
+    'menu': (SOURCE_PATH, False),
+    'common': (COMMON_SOURCE_PATH, True),
+    'common00': (CONTROLS_SOURCE_PATH, True),
+    'tenso': ('PSP_GAME/USRDIR/data/tenso.lzs', True),
+    'menko': ('PSP_GAME/USRDIR/Minigames/Menkolzs.pac', False),
+    'lab': ('PSP_GAME/USRDIR/data/insidelabo.lzs', True),
+}
 # Logical dimensions and GE sampling extents, observed and verified in guest draws.
 ASSETS = {
     'i_g_titl_l.lzs': ('title.logo', (352, 144), (512, 256, 352)),
@@ -32,6 +41,31 @@ ASSETS = {
     'b_but_d1.lzs': ('save.actions', (96, 48), (128, 64, 96)),
     'b_com_s0.lzs': ('save.labels', (96, 272), (128, 512, 96)),
     'b_ent_a0.lzs': ('name.tabs', (64, 96), (64, 128, 64)),
+    'common00/action_name.tm2': ('gameplay.actions', (256, 512), (256, 512, 256)),
+    'lab/o_kizai_0.tm2': ('laboratory.signs', (128, 64), (128, 64, 128)),
+    'common/e_stage.tm2': ('ui.common.e_stage', (160, 352), (256, 512, 160)),
+    'tenso/e_s_title_1.tm2': ('ui.tenso.e_s_title_1', (288, 512), (512, 512, 288)),
+    'tenso/e_s_title_2.tm2': ('ui.tenso.e_s_title_2', (288, 512), (512, 512, 288)),
+    'tenso/e_s_title_3.tm2': ('ui.tenso.e_s_title_3', (288, 512), (512, 512, 288)),
+    'common/e_end_0.tm2': ('ui.common.e_end_0', (256, 192), (256, 256, 256)),
+    'common/e_end_2.tm2': ('ui.common.e_end_2', (256, 192), (256, 256, 256)),
+    'common/e_boss.tm2': ('ui.common.e_boss', (192, 144), (256, 256, 192)),
+    'common/e_kaza_c0.tm2': ('ui.common.e_kaza_c0', (128, 72), (128, 128, 128)),
+    'common/e_nabi_a4.tm2': ('ui.common.e_nabi_a4', (288, 192), (512, 256, 288)),
+    'common/e_nabi_a2.tm2': ('ui.common.e_nabi_a2', (320, 32), (512, 32, 320)),
+    'common/e_nabi_b0.tm2': ('ui.common.e_nabi_b0', (160, 16), (256, 16, 160)),
+    'common/e_nabi_b1.tm2': ('ui.common.e_nabi_b1', (96, 16), (128, 16, 96)),
+    'common/e_nabi_b2.tm2': ('ui.common.e_nabi_b2', (256, 48), (256, 64, 256)),
+    'common/e_kaza_0.tm2': ('ui.common.e_kaza_0', (96, 80), (128, 128, 96)),
+    'menko/e_tit_1.lzs': ('ui.menko.e_tit_1', (224, 168), (256, 256, 224)),
+    'menko/e_tit_2.lzs': ('ui.menko.e_tit_2', (224, 24), (256, 32, 224)),
+    'menko/i_g_obj_0.lzs': ('ui.menko.i_g_obj_0', (64, 64), (64, 64, 64)),
+    'menko/i_g_obj_1.lzs': ('ui.menko.i_g_obj_1', (64, 64), (64, 64, 64)),
+    'menko/i_g_obj_2.lzs': ('ui.menko.i_g_obj_2', (64, 64), (64, 64, 64)),
+    'menko/i_g_obj_3.lzs': ('ui.menko.i_g_obj_3', (64, 64), (64, 64, 64)),
+    'menko/i_g_obj_4.lzs': ('ui.menko.i_g_obj_4', (64, 64), (64, 64, 64)),
+    'menko/i_g_obj_5.lzs': ('ui.menko.i_g_obj_5', (64, 64), (64, 64, 64)),
+    'menko/i_g_obj_6.lzs': ('ui.menko.i_g_obj_6', (64, 64), (64, 64, 64)),
     'common/b_but_c0.tm2': ('options.labels', (160, 64), (256, 64, 160)),
 }
 
@@ -95,7 +129,21 @@ def render_labels(catalog, images, require_title=True):
     expected = {'title.press_start', 'menu.new_game', 'menu.continue', 'menu.options', 'menu.gachi_king'}
     if require_title and not expected.issubset(seen):
         raise ValueError('The five title/main-menu labels are required')
-    return rectangles
+    merged = {asset: merge_regions(regions) for asset, regions in rectangles.items()}
+    if any(len(regions) > 64 for regions in merged.values()):
+        raise ValueError('Too many image replacement regions')
+    return merged
+
+
+def merge_regions(regions):
+    """Combine touching vertical slots without covering any unauthored pixels."""
+    merged = []
+    for x, y, width, height in sorted(regions, key=lambda r: (r[0], r[2], r[1])):
+        if merged and merged[-1][0] == x and merged[-1][2] == width and merged[-1][1] + merged[-1][3] == y:
+            merged[-1][3] += height
+        else:
+            merged.append([x, y, width, height])
+    return merged
 
 
 def render_line(run, canvas):
@@ -119,6 +167,22 @@ def render_line(run, canvas):
     canvas.alpha_composite(layer.resize((run['width'], 16), Image.Resampling.LANCZOS))
 
 
+def load_textures(iso):
+    """Read only the known archives; identity remains the decoded texture hash."""
+    sources, members = {}, {}
+    for alias, (path, compressed) in ARCHIVES.items():
+        data = iso.file(path, 6_000_000)
+        sources[path] = data
+        members[alias] = archive_members(decode_lzs(data) if compressed else data)
+    textures = {}
+    for asset in ASSETS:
+        alias, member = asset.split('/') if '/' in asset else ('menu', asset)
+        data = members[alias][member]
+        textures[asset] = decode_tim2(decode_lzs(data) if member.endswith('.lzs') else data)
+    font = decode_tim2(decode_lzs(members['menu']['c_font_0.lzs']))
+    return sources, textures, font
+
+
 def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dialogue_catalog=None):
     inputs = {iso_path.resolve(), logo_path.resolve(), catalog_path.resolve()}
     if gameplay_catalog is not None:
@@ -137,18 +201,19 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         boot = iso.file(supported['executable_path'], 4_000_000)
         if hashlib.sha256(boot).hexdigest() != supported['executable_sha256']:
             raise ValueError('Unsupported executable; menu adapter supports UCJS10060 version 1.00')
+        compact_names, name_count = b'', 0
         if gameplay_catalog is not None:
+            from dialogue_drafts import compact_name_records
+            compact_names, name_count = compact_name_records(boot, json.loads(gameplay_catalog.read_text(encoding='utf-8')))
             from translation_drafts import merge_gameplay_catalog
             catalog = merge_gameplay_catalog(boot, catalog, json.loads(gameplay_catalog.read_text(encoding='utf-8')))
         dialogue_bytes, dialogue_count, dialogue_layout = b'', 0, []
         if dialogue_catalog is not None:
             from dialogue_drafts import dialogue_records
             dialogue_bytes, dialogue_layout, dialogue_count = dialogue_records(boot, json.loads(dialogue_catalog.read_text(encoding='utf-8')))
-        sources = {SOURCE_PATH: iso.file(SOURCE_PATH, 6_000_000), COMMON_SOURCE_PATH: iso.file(COMMON_SOURCE_PATH, 6_000_000)}
-        members = archive_members(sources[SOURCE_PATH])
-        common = archive_members(decode_lzs(sources[COMMON_SOURCE_PATH]))
-        textures = {asset: decode_tim2(common[asset.split('/')[1]] if asset.startswith('common/') else decode_lzs(members[asset])) for asset in ASSETS}
-        font = decode_tim2(decode_lzs(members['c_font_0.lzs']))
+        if name_count:
+            dialogue_bytes = struct.pack('<H', dialogue_count + name_count) + (dialogue_bytes[2:] if dialogue_bytes else b'') + compact_names[2:]
+        sources, textures, font = load_textures(iso)
     images = {}
     for asset, (_, size, _) in ASSETS.items():
         texture = textures[asset]
@@ -164,7 +229,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
     regions = render_labels(catalog, images)
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
-    result = bytearray(b'SSTEXPK4' if dialogue_catalog is not None else
+    result = bytearray(b'SSTEXPK4' if dialogue_catalog is not None or name_count else
         b'SSTEXPK3' if any('capacity' in entry for entry in catalog.get('strings', [])) else b'SSTEXPK2')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', len(sources))
@@ -180,7 +245,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
             result += struct.pack('<4H', *region)
         result += struct.pack('<I', len(rgba)) + rgba
     strings = catalog.get('strings', [])
-    if len(strings) > 256:
+    if len(strings) > 1024:
         raise ValueError('Too many dialog strings')
     result += struct.pack('<I', len(strings))
     occupied = []
@@ -248,7 +313,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     if dialogue_catalog is not None:
         from extract_translation_labels import atomic_write
         atomic_write(output.with_suffix('.dialogue-layout.json'), json.dumps(dialogue_layout, indent=2) + '\n')
-    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines, {dialogue_count} dialogue messages; {len(result)} bytes')
+    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines, {dialogue_count} dialogue messages, {name_count} compact names; {len(result)} bytes')
 
 
 def main():

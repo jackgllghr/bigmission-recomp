@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace sarusaru::umd {
@@ -25,7 +26,13 @@ public:
     };
 
     // Throws psprecomp::Error for anything that is not a usable ISO9660 image.
+    // On Android `path` may be a document URI from the system's picker
+    // (platform/documents.hpp).
     explicit DiscImage(const std::filesystem::path &path);
+#if !defined(_WIN32)
+    // The image behind an open read-only descriptor, which it takes over.
+    explicit DiscImage(int descriptor);
+#endif
 
     [[nodiscard]] const Entry &root() const noexcept { return root_; }
     [[nodiscard]] std::uint32_t sector_count() const noexcept { return sector_count_; }
@@ -40,11 +47,28 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> read_file(const Entry &file, std::uint32_t limit);
 
 private:
+    // An owned descriptor, closed with the image; -1 when reading a path.
+    class Descriptor {
+    public:
+        Descriptor() noexcept = default;
+        explicit Descriptor(int value) noexcept : value_(value) {}
+        Descriptor(Descriptor &&other) noexcept : value_(std::exchange(other.value_, -1)) {}
+        Descriptor &operator=(Descriptor &&other) noexcept;
+        ~Descriptor();
+        [[nodiscard]] int get() const noexcept { return value_; }
+
+    private:
+        int value_{-1};
+    };
+
     std::ifstream stream_;
+    Descriptor descriptor_;
     std::uint64_t volume_bytes_{};
     std::uint32_t sector_count_{};
     Entry root_;
 
+    // Checks the volume descriptor and finds the root, once the source is open.
+    void open(std::uint64_t file_bytes);
     void read_exact(std::uint64_t offset, std::span<std::uint8_t> out);
     [[nodiscard]] Entry parse_record(std::span<const std::uint8_t> record) const;
 };

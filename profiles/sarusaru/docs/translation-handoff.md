@@ -92,7 +92,7 @@ This first extraction covers executable labels, not a complete game corpus.
 Image labels, custom encoded message streams, level scripts, movies and audio
 need separate extraction/transcription and capture work. Existing menu image
 translations remain in `english-menu.json` (in the separate [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) repository). The optional
-[English v1 pack](english-v1.md) now applies the 193 structured gameplay labels
+[English v1 pack](english-v1.md) now applies 400 structured gameplay labels, including 207 monkey names
 and documents importing future human edits with `import-drafts`. The conservative
 `max_bytes` here remains the original text length; v1 separately validates padded
 name fields for longer English replacements.

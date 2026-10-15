@@ -166,6 +166,20 @@ def extract(elf, metadata, menu):
             area_id=f'area_{area:03d}', context_status='table_association' if agrees else 'ambiguous_table_association',
             notes=f'Area record at {offset:#x}: ID={area}, stage-like fields={level}/{other_stage}, unknown field={unknown}. '
                   'Field meanings and runtime level association require confirmation; differing values are not resolved by guessing.')
+    if 'monkey_names' in metadata:
+        monkey_ids = set()
+        for index, offset, table in records('monkey_names'):
+            ident = struct.unpack_from('<I', elf, offset)[0]
+            if ident == 0 or ident in monkey_ids:
+                raise ValueError('Invalid/duplicate monkey record ID')
+            monkey_ids.add(ident)
+            pointer = struct.unpack_from('<I', elf, offset + table['pointer_offset'])[0]
+            add(f'monkey.record_{ident:03d}.name', pointer + 0x74,
+                kind='monkey_name', character_id=f'monkey_{ident:03d}',
+                context_status='table_association',
+                notes=f'Monkey table record {index}, ID {ident}; name pointer at record+{table["pointer_offset"]}. '
+                      'Used by capture notifications and the monkey collection; not a dialogue speaker.')
+
     for entry in menu.get('strings', []):
         add(entry['id'], entry['offset'], kind='dialog', screen=entry['id'].split('.')[0],
             translation_en=entry['text'], review_status='draft', context_status='menu_implementation',

@@ -132,7 +132,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     }
     if (magic != "SSTEXPK1") {
         const auto string_count = reader.integer(4);
-        if (string_count > 256) invalid("too many string replacements");
+        if (string_count > 1024) invalid("too many string replacements");
         std::vector<std::pair<std::uint32_t, std::uint32_t>> ranges;
         for (std::uint32_t i = 0; i < string_count; ++i) {
             StringEntry entry;
@@ -178,7 +178,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     }
     if (magic == "SSTEXPK4") {
         const auto count = reader.integer(2);
-        if (count > 88) invalid("too many dialogue messages");
+        if (count > 512) invalid("too many compact messages");
         std::set<std::uint32_t> pointers;
         std::size_t total = 0;
         for (std::uint32_t i = 0; i < count; ++i) {

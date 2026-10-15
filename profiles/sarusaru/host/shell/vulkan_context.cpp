@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 namespace sarusaru::shell {
 
@@ -123,6 +124,14 @@ void VulkanContext::recreate_surface() {
     swapchain_stale_ = true;
 }
 
+bool VulkanContext::surface_changed() const {
+    VkSurfaceCapabilitiesKHR capabilities{};
+    if (vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &capabilities) != VK_SUCCESS) return true;
+    return capabilities.currentTransform != reported_transform_ ||
+           capabilities.currentExtent.width != reported_extent_.width ||
+           capabilities.currentExtent.height != reported_extent_.height;
+}
+
 bool VulkanContext::create_swapchain(std::string &error) {
     if (surface == VK_NULL_HANDLE) return true;  // lost; recreate_surface retries
     VkSurfaceCapabilitiesKHR capabilities{};
@@ -151,12 +160,31 @@ bool VulkanContext::create_swapchain(std::string &error) {
 
     int width = 0, height = 0;
     SDL_GetWindowSizeInPixels(window_, &width, &height);
+    reported_extent_ = capabilities.currentExtent;
+    reported_transform_ = capabilities.currentTransform;
     extent_ = capabilities.currentExtent;
     if (extent_.width == 0xFFFFFFFFu) {
         extent_.width = std::clamp(static_cast<std::uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
         extent_.height = std::clamp(static_cast<std::uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     }
     if (extent_.width == 0u || extent_.height == 0u) return true;  // minimised; retried later
+    // On a rotated display (Android) the surface reports the rotation as its
+    // transform; presenting with it would promise images already rotated.
+    // Everything is drawn upright, so ask for no transform and let the
+    // compositor turn the picture. The images are then the window's shape:
+    // drivers differ in whether the reported extent already is.
+    VkSurfaceTransformFlagBitsKHR transform = capabilities.currentTransform;
+    if ((capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0u) {
+        constexpr auto kQuarterTurns = VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR;
+        if ((transform & kQuarterTurns) != 0u && width > 0 && height > 0 &&
+            (width > height) != (extent_.width > extent_.height))
+            std::swap(extent_.width, extent_.height);
+        transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    }
+#if defined(__ANDROID__)
+    SDL_Log("swapchain %ux%u for a %dx%d window, surface transform %#x", extent_.width, extent_.height, width, height,
+            static_cast<unsigned>(capabilities.currentTransform));
+#endif
     std::uint32_t image_count = capabilities.minImageCount + 1u;
     if (capabilities.maxImageCount != 0u) image_count = std::min(image_count, capabilities.maxImageCount);
 
@@ -169,7 +197,7 @@ bool VulkanContext::create_swapchain(std::string &error) {
     info.imageArrayLayers = 1u;
     info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    info.preTransform = capabilities.currentTransform;
+    info.preTransform = transform;
     info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     info.presentMode = mode;
     info.clipped = VK_TRUE;
@@ -259,7 +287,7 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
             swapchain_stale_ = true;
             present = false;
         } else if (acquired == VK_SUBOPTIMAL_KHR) {
-            swapchain_stale_ = true;
+            swapchain_stale_ = surface_changed();
         }
     }
     if (present) {
@@ -310,7 +338,8 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
         info.pImageIndices = &index;
         const VkResult result = vkQueuePresentKHR(queue, &info);
         if (result == VK_ERROR_SURFACE_LOST_KHR) surface_lost_ = true;
-        else if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) swapchain_stale_ = true;
+        else if (result == VK_ERROR_OUT_OF_DATE_KHR) swapchain_stale_ = true;
+        else if (result == VK_SUBOPTIMAL_KHR && !swapchain_stale_) swapchain_stale_ = surface_changed();
     }
 }
 

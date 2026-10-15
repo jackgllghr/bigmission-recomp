@@ -1,6 +1,8 @@
 #include "umd/disc_image.hpp"
 #include "umd/umd_drive.hpp"
 
+#include "platform/documents.hpp"
+
 #include "psprecomp/common.hpp"
 #include "synthetic_iso.hpp"
 
@@ -10,6 +12,10 @@
 #include <iostream>
 #include <string_view>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#endif
 
 namespace {
 using sarusaru::umd::DiscImage;
@@ -84,6 +90,20 @@ int main() {
         runtime.invoke_import("sceUmdUser", 0x8EF08FCEu, cpu);
         require(runtime.stopped(), "unsatisfiable wait did not stop");
     }
+#if !defined(_WIN32)
+    {
+        // A document picked on Android arrives as a descriptor.
+        DiscImage disc(open(path.string().c_str(), O_RDONLY));
+        const auto data = disc.find("PSP_GAME/DATA.BIN");
+        std::vector<std::uint8_t> chunk(100u);
+        require(data && disc.read(*data, 2040u, chunk) == 100u && chunk[0] == static_cast<std::uint8_t>(2040u * 7u) &&
+                    chunk[99] == static_cast<std::uint8_t>(2139u * 7u),
+                "read through a descriptor incorrect");
+        bool threw = false;
+        try { DiscImage missing(-1); } catch (const psprecomp::Error &) { threw = true; }
+        require(threw, "missing descriptor accepted");
+    }
+#endif
     std::filesystem::remove(path);
 
     auto bad = image;
@@ -105,5 +125,10 @@ int main() {
     bad = image;
     bad.resize(20u * kSectorSize);
     require(rejected(bad, "sarusaru_umd_truncated.iso"), "truncated volume accepted");
+    using sarusaru::platform::display_name;
+    require(display_name("content://com.android.externalstorage.documents/document/primary%3ADownload%2FSaru%20Get%20You.iso") ==
+                "Saru Get You.iso",
+            "document name not decoded");
+    require(display_name("/games/disc.iso") == "disc.iso", "file name incorrect");
     return 0;
 }

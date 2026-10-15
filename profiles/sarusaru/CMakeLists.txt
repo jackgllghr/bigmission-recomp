@@ -10,13 +10,8 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FFmpeg.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Graphics.cmake")
 # The launcher's texts (Japanese included) are UTF-8 source.
 add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
-# Recognising the player's disc image, for the launcher and the game session.
-add_library(sarusaru_disc STATIC host/game_disc.cpp host/umd/disc_image.cpp)
-target_include_directories(sarusaru_disc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
-target_link_libraries(sarusaru_disc PUBLIC psprecomp_runtime)
-
-# Where things live on the player's machine.
-add_library(sarusaru_platform STATIC host/platform/paths.cpp)
+# Where things live on the player's machine, and the files its picker gives.
+add_library(sarusaru_platform STATIC host/platform/paths.cpp host/platform/documents.cpp)
 target_include_directories(sarusaru_platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 if(ANDROID)
     if(NOT SARUSARU_HAS_RENDERER)
@@ -25,6 +20,10 @@ if(ANDROID)
     # The app's storage is SDL's to report (SDL_GetAndroidInternalStoragePath).
     target_link_libraries(sarusaru_platform PUBLIC SDL3::SDL3)
 endif()
+# Recognising the player's disc image, for the launcher and the game session.
+add_library(sarusaru_disc STATIC host/game_disc.cpp host/umd/disc_image.cpp)
+target_include_directories(sarusaru_disc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+target_link_libraries(sarusaru_disc PUBLIC psprecomp_runtime sarusaru_platform)
 
 if(SARUSARU_HAS_RENDERER)
     add_library(sarusaru_controls STATIC host/shell/settings.cpp host/shell/input.cpp)
@@ -153,7 +152,7 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     target_link_libraries(sarusaru_early_kernel_tests PRIVATE psprecomp_runtime)
     add_test(NAME sarusaru_early_kernel_tests COMMAND sarusaru_early_kernel_tests)
     add_executable(sarusaru_umd_tests
-        tests/umd_tests.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp
+        tests/umd_tests.cpp host/umd/disc_image.cpp host/umd/umd_drive.cpp host/platform/documents.cpp
         host/kernel/early_kernel.cpp)
     target_include_directories(sarusaru_umd_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_umd_tests PRIVATE psprecomp_runtime)

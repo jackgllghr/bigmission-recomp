@@ -7,7 +7,7 @@ import unittest
 
 PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
-from build_menu_translation import ASSETS, build, render_labels
+from build_menu_translation import ASSETS, build, render_labels, merge_regions
 
 
 def synthetic_catalog():
@@ -21,6 +21,18 @@ def synthetic_catalog():
         label('menu.options', 'Third', 'b_but_b0.lzs', [0, 48, 256, 24], 18),
         label('menu.gachi_king', 'Fourth', 'b_but_b0.lzs', [0, 72, 256, 24], 18),
     ]}
+
+
+class RegionTests(unittest.TestCase):
+    def test_merges_adjacent_slots_but_preserves_gaps_and_other_columns(self):
+        self.assertEqual(merge_regions([[0, 16, 64, 16], [64, 0, 64, 16],
+                                       [0, 0, 64, 16], [0, 48, 64, 16]]),
+                         [[0, 0, 64, 32], [0, 48, 64, 16], [64, 0, 64, 16]])
+
+    def test_full_action_atlas_stays_within_runtime_region_limit(self):
+        # More than 64 action slots; adjacent rows share replacement rectangles.
+        regions = [[x * 64, y * 16, 64, 16] for x in range(3) for y in range(32)]
+        self.assertEqual(merge_regions(regions), [[0, 0, 64, 512], [64, 0, 64, 512], [128, 0, 64, 512]])
 
 
 class OutputSafetyTests(unittest.TestCase):

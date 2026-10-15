@@ -67,6 +67,21 @@ class TranslationLabelExtractionTests(unittest.TestCase):
         self.assertEqual(candidates[0]['context_status'], 'unresolved')
         self.assertEqual((labels, candidates), extract(elf, tables, menu))
 
+    def test_monkey_names_follow_record_ids_and_validated_pointers(self):
+        elf, tables, menu = fixture()
+        tables['monkey_names'] = {'offset': '0x578', 'stride': 40, 'count': 1, 'pointer_offset': 8}
+        struct.pack_into('<3I', elf, 1400, 7, 1, 1500 - 0x74)
+        raw = 'テストサル'.encode('cp932') + b'\0'
+        elf[1500:1500 + len(raw)] = raw
+        labels, _ = extract(elf, tables, menu)
+        row = next(row for row in labels if row['key'] == 'monkey.record_007.name')
+        self.assertEqual(row['source_ja'], 'テストサル')
+        self.assertEqual(row['kind'], 'monkey_name')
+        self.assertEqual(row['source_offset'], '0x000005dc')
+        struct.pack_into('<I', elf, 1408, 0xffffffff)
+        with self.assertRaises(ValueError):
+            extract(elf, tables, menu)
+
     def test_elf_bounds_and_area_pointer_validation(self):
         elf, tables, menu = fixture()
         for field, value in [(32, 99999), (144 + 8, 6), (144 + 20, 99999)]:

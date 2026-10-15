@@ -82,6 +82,15 @@ int main() {
         try { (void)load(bytes, bad_source); } catch (const std::runtime_error &) { return; }
         require(false, "invalid pack accepted");
     };
+    // The gameplay catalog includes more than 256 names and UI strings.
+    auto many_strings = version2();
+    integer(many_strings, 400, 4);
+    for (unsigned i = 0; i < 400; ++i)
+        string_record(many_strings, "monkey.synthetic." + std::to_string(i), 1024 + i * 2, Bytes{'Z', 0}, "A");
+    integer(many_strings, 0, 2);
+    require(load(many_strings).string_count() == 400, "expanded monkey/UI catalog rejected");
+    auto oversized_strings = version2(); integer(oversized_strings, 1025, 4); rejects(oversized_strings);
+
     const auto pack = load(fixture());
     require(pack.size() == 1 && pack.locale() == "en", "pack metadata missing");
     sarusaru::gpu::TextureState texture;
@@ -229,6 +238,17 @@ int main() {
     emitted.clear(); font_memory.store8(glyph.texture.address + 33001, 1);
     runs.translate_draw(font_memory, glyph, emit); runs.translate_draw(font_memory, next, emit); runs.flush_draws(emit);
     require(emitted.size() == 2 && emitted[0].texture.address == glyph.texture.address, "changed font passed full-content identity");
+
+    // Captions share the compact-message format with dialogue, beyond 88 entries.
+    auto many_captions = version2(); many_captions[7] = '4';
+    integer(many_captions, 0, 4); integer(many_captions, 0, 2); integer(many_captions, 100, 2);
+    for (unsigned i = 0; i < 100; ++i)
+        dialogue_record(many_captions, "caption.synthetic." + std::to_string(i),
+                        0x3000 + i * 4, 1024 + i * 2, Bytes{0x9f, 0}, Bytes{0x9f, 0}, false);
+    require(load(many_captions).dialogue_count() == 100, "expanded compact caption catalog rejected");
+    auto oversized_captions = version2(); oversized_captions[7] = '4';
+    integer(oversized_captions, 0, 4); integer(oversized_captions, 0, 2); integer(oversized_captions, 513, 2);
+    rejects(oversized_captions);
 
     // A partial pack is valid: the caller can retain Japanese for all other assets.
     std::filesystem::remove(path);

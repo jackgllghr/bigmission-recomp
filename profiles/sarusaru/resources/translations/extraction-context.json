@@ -1,11 +1,35 @@
 {
   "schema": 1,
   "description": "Source locators and context only; game text is extracted locally. Table associations require runtime confirmation.",
-  "entity_names": {"offset": "0x215890", "stride": 136, "count": 51, "name_bytes": 128},
-  "facility_names": {"offset": "0x2173a8", "stride": 136, "count": 5, "name_bytes": 128},
-  "level_names": {"offset": "0x217650", "stride": 136, "count": 15, "name_bytes": 128},
-  "mission_names": {"offset": "0x217e48", "stride": 140, "count": 22, "name_bytes": 128},
-  "area_names": {"offset": "0x21ca90", "stride": 20, "count": 100},
+  "entity_names": {
+    "offset": "0x215890",
+    "stride": 136,
+    "count": 51,
+    "name_bytes": 128
+  },
+  "facility_names": {
+    "offset": "0x2173a8",
+    "stride": 136,
+    "count": 5,
+    "name_bytes": 128
+  },
+  "level_names": {
+    "offset": "0x217650",
+    "stride": 136,
+    "count": 15,
+    "name_bytes": 128
+  },
+  "mission_names": {
+    "offset": "0x217e48",
+    "stride": 140,
+    "count": 22,
+    "name_bytes": 128
+  },
+  "area_names": {
+    "offset": "0x21ca90",
+    "stride": 20,
+    "count": 100
+  },
   "characters": {
     "28": "kakeru",
     "29": "natsumi",
@@ -15,5 +39,15 @@
     "36": "ukki_pink_a",
     "37": "ukki_pink_b",
     "38": "ukki_white"
+  },
+  "monkey_names": {
+    "offset": "0x223400",
+    "stride": 40,
+    "count": 207,
+    "pointer_offset": 8
+  },
+  "compact_monkey_names": {
+    "offset": "0x280c34",
+    "count": 201
   }
 }

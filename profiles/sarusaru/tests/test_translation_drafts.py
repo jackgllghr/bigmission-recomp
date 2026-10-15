@@ -3,6 +3,7 @@ import copy
 import json
 from pathlib import Path
 import sys
+import struct
 import tempfile
 import unittest
 
@@ -29,6 +30,39 @@ class TranslationDraftTests(unittest.TestCase):
         self.assertNotIn('capacity', rows['level.stage_00.area_001.name'])
         self.assertNotIn('capacity', rows['save.test'])
         self.assertNotIn('capacity', self.menu['strings'][0])
+
+    def test_compact_capture_names_match_text_even_when_table_order_differs(self):
+        from dialogue_assets import GlyphMap, encoded_glyph, encode_english
+        from dialogue_drafts import compact_name_records
+        glyphs = GlyphMap('試験'.encode('cp932'))
+        inverse = {glyphs.character(i): i for i in range(380)}
+        self.metadata['monkey_names'] = {'offset': '0x578', 'stride': 40, 'count': 2, 'pointer_offset': 8}
+        self.metadata['compact_monkey_names'] = {'offset': '0x708', 'count': 2}
+        for index, (name, address) in enumerate([('テストサル', 1500), ('さる', 1540)]):
+            struct.pack_into('<3I', self.elf, 1400 + index * 40, 7 + index, 1, address - 0x74)
+            raw = name.encode('cp932') + b'\0'
+            self.elf[address:address + len(raw)] = raw
+        for index, name in enumerate(['さる', 'テストサル']):
+            address = 1600 + index * 20
+            raw = b''.join(encoded_glyph(inverse[ch]) for ch in name) + b'\0'
+            self.elf[address:address + len(raw)] = raw
+            struct.pack_into('<I', self.elf, 1800 + index * 4, address - 0x74)
+        rows, _ = extract(self.elf, self.metadata, self.menu)
+        drafts = {'schema': 1, 'locale': 'en', 'strings': [
+            {'id': row['key'], 'source_sha256': row['source_sha256'], 'text': text,
+             'review_status': 'draft'} for row, text in
+            zip([r for r in rows if r['kind'] == 'monkey_name'], ['Alpha', 'Beta'])]}
+        records, count = compact_name_records(self.elf, drafts, self.metadata, glyphs)
+        self.assertEqual(count, 2)
+        self.assertIn(b'monkey.record_008.name.compact', records[:100])
+        self.assertIn(encode_english('Beta', glyphs) + b'\0', records)
+        self.assertIn(encode_english('Alpha', glyphs) + b'\0', records)
+        # An omitted translation leaves that compact lookup untouched.
+        drafts['strings'].pop()
+        self.assertEqual(compact_name_records(self.elf, drafts, self.metadata, glyphs)[1], 1)
+        struct.pack_into('<I', self.elf, 1800, 0xffffffff)
+        with self.assertRaises(ValueError):
+            compact_name_records(self.elf, drafts, self.metadata, glyphs)
 
     def test_machine_defaults_do_not_overwrite_human_work(self):
         self.rows[0].update(translation_en='Human wording', review_status='reviewed', translator_note='Approved terminology')
@@ -67,8 +101,9 @@ class TranslationDraftTests(unittest.TestCase):
     def test_v1_has_complete_unique_english_authoring_entries(self):
         catalog_json = json.loads(catalog('english-gameplay-v1.json').read_text())
         entries = catalog_json['strings']
-        self.assertEqual(len(entries), 193)
-        self.assertEqual(len({entry['id'] for entry in entries}), 193)
+        self.assertEqual(len(entries), 400)
+        self.assertEqual(len({entry['id'] for entry in entries}), 400)
+        self.assertEqual(sum(e['id'].startswith('monkey.') for e in entries), 207)
         self.assertTrue(all(e['origin'] in ('machine_translation', 'human_translation') and
                             e['review_status'] in ('draft', 'reviewed') for e in entries))
         self.assertTrue(all(not e['id'].startswith('unresolved.boot.') for e in entries))

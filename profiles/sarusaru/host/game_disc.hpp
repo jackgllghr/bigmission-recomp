@@ -31,6 +31,10 @@ struct DiscCheck {
     [[nodiscard]] bool supported() const noexcept { return result == Result::Supported; }
 };
 
+// Whether the image is there to read: a file, or on Android a picked
+// document the app can still open.
+[[nodiscard]] bool disc_present(const std::filesystem::path &iso);
+
 // Never throws: every way an image can be wrong is a result.
 [[nodiscard]] DiscCheck check_disc(const std::filesystem::path &iso, const DiscIdentity &identity);
 

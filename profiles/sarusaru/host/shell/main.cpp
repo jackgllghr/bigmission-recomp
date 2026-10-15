@@ -199,7 +199,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             std::cout << "Translation: " << translation_pack->locale() << " (" << translation_pack->size()
                       << " menu textures, " << translation_pack->string_count()
                       << " text strings, " << translation_pack->dialogue_count()
-                      << " dialogue messages); untranslated screens retain Japanese\n";
+                      << " compact messages); untranslated screens retain Japanese\n";
         }
         std::optional<sarusaru::textures::HdTexturePack> hd_textures;
         std::optional<sarusaru::textures::TextureDump> texture_dump;
@@ -605,12 +605,6 @@ int main(int argc, char **argv) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SaruSaru Recomp", error.what(), nullptr);
         return 2;
     }
-#if defined(__ANDROID__)
-    // SDL picks the activity's orientation from the window: a resizable one
-    // may turn to portrait, whatever the manifest says. The PSP's screen is
-    // landscape, either way up.
-    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
-#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         std::cerr << "sarusaru: SDL_Init failed: " << SDL_GetError() << '\n';
         return 1;

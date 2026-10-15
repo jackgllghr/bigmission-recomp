@@ -1,6 +1,7 @@
 #include "ui/launcher.hpp"
 
 #include "game_module.hpp"
+#include "platform/documents.hpp"
 
 #include "ui/text.hpp"
 #include "ui/theme.hpp"
@@ -253,7 +254,7 @@ void Launcher::home() {
         if (ready) status = tr(Text::StatusReady);
         else if (!disc_message_.empty()) status = disc_message_;
         else if (disc_check_)
-            status = format(Text::DiscProblemFor, {utf8(settings_.game_disc.filename()), disc_problem(*disc_check_, identity_.disc_id)});
+            status = format(Text::DiscProblemFor, {platform::display_name(settings_.game_disc), disc_problem(*disc_check_, identity_.disc_id)});
         else status = format(Text::StatusChoose, {identity_.disc_id});
         const ImVec2 extent = text_size(font, text_px, status);
         const ImVec2 min((size.x - extent.x) * 0.5f - 20.0f * u, y), max((size.x + extent.x) * 0.5f + 14.0f * u, y + status_height);
@@ -319,7 +320,7 @@ void Launcher::paused() {
 
 void Launcher::choose_disc(const std::filesystem::path &path) {
     const DiscCheck check = check_disc(path, identity_);
-    const std::string name = utf8(path.filename());
+    const std::string name = platform::display_name(path);
     if (check.supported()) {
         settings_.game_disc = path;
         disc_check_ = check;
@@ -339,7 +340,10 @@ void Launcher::open_system_dialog() {
     static std::string filter_name;
     filter_name = tr(Text::PickerFilter);
     static const SDL_DialogFileFilter kFilters[] = {{filter_name.c_str(), "iso;ISO"}};
-    const std::string start = settings_.game_disc.empty() ? std::string() : utf8(settings_.game_disc.parent_path());
+    // A document URI has no folder to start in; the picker remembers its own.
+    const std::string start = settings_.game_disc.empty() || platform::is_document(settings_.game_disc)
+                                  ? std::string()
+                                  : utf8(settings_.game_disc.parent_path());
     SDL_ShowOpenFileDialog(
         [](void *user, const char *const *files, int) {
             auto *self = static_cast<Launcher *>(user);
@@ -643,14 +647,13 @@ void Launcher::textures() {
     begin_list("##textures", ImVec2(inner.GetWidth() - 2.0f * pad, inner.GetHeight() - 1.6f * pad));
     paragraph(layer_, tr(Text::TexturesIntro), width, colors::kInkDim);
     ImGui::Dummy(ImVec2(0, 8.0f * u));
-    std::error_code missing;
     if (!recipe || !directory) {
         paragraph(layer_, !recipe ? std::string(tr(Text::TexturesUnavailable))
                                   : format(Text::TexturesFailed, {"there is no per-user data directory"}),
                   width, colors::kRed);
     } else if (!upscaler) {
         paragraph(layer_, tr(Text::TexturesNoUpscaler), width, colors::kRed);
-    } else if (settings_.game_disc.empty() || !std::filesystem::is_regular_file(settings_.game_disc, missing)) {
+    } else if (settings_.game_disc.empty() || !disc_present(settings_.game_disc)) {
         paragraph(layer_, tr(Text::TexturesNeedDisc), width, colors::kRed);
     } else if (texture_build_) {
         const auto progress = texture_build_->progress();

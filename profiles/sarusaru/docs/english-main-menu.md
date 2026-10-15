@@ -1,7 +1,7 @@
 # English main-menu screens
 
 The optional English pack covers the title/main menu, autosave intro, name entry,
-save/load controls and dialogs, and the Options screen. The title logo comes from
+save/load controls and dialogs, the Options screen and in-game action prompts. The title logo comes from
 `include/image/SaruSaruBigMission.png`. Game assets, the executable file, generated
 code and original saves remain unchanged. Translations apply only to guest string
 copies and host rendering while the selected pack is active.
@@ -48,21 +48,22 @@ implemented yet.
 | Name entry | Heading, prompt, confirmation, keyboard mode tabs and button legends |
 | Save/load | Continue/Load/Back menu, numbered slot controls, selection/help, confirmations, progress, success and error messages |
 | Options | Heading, Defaults/Back, confirmation legends, music/effects/defaults/return help |
+| Gameplay controls | 65 context-sensitive action labels, including Jump, Catch, attacks and abilities |
 
 Existing BGM/SE labels, volume bars, controller icons, numeric slot labels and
 backgrounds remain intact. Kana/Kata/ABC/123 are input-alphabet choices; the
 Japanese keyboard's characters remain available intentionally. Select ABC for
 Latin name entry. Existing player names and save metadata are preserved.
-Gameplay, movies, minigame content beyond shared controls and other unrecognized
+Other gameplay text, movies, minigame content beyond shared controls and other unrecognized
 text retain Japanese. The fourth main-menu entry remains progression-dependent.
 The optional [English v1 build](english-v1.md) additionally includes machine
-drafts for 193 structured gameplay names; the default menu-only pack remains V2.
+drafts for 400 structured gameplay names; the default menu-only pack remains V2.
 The [English dialogue v1 pack](english-dialogue-v1.md) also includes 71 compact
 messages, with source page counts and controller glyphs preserved.
 
 The UTF-8 authoring catalog is
 `english-menu.json` (in the separate [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) repository).
-It currently contains 57 image labels, 39 read-only dialog string replacements
+It currently contains 234 image labels, 62 read-only dialog/help string replacements
 and four prepared Options help-line replacements. These are supported strings,
 not a claim that every game message or error path has been exercised.
 
@@ -87,6 +88,7 @@ individually LZSS-compressed TIM2 images. The Options label atlas also comes fro
 | Save/load labels | `b_com_s0.lzs` | 96x272 | 128x512 / 96 |
 | Name-entry tabs | `b_ent_a0.lzs` | 64x96 | 64x128 / 64 |
 | Options labels | `b_but_c0.tm2` in common | 160x64 | 256x64 / 160 |
+| In-game actions | `action_name.tm2` in common00 | 256x512 | 256x512 / 256 |
 
 At a renderer cache miss, full SHA-256 over the logical RGBA image, dimensions
 and buffer stride identifies the source. Only authored rectangles are replaced.
@@ -100,6 +102,14 @@ textures. Expanded source mapping was checked with headless draw/texture probes
 and actual Vulkan captures. The bounded asset readers support the formats used
 here; they do not claim every PAC/TIM2 variant. The exploratory decoder parameters
 and initial evidence are in the [investigation](translation-investigation.md).
+
+The in-game controls atlas comes from `PSP_GAME/USRDIR/data/common00.lzs`.
+Its four columns hold 64x16 action slots. The 65 occupied slots are English
+machine drafts; unused slots retain their original pixels. Button icons in
+`Keypallete.tm2` remain unchanged. Adjacent authored slots are merged into five
+replacement regions so this atlas stays within the runtime's 64-region limit.
+Merging never covers gaps or neighboring columns. Replacement pixels are
+rendered from the English catalog; no source image pixels enter the pack.
 
 ### Read-only dialog strings
 
@@ -154,11 +164,11 @@ packs still load. V2 contains:
 `SSTEXPK3` retains this layout and additionally allows verified zero padding
 after the original string's first NUL within its declared capacity. V1/V2
 retain their original validation rules. The [gameplay v1 builder](english-v1.md)
-uses V3 only for observed fixed name fields, with full field hashes and padding
+uses padded fields only for observed fixed name fields, with full field hashes and padding
 validation; it does not expand packed area strings into neighboring data.
 
 Limits include 32 MiB per pack/source, 16 source files, 64 images, 64 regions per
-image, 256 strings, 32 glyph lines, GE extents up to 512, IDs up to 128 bytes and
+image, 1024 strings, 32 glyph lines, GE extents up to 512, IDs up to 128 bytes and
 paths up to 255 bytes. Unsafe paths, duplicate identities, overlapping regions,
 malformed data, incompatible hashes and trailing bytes are rejected. A single
 pack has no external replacement paths or asset extraction.
@@ -212,3 +222,25 @@ logs are `menu-screens-build.log` and `menu-screens-ctest.log`; glyph/texture pr
 are `screens_probe.cpp`, `screens-*.tsv` and `glyphs-option*.tsv`. Representative
 capture folders are `english-options-v2/`, `english-save-flow-confirmed/` and
 `english-load-list/`. Updated final captures have `final` in their folder names.
+
+### In-game control-label expansion (2026-10-15)
+
+The combined pack builds with 12 textures, 232 strings, four help lines and
+71 dialogue messages (1,834,628 bytes). The menu-only build also includes the
+control labels. The 65 new entries are marked as machine drafts in the separate
+English catalog; terminology and progression-dependent abilities need review.
+
+Twenty Python authoring/asset tests and the native translation-pack suite pass.
+A local check loaded the generated combined pack through the native runtime,
+applied it to the decoded action atlas and confirmed all pixels outside the
+65 authored slots remained unchanged. Repeated combined builds are byte-identical.
+
+The Vulkan shell starts with this pack and loads a disposable copy of the save.
+The scripted capture run remained at the title screen, so live placement of
+these new gameplay labels is not yet visually verified. Atlas previews fit
+all labels within their 64x16 source slots; original saves were not changed.
+
+
+The [expanded screen coverage](english-expanded-ui.md) adds load-screen stage names,
+lab signs, stage selection/intro/results, collection and Gachi King UI, and
+compact monkey names. That page supersedes the earlier pack counts above.

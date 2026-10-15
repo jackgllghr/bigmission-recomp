@@ -1,7 +1,11 @@
 package io.github.sarusaru_recomp;
 
+import android.content.ClipData;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.content.res.AssetManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.system.ErrnoException;
 import android.system.Os;
@@ -25,6 +29,10 @@ import java.nio.file.Files;
  * installed version, and the copy is named to the port through
  * SARUSARU_SHIPPED_FILES (host/platform/paths.cpp).
  *
+ * The disc image the player picks is a document URI, which the port opens
+ * through SDL (host/platform/documents.hpp); the activity keeps the right to
+ * read it, so the disc saved in the settings still opens after a restart.
+ *
  * Command-line arguments come from the "args" string-array extra, for
  * development: adb shell am start -n io.github.sarusaru_recomp.SaruSaruRecomp/io.github.sarusaru_recomp.SaruSaruActivity --esa args --scale,2
  */
@@ -42,6 +50,35 @@ public class SaruSaruActivity extends SDLActivity {
             Log.e(TAG, "cannot copy the shipped resources", error);
         }
         super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (resultCode == RESULT_OK && data != null) {
+            keepReadable(data.getData());
+            ClipData clip = data.getClipData();
+            for (int i = 0; clip != null && i < clip.getItemCount(); ++i) keepReadable(clip.getItemAt(i).getUri());
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    private void keepReadable(Uri uri) {
+        if (uri == null) return;
+        try {
+            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException error) {
+            // The provider offers no lasting access: readable until the app closes.
+            Log.w(TAG, "cannot keep access to " + uri, error);
+        }
+    }
+
+    @Override
+    public void setOrientationBis(int w, int h, boolean resizable, String hint) {
+        // The PSP's screen is landscape, either way up and whatever the
+        // rotation lock says. SDL would choose from the window and the hint,
+        // which allows portrait for a resizable window on some devices.
+        Log.i(TAG, "requesting landscape (SDL asked for " + w + "x" + h + ", hint " + hint + ")");
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
     }
 
     @Override

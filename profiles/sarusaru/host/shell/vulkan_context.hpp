@@ -120,7 +120,14 @@ private:
     // thread that reports the event, read on the frame's.
     std::atomic<bool> surface_lost_{};
 
+    // What the surface reported when the swapchain was made: a suboptimal
+    // result means something changed only if these did (Android reports one
+    // for every frame presented without its rotation, as the shell does).
+    VkExtent2D reported_extent_{};
+    VkSurfaceTransformFlagBitsKHR reported_transform_{};
+
     static bool SDLCALL watch_lifecycle(void *context, SDL_Event *event);
+    [[nodiscard]] bool surface_changed() const;
     bool create_swapchain(std::string &error);
     void destroy_swapchain();
     // A new surface (and so swapchain) for the window's current native window.

@@ -1,11 +1,16 @@
 #include "game_disc.hpp"
 
+#include "platform/documents.hpp"
 #include "psprecomp/common.hpp"
 #include "psprecomp/sha256.hpp"
 
 #include <exception>
 #include <optional>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 namespace sarusaru {
 namespace {
@@ -31,10 +36,23 @@ std::vector<std::uint8_t> read_executable(umd::DiscImage &disc, const DiscIdenti
 
 } // namespace
 
+bool disc_present(const std::filesystem::path &iso) {
+#if !defined(_WIN32)
+    if (platform::is_document(iso)) {
+        // Gone, or no longer readable by the app: there is no other way to tell.
+        const int descriptor = platform::open_document(iso);
+        if (descriptor < 0) return false;
+        close(descriptor);
+        return true;
+    }
+#endif
+    std::error_code error;
+    return std::filesystem::is_regular_file(iso, error);
+}
+
 DiscCheck check_disc(const std::filesystem::path &iso, const DiscIdentity &identity) {
     DiscCheck check;
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(iso, error)) {
+    if (!disc_present(iso)) {
         check.result = DiscCheck::Result::Missing;
         return check;
     }
