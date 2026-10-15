@@ -57,13 +57,13 @@ Latin name entry. Existing player names and save metadata are preserved.
 Other gameplay text, movies, minigame content beyond shared controls and other unrecognized
 text retain Japanese. The fourth main-menu entry remains progression-dependent.
 The optional [English v1 build](english-v1.md) additionally includes machine
-drafts for 400 structured gameplay names; the default menu-only pack remains V2.
+drafts for 400 structured gameplay names; the menu-only pack now uses V4 for compact pause help.
 The [English dialogue v1 pack](english-dialogue-v1.md) also includes 71 compact
 messages, with source page counts and controller glyphs preserved.
 
 The UTF-8 authoring catalog is
 `english-menu.json` (in the separate [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) repository).
-It currently contains 234 image labels, 62 read-only dialog/help string replacements
+It currently contains 242 image labels, 67 read-only dialog/help string replacements
 and four prepared Options help-line replacements. These are supported strings,
 not a claim that every game message or error path has been exercised.
 

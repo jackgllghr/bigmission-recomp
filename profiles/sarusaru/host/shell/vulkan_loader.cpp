@@ -92,6 +92,7 @@ void VulkanLoader::destroy() {
     if (instance != VK_NULL_HANDLE && vkDestroyInstance != nullptr) vkDestroyInstance(instance, nullptr);
     instance = VK_NULL_HANDLE;
     SDL_Vulkan_UnloadLibrary();
+    vkGetInstanceProcAddr = nullptr;  // so load() loads it again
 }
 
 } // namespace sarusaru::shell

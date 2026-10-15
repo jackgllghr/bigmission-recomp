@@ -625,7 +625,28 @@ int main(int argc, char **argv) {
         try {
             if (window == nullptr) throw psprecomp::Error(std::string("cannot create the window: ") + SDL_GetError());
             set_window_icon(window);
+#if defined(__ANDROID__)
+            // Started behind the lock screen or another app, the window has
+            // no surface to draw on until the app is shown, and it can lose
+            // the one it had at any moment: wait for it, and try again if it
+            // went while Vulkan was being set up.
+            const auto has_surface = [window] {
+                return SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER,
+                                              nullptr) != nullptr;
+            };
+            for (;;) {
+                while (!has_surface()) {
+                    SDL_Event event;
+                    if (SDL_WaitEventTimeout(&event, 100) && event.type == SDL_EVENT_QUIT)
+                        throw psprecomp::Error("closed before the window was shown");
+                }
+                if (vulkan.create(window, error)) break;
+                if (has_surface()) throw psprecomp::Error(error);
+                vulkan.destroy();
+            }
+#else
             if (!vulkan.create(window, error)) throw psprecomp::Error(error);
+#endif
             std::string start_failure;
             // The interface lives for the whole session: the launcher's, then the game's pause menu.
             sarusaru::ui::Layer layer(window, vulkan);

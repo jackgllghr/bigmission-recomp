@@ -119,6 +119,6 @@ Japanese text, diagnostic assets and generated packs stay Git-ignored.
 
 
 The current combined pack also redirects 201 compact monkey-name captions using
-the same validated record format (272 compact records with dialogue). See
+the same validated record format (278 compact records with dialogue and six pause UI captions). See
 [expanded screen coverage](english-expanded-ui.md). Existing page-alignment and
 protected-token rules still apply; captions do not add dialogue pages.

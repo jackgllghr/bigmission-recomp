@@ -177,3 +177,43 @@ def compact_name_records(boot, catalog, metadata=None, glyphs=None):
             struct.pack('<III', pointer_offset, source_offset, message.end - source_offset) +
             sha(boot[source_offset:message.end]).encode('ascii') + struct.pack('<I', len(payload)) + payload)
     return struct.pack('<H', len(records)) + b''.join(records), len(records)
+
+
+def ui_caption_records(boot, catalog, glyphs=None):
+    """Source-checked compact UI captions with budgets for their actual panels."""
+    from dialogue_assets import decode_message
+    from extract_translation_labels import rodata_range
+    entries = catalog.get('compact_ui', [])
+    if not entries:
+        return struct.pack('<H', 0), 0
+    if glyphs is None:
+        context = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text(encoding='utf-8'))
+        at = int(context['kanji_table'], 0)
+        glyphs = GlyphMap(boot[at:at + context['kanji_bytes']])
+    lo, hi = rodata_range(boot)
+    records, ids, pointers = [], set(), set()
+    for entry in entries:
+        key, offset, pointer = entry['id'], entry['source_offset'], entry['pointer_offset']
+        if (not isinstance(key, str) or not key or len(key) > 128 or
+                type(offset) is not int or type(pointer) is not int or
+                key in ids or pointer in pointers or not lo <= offset < hi):
+            raise ValueError('Duplicate UI caption or invalid source')
+        ids.add(key)
+        pointers.add(pointer)
+        if pointer < 0 or pointer % 4 or pointer + 4 > len(boot) or struct.unpack_from('<I', boot, pointer)[0] + 0x74 != offset:
+            raise ValueError('UI caption lookup does not match source')
+        source = decode_message(boot, offset, hi, glyphs)
+        if sha(boot[offset:source.end]) != entry['source_sha256']:
+            raise ValueError('UI caption source hash mismatch')
+        text = entry['text']
+        if entry.get('review_status') not in ('draft', 'reviewed') or not isinstance(text, str) or not text.strip():
+            raise ValueError('UI caption needs a nonempty draft/reviewed translation')
+        pages = wrap_page(text, entry['columns'], entry['lines'])
+        if len(pages) != len(source.pages) or protected_tokens(text) != protected_tokens('\n'.join(source.pages)):
+            raise ValueError('UI caption changes pages or protected controls')
+        payload = b'\xff'.join(encode_english(page, glyphs) for page in pages) + b'\0'
+        encoded_key = key.encode('ascii')
+        records.append(struct.pack('<H', len(encoded_key)) + encoded_key +
+            struct.pack('<III', pointer, offset, source.end - offset) +
+            entry['source_sha256'].encode('ascii') + struct.pack('<I', len(payload)) + payload)
+    return struct.pack('<H', len(records)) + b''.join(records), len(records)

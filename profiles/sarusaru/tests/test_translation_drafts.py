@@ -64,6 +64,29 @@ class TranslationDraftTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compact_name_records(self.elf, drafts, self.metadata, glyphs)
 
+    def test_ui_captions_validate_source_lookup_and_panel_budget(self):
+        import hashlib
+        from dialogue_assets import GlyphMap, encoded_glyph, encode_english
+        from dialogue_drafts import ui_caption_records
+        glyphs = GlyphMap('試験'.encode('cp932'))
+        inverse = {glyphs.character(i): i for i in range(380)}
+        source = b''.join(encoded_glyph(inverse[ch]) for ch in 'もどる') + b'\0'
+        self.elf[1600:1600 + len(source)] = source
+        struct.pack_into('<I', self.elf, 1800, 1600 - 0x74)
+        entry = {'id': 'pause.synthetic', 'source_offset': 1600, 'pointer_offset': 1800,
+                 'source_sha256': hashlib.sha256(source).hexdigest(), 'text': 'Resume.',
+                 'columns': 14, 'lines': 1, 'review_status': 'draft'}
+        menu = {'compact_ui': [entry]}
+        records, count = ui_caption_records(self.elf, menu, glyphs)
+        self.assertEqual(count, 1)
+        self.assertIn(encode_english('Resume.', glyphs) + b'\0', records)
+        for changes in [{'source_sha256': '0' * 64}, {'pointer_offset': 1804},
+                        {'text': 'This caption needs far too many lines.'},
+                        {'text': '{BUTTON_CIRCLE}'}, {'text': ''}]:
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                ui_caption_records(self.elf, {'compact_ui': [dict(entry, **changes)]}, glyphs)
+        self.assertEqual(ui_caption_records(b'', {}), (b'\0\0', 0))
+
     def test_machine_defaults_do_not_overwrite_human_work(self):
         self.rows[0].update(translation_en='Human wording', review_status='reviewed', translator_note='Approved terminology')
         seed_drafts(self.rows, self.drafts)

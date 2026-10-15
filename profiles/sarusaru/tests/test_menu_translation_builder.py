@@ -1,5 +1,6 @@
 """Catalog layout checks using synthetic canvases (optional Pillow tooling)."""
 import copy
+import json
 import importlib.util
 from pathlib import Path
 import sys
@@ -7,7 +8,8 @@ import unittest
 
 PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
-from build_menu_translation import ASSETS, build, render_labels, merge_regions
+from build_menu_translation import ASSETS, build, render_labels, merge_regions, render_ui_label
+from translation_catalogs import catalog
 
 
 def synthetic_catalog():
@@ -55,6 +57,65 @@ class MenuCatalogTests(unittest.TestCase):
             self.assertIsNotNone(self.images['b_but_b0.lzs'].crop((0, y, 256, y + 24)).getbbox())
         self.assertIsNotNone(self.images['e_nabi_a0.lzs'].getbbox())
 
+    @unittest.skipUnless(catalog('english-menu.json').is_file(), 'English catalog is not checked out')
+    def test_clear_badges_fit_actual_sample_tiles_and_wobbling_screen_quads(self):
+        authored = json.loads(catalog('english-menu.json').read_text())
+        images = {asset: image.copy() for asset, image in self.images.items()}
+        regions = render_labels(authored, images)
+        self.assertEqual(regions['common/e_kaza_0.tm2'], [[0, 0, 96, 80]])
+        alpha = images['common/e_kaza_0.tm2'].getchannel('A')
+        # Actual guest clear-stamp draws: UV (1,1)..(95,39), with animated rotation.
+        # The second stamp samples (1,41)..(95,79) from the same atlas.
+        quads = [(417, -4, 411, 35, 512, 9), (417, -7, 407, 31, 510, 15),
+                 (416, -1, 414, 38, 512, 4), (416, 1, 417, 41, 512, -1)]
+        for top in (0, 40):
+            mask = alpha.crop((0, top, 96, top + 40)).point(lambda value: 255 if value >= 32 else 0)
+            self.assertIsNotNone(mask.getbbox())
+            for y in range(40):
+                for x in range(96):
+                    if not mask.getpixel((x, y)):
+                        continue
+                    for tx, ty, bx, by, rx, ry in quads:
+                        u, v = (x - 0.5) / 94, (y - 0.5) / 38
+                        sx, sy = tx + u * (rx - tx) + v * (bx - tx), ty + u * (ry - ty) + v * (by - ty)
+                        self.assertTrue(0 <= sx < 480 and 0 <= sy < 272,
+                                        f'stamp {top}: ink at {x},{y} clips screen at {sx},{sy}')
+
+    def test_gold_ink_is_heavier_and_red_edge_is_offset_down_and_right(self):
+        from PIL import Image, ImageDraw, ImageFont
+        label = render_ui_label('H', 24, 80, 40)
+        regular = Image.new('RGBA', label.size)
+        ImageDraw.Draw(regular).text((10, 2), 'H', font=ImageFont.load_default(size=24), fill=(255, 224, 32, 255))
+        def points(image, red=False):
+            return [(x, y) for y in range(image.height) for x in range(image.width)
+                    if (lambda p: p[3] > 128 and p[0] > 180 and p[2] < 80 and
+                        (p[1] < 100 if red else p[1] > 160))(image.getpixel((x, y)))]
+        gold, edge = points(label), points(label, True)
+        self.assertGreater(len(gold), len(points(regular)))
+        for axis in (0, 1):
+            self.assertGreaterEqual(max(p[axis] for p in edge) - min(p[axis] for p in edge),
+                                    max(p[axis] for p in gold) - min(p[axis] for p in gold) + 3)
+            self.assertGreater(sum(p[axis] for p in edge) / len(edge),
+                               sum(p[axis] for p in gold) / len(gold))
+
+    def test_small_label_letters_have_extra_separation(self):
+        from PIL import Image, ImageDraw, ImageFont
+        text = 'IIIIIIII'
+        tracked = render_ui_label(text, 10, 100, 20)
+        untracked = Image.new('RGBA', (400, 80))
+        ImageDraw.Draw(untracked).text((20, 8), text,
+            font=ImageFont.load_default(size=40), fill=(255, 224, 32, 255),
+            stroke_width=2, stroke_fill=(255, 224, 32, 255))
+        untracked = untracked.resize((100, 20), Image.Resampling.LANCZOS)
+        def gold_span(image):
+            xs = [x for y in range(image.height) for x in range(image.width)
+                  if (lambda p: p[3] > 128 and p[0] > 180 and p[1] > 160
+                      and p[2] < 80)(image.getpixel((x, y)))]
+            return max(xs) - min(xs) + 1
+        # Seven quarter-pixel gaps should remain visible after downsampling.
+        self.assertGreaterEqual(gold_span(tracked), gold_span(untracked) + 1)
+        self.assertLessEqual(gold_span(tracked), gold_span(untracked) + 3)
+
     def test_rejects_missing_labels_overlap_overflow_and_uncovered_glyphs(self):
         variants = []
         missing = copy.deepcopy(self.catalog); missing['labels'].pop(1); variants.append(missing)
@@ -63,6 +124,7 @@ class MenuCatalogTests(unittest.TestCase):
         overflow = copy.deepcopy(self.catalog); overflow['labels'][1]['text'] = 'A' * 100; variants.append(overflow)
         glyph = copy.deepcopy(self.catalog); glyph['labels'][1]['text'] = 'Café'; variants.append(glyph)
         bounds = copy.deepcopy(self.catalog); bounds['labels'][1]['rect'] = [-1, 0, 256, 24]; variants.append(bounds)
+        text_bounds = copy.deepcopy(self.catalog); text_bounds['labels'][1]['text_rect'] = [250, 0, 32, 24]; variants.append(text_bounds)
         for variant in variants:
             with self.subTest(variant=variant), self.assertRaises(ValueError):
                 render_labels(variant, self.images)

@@ -43,6 +43,8 @@ ASSETS = {
     'b_ent_a0.lzs': ('name.tabs', (64, 96), (64, 128, 64)),
     'common00/action_name.tm2': ('gameplay.actions', (256, 512), (256, 512, 256)),
     'lab/o_kizai_0.tm2': ('laboratory.signs', (128, 64), (128, 64, 128)),
+    'common/b_drm_0.tm2': ('pause.buttons', (128, 96), (128, 128, 128)),
+    'common/e_tan_6.tm2': ('pause.counter', (128, 96), (128, 128, 128)),
     'common/e_stage.tm2': ('ui.common.e_stage', (160, 352), (256, 512, 160)),
     'tenso/e_s_title_1.tm2': ('ui.tenso.e_s_title_1', (288, 512), (512, 512, 288)),
     'tenso/e_s_title_2.tm2': ('ui.tenso.e_s_title_2', (288, 512), (512, 512, 288)),
@@ -79,8 +81,46 @@ def name(text):
     return struct.pack('<H', len(data)) + data
 
 
-def render_labels(catalog, images, require_title=True):
+def render_ui_label(text, size, width, height, alignment='center'):
+    """Bold gold ink with 0.25px tracking and an offset 2px red edge.
+
+    Measure both layers together so the asymmetric outline stays inside the
+    guest's sampling rectangle, including at the smallest 16px label sizes.
+    """
     from PIL import Image, ImageDraw, ImageFont
+    if alignment not in ('left', 'center'):
+        raise ValueError('Label alignment must be left or center')
+    scale = 4
+    font = ImageFont.load_default(size=size * scale)
+    layer = Image.new('RGBA', (width * scale, height * scale))
+    draw = ImageDraw.Draw(layer)
+    body, outline, offset = 2, 8, 3
+    gold, red = (255, 224, 32, 255), (220, 55, 8, 255)
+    # Preserve the font's kerning, adding one supersampled pixel between glyphs.
+    glyphs = [(char, font.getlength(text[:i + 1]) - font.getlength(char) + i)
+              for i, char in enumerate(text)]
+    boxes = [draw.textbbox((advance + shift, shift), char, font=font,
+                           stroke_width=stroke)
+             for char, advance in glyphs
+             if char != ' '
+             for shift, stroke in ((0, body), (offset, outline))]
+    if not boxes:
+        boxes = [draw.textbbox((0, 0), text, font=font, stroke_width=outline)]
+    bounds = (min(b[0] for b in boxes), min(b[1] for b in boxes),
+              max(b[2] for b in boxes), max(b[3] for b in boxes))
+    tw, th = bounds[2] - bounds[0], bounds[3] - bounds[1]
+    if tw > layer.width - 2 * scale or th > layer.height - 2 * scale:
+        raise ValueError('Text exceeds pixel budget; shorten it or reduce font_size')
+    x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
+    y = (layer.height - th) / 2 - bounds[1]
+    for shift, stroke, color in ((offset, outline, red), (0, body, gold)):
+        for char, advance in glyphs:
+            draw.text((x + advance + shift, y + shift), char, font=font,
+                      fill=color, stroke_width=stroke, stroke_fill=color)
+    return layer.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def render_labels(catalog, images, require_title=True):
     if catalog.get('schema') != 1 or catalog.get('locale') != 'en':
         raise ValueError('Unsupported catalog schema/locale')
     seen = set()
@@ -108,24 +148,17 @@ def render_labels(catalog, images, require_title=True):
         size = label['font_size']
         if type(size) is not int or not 8 <= size <= 24:
             raise ValueError('Invalid font size')
-        scale = 4
-        # Pillow's bundled default font: no platform font dependency or font file in the pack.
-        font = ImageFont.load_default(size=size * scale)
-        layer = Image.new('RGBA', (width * scale, height * scale))
-        draw = ImageDraw.Draw(layer)
-        stroke = scale
-        bounds = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
-        tw, th = bounds[2] - bounds[0], bounds[3] - bounds[1]
-        if tw > layer.width - 2 * scale or th > layer.height - 2 * scale:
-            raise ValueError(f'{key}: text exceeds pixel budget; shorten it or reduce font_size')
-        alignment = label.get('align', 'center')
-        if alignment not in ('left', 'center'):
-            raise ValueError('Label alignment must be left or center')
-        text_x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
-        draw.text((text_x, (layer.height - th) / 2 - bounds[1]),
-                  text, font=font, fill=(255, 224, 32, 255), stroke_width=stroke,
-                  stroke_fill=(220, 55, 8, 255))
-        image.alpha_composite(layer.resize((width, height), Image.Resampling.LANCZOS), (x, y))
+        text_rect = label.get('text_rect', [0, 0, width, height])
+        if len(text_rect) != 4 or any(type(n) is not int for n in text_rect):
+            raise ValueError('Invalid text rectangle')
+        tx, ty, tw, th = text_rect
+        if tx < 0 or ty < 0 or tw <= 0 or th <= 0 or tx + tw > width or ty + th > height:
+            raise ValueError('Text rectangle outside replacement region')
+        try:
+            layer = render_ui_label(text, size, tw, th, label.get('align', 'center'))
+        except ValueError as exc:
+            raise ValueError(f'{key}: {exc}') from exc
+        image.alpha_composite(layer, (x + tx, y + ty))
     expected = {'title.press_start', 'menu.new_game', 'menu.continue', 'menu.options', 'menu.gachi_king'}
     if require_title and not expected.issubset(seen):
         raise ValueError('The five title/main-menu labels are required')
@@ -201,6 +234,8 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         boot = iso.file(supported['executable_path'], 4_000_000)
         if hashlib.sha256(boot).hexdigest() != supported['executable_sha256']:
             raise ValueError('Unsupported executable; menu adapter supports UCJS10060 version 1.00')
+        from dialogue_drafts import ui_caption_records
+        compact_ui, ui_count = ui_caption_records(boot, catalog)
         compact_names, name_count = b'', 0
         if gameplay_catalog is not None:
             from dialogue_drafts import compact_name_records
@@ -211,8 +246,12 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         if dialogue_catalog is not None:
             from dialogue_drafts import dialogue_records
             dialogue_bytes, dialogue_layout, dialogue_count = dialogue_records(boot, json.loads(dialogue_catalog.read_text(encoding='utf-8')))
-        if name_count:
-            dialogue_bytes = struct.pack('<H', dialogue_count + name_count) + (dialogue_bytes[2:] if dialogue_bytes else b'') + compact_names[2:]
+        if dialogue_count + name_count + ui_count > 512:
+            raise ValueError('Too many compact message replacements')
+        if name_count or ui_count:
+            dialogue_bytes = (struct.pack('<H', dialogue_count + name_count + ui_count) +
+                              (dialogue_bytes[2:] if dialogue_bytes else b'') +
+                              compact_names[2:] + compact_ui[2:])
         sources, textures, font = load_textures(iso)
     images = {}
     for asset, (_, size, _) in ASSETS.items():
@@ -229,7 +268,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
     regions = render_labels(catalog, images)
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
-    result = bytearray(b'SSTEXPK4' if dialogue_catalog is not None or name_count else
+    result = bytearray(b'SSTEXPK4' if dialogue_catalog is not None or name_count or ui_count else
         b'SSTEXPK3' if any('capacity' in entry for entry in catalog.get('strings', [])) else b'SSTEXPK2')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', len(sources))
@@ -313,7 +352,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     if dialogue_catalog is not None:
         from extract_translation_labels import atomic_write
         atomic_write(output.with_suffix('.dialogue-layout.json'), json.dumps(dialogue_layout, indent=2) + '\n')
-    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines, {dialogue_count} dialogue messages, {name_count} compact names; {len(result)} bytes')
+    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines, {dialogue_count} dialogue messages, {name_count} compact names, {ui_count} UI captions; {len(result)} bytes')
 
 
 def main():

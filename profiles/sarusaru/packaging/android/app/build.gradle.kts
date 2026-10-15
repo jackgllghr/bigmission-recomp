@@ -27,6 +27,8 @@ val generated = layout.buildDirectory.dir("generated/sarusaru")
 abstract class SdlJavaSources : DefaultTask() {
     @get:Input abstract val url: Property<String>
     @get:Input abstract val sha256: Property<String>
+    // Bump when the patch below changes, so the sources are extracted again.
+    @get:Input val patchVersion = 1
     @get:Internal abstract val archive: RegularFileProperty
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
     @get:Inject abstract val files: FileSystemOperations
@@ -55,6 +57,14 @@ abstract class SdlJavaSources : DefaultTask() {
             includeEmptyDirs = false
             into(outputDir)
         }
+        // The game runs on SDL's thread with deeply chained guest calls, which
+        // need the stack a desktop main thread has (64 MiB, as on Windows),
+        // not a Java thread's default of about 1 MiB.
+        val activity = outputDir.get().file("org/libsdl/app/SDLActivity.java").asFile
+        val start = "new Thread(new SDLMain(), \"SDLThread\")"
+        val source = activity.readText()
+        if (source.split(start).size != 2) throw GradleException("SDLActivity.java no longer starts SDLThread as expected")
+        activity.writeText(source.replace(start, "new Thread(null, new SDLMain(), \"SDLThread\", 64L * 1024 * 1024)"))
     }
 }
 
