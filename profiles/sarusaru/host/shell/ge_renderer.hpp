@@ -15,6 +15,7 @@
 // resolved when a draw is queued, so later guest-memory changes cannot leak
 // into it; render-to-texture samples the in-between targets.
 #include "display/display.hpp"
+#include "shell/button_prompts.hpp"
 #include "gpu/ge_state.hpp"
 #include "shell/vulkan_context.hpp"
 #include "textures/hd_pack.hpp"
@@ -39,6 +40,7 @@ public:
     // Set before drawing; applies equally to native and interpolated frames.
     void set_cel_shading(std::uint32_t preset) noexcept { cel_shading_ = preset; }
     bool create(std::string &error);
+    void set_button_prompts(ButtonPrompts *prompts) { button_prompts_ = prompts; }
     void destroy();
     // Set once before the first draw; the session keeps the pack alive.
     void set_translation_pack(const translation::TexturePack *pack) noexcept { translation_pack_ = pack; }
@@ -68,6 +70,8 @@ public:
     void trace_frames(std::uint32_t frames) noexcept { trace_ = frames; }
 
 private:
+    ButtonPrompts *button_prompts_{};
+    std::unordered_map<std::uint64_t, unsigned> prompt_atlases_;
     const translation::TexturePack *translation_pack_{};
     const textures::HdTexturePack *hd_pack_{};
     textures::TextureDump *texture_dump_{};

@@ -54,6 +54,10 @@ std::string key_label(int code) {
 
 std::string button_label(SDL_GamepadButton button, SDL_GamepadType type) {
     switch (button) {
+    case SDL_GAMEPAD_BUTTON_SOUTH: return by_family(type, "×", "A", "B", "A");
+    case SDL_GAMEPAD_BUTTON_EAST: return by_family(type, "○", "B", "A", "B");
+    case SDL_GAMEPAD_BUTTON_WEST: return by_family(type, "□", "X", "Y", "X");
+    case SDL_GAMEPAD_BUTTON_NORTH: return by_family(type, "△", "Y", "X", "Y");
     case SDL_GAMEPAD_BUTTON_DPAD_UP: return "D↑";
     case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return "D↓";
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return "D←";

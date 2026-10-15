@@ -291,7 +291,16 @@ private:
     void handle_command(const GuestMemory &memory, std::uint32_t command, std::uint32_t data);
     void trace_unhandled(std::uint32_t command, std::uint32_t data);
     void draw_primitive(const GuestMemory &memory, std::uint32_t data);
-    void draw_bezier_or_spline(std::uint32_t command);
+    // Bezier and spline patches, tessellated into an indexed triangle (or
+    // line, or point) draw by gpu/patch.hpp.
+    void draw_patch(const GuestMemory &memory, std::uint32_t command, std::uint32_t data);
+    // Fills call_ with the current state and the `count` vertices (or
+    // indices) the next draw consumes, advancing the vertex or index pointer;
+    // false when there is nothing to draw. `allow_raw` permits the undecoded
+    // form (set_raw_vertices).
+    bool load_call(const GuestMemory &memory, PrimitiveType primitive, std::uint32_t count, bool allow_raw);
+    // Counts call_ and hands it to the view hook and the draw sink.
+    void submit_call();
 
     std::array<std::uint32_t, 256> registers_{};
     RenderTarget target_{};
@@ -332,6 +341,7 @@ private:
     std::vector<std::uint32_t> call_stack_;
     std::uint32_t command_pc_{};
     DrawCall call_; // reused by draw_primitive for every draw
+    std::vector<Vertex> patch_control_; // a patch's control points, in grid order
     DrawSink draw_sink_;
     SignalSink signal_sink_;
     TransferSink transfer_sink_;

@@ -8,6 +8,7 @@
 // hovers and clicks it; a finger taps, and dragging a list scrolls it.
 #include "shell/vulkan_context.hpp"
 #include "ui/ui_renderer.hpp"
+#include "shell/settings.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -80,7 +81,14 @@ public:
     [[nodiscard]] float unit() const noexcept { return unit_; }
     [[nodiscard]] Device device() const noexcept { return device_; }
     // The type of the gamepad last used, for its button labels.
-    [[nodiscard]] SDL_GamepadType pad_type() const noexcept { return pad_type_; }
+    void set_prompt_style(shell::PromptStyle style) noexcept { prompt_style_ = style; }
+    [[nodiscard]] Device prompt_device() const noexcept {
+        if (prompt_style_ == shell::PromptStyle::Auto) return device_;
+        return shell::resolve_prompts(prompt_style_, device_ == Device::Gamepad, pad_type_).gamepad ? Device::Gamepad : Device::Keyboard;
+    }
+    [[nodiscard]] SDL_GamepadType pad_type() const noexcept {
+        return shell::resolve_prompts(prompt_style_, device_ == Device::Gamepad, pad_type_).type;
+    }
     [[nodiscard]] bool confirm_south() const noexcept { return confirm_south_; }
     // Seconds since the interface started, for animation.
     [[nodiscard]] float time() const noexcept { return time_; }
@@ -101,6 +109,7 @@ private:
     float unit_{1.0f};
     float style_unit_{};
     Device device_{Device::Keyboard};
+    shell::PromptStyle prompt_style_{shell::PromptStyle::Auto};
     SDL_GamepadType pad_type_{SDL_GAMEPAD_TYPE_STANDARD};
     bool confirm_south_{};
     bool closed_{};

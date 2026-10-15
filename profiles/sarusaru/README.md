@@ -176,6 +176,15 @@ yellow and wears Pipo's red siren lamp.
 - **Play** starts the game in the same window. A game that cannot start (a
   moved image) returns to the launcher with the reason.
 
+The game's stage HUD button strip and menu hint icons also follow the last
+keyboard or gamepad used, with Xbox, Switch and PlayStation glyphs.
+Interface → Controller Buttons defaults to Auto; Xbox, Switch, PlayStation
+and Keyboard overrides can be selected there and take effect immediately. These
+prompts show the first saved binding for each action (including triggers and
+button chords); unbound actions show a dash. They work with the original
+Japanese textures, translation packs and HD textures. Only source-verified
+button regions are replaced; captions retain their selected language.
+
 Every screen works with each device alone. The arrow keys, d-pad or left stick
 move the focus; Enter or the confirm button activates; Esc, the other face
 button, a mouse's back button or Android's Back go back; Q/W or L1/R1 switch
@@ -456,6 +465,7 @@ from their own disc, with a progress bar and Cancel:
 | macOS arm64 | Xcode's clang (the Command Line Tools; the launcher asks macOS to install them) | about 3½ minutes, M-series, 10 jobs                 |
 | Linux       | the system's `g++` or `clang++` (`$CXX` first)                                  | about 5½ minutes, 5 jobs in an 8 GB arm64 container |
 | Windows x64 | llvm-mingw 20260922, downloaded once (190 MB, hash-checked)                     | not measured yet                                    |
+| Android     | the clang and lld the APK ships, built from source ([`packaging/android`](packaging/android/README.md)) | about 8 minutes, OnePlus 13, 8 jobs |
 
 `<user data>` is `~/Library/Application Support/SaruSaruRecomp` on macOS,
 `$XDG_DATA_HOME/SaruSaruRecomp` (or `~/.local/share/SaruSaruRecomp`) on Linux

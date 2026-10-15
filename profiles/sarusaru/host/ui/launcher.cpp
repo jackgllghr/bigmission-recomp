@@ -140,6 +140,7 @@ Launcher::Outcome Launcher::run(UiScript *script) {
             outcome_ = Outcome::Quit;
             break;
         }
+        layer_.set_prompt_style(settings_.prompt_style);
         layer_.begin_frame(settings_.confirm_south);
         frame();
         layer_.present();

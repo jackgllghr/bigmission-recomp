@@ -105,10 +105,10 @@ void control_flow() {
         "SIGNAL and FINISH mask values and use next PC");
     execute(ge, m, {command(0x0b), command(0x09, 0xffffff), command(0x05), command(0x06), command(0xff)});
     expect(
-        ge.unhandled_command_count() == 3, "unsupported curves/commands counted; empty RET and conditional jump safe");
+        ge.unhandled_command_count() == 1, "unsupported commands counted; empty curves, RET and conditional jump safe");
     expect(ge.execute(m, 0, 0, done) == 0 && !done, "invalid command address does not finish");
     execute(ge, m, {command(0x10, 0), command(0x14), command(0x08, 12), command(0xff)});
-    expect(ge.unhandled_command_count() == 3, "ORIGIN-relative jump skips intervening command");
+    expect(ge.unhandled_command_count() == 1, "ORIGIN-relative jump skips intervening command");
 }
 void bounded_list_and_offset_contracts() {
     psprecomp::GuestMemory memory;
@@ -421,6 +421,41 @@ void checked_decode_progress_contract() {
 }
 
 }
+void patches() {
+    // A flat 4x4 grid of control points at (u, v, 0): every patch kind
+    // reproduces an affine grid, so the samples can be checked exactly.
+    psprecomp::GuestMemory m;
+    for (std::uint32_t v = 0; v < 4; ++v)
+        for (std::uint32_t u = 0; u < 4; ++u) floats(m, vertices + (v * 4 + u) * 12, static_cast<float>(u), static_cast<float>(v), 0);
+    floats(m, vertices + 16 * 12, 7, 8, 9);
+    floats(m, vertices + 17 * 12, 7, 8, 9);
+    floats(m, vertices + 18 * 12, 7, 8, 9);
+    struct Case { std::uint32_t op, data; float first, last; const char *name; };
+    for (const Case &c : {Case{0x05, 0x0404, 0.0f, 3.0f, "Bezier patch spans its corner control points"},
+                          Case{0x06, 0x0f0404, 0.0f, 3.0f, "open spline reaches its end control points"},
+                          Case{0x06, 0x000404, 1.0f, 2.0f, "uniform spline stays inside its control points"}}) {
+        GeState ge;
+        std::vector<DrawCall> calls;
+        ge.set_draw_sink([&](const DrawCall &call) { calls.push_back(call); });
+        auto words = setup();
+        words.push_back(command(0x36, 0x0202));
+        words.push_back(command(c.op, c.data));
+        words.push_back(command(4, (3u << 16) | 3));
+        execute(ge, m, words);
+        expect(calls.size() == 2, "a patch is drawn, then the next prim");
+        if (calls.size() != 2) continue;
+        const auto &patch = calls[0];
+        const std::uint32_t side = 3u; // one patch or segment, two divisions
+        expect(patch.primitive == PrimitiveType::Triangles && patch.vertices.size() == side * side &&
+                patch.indices.size() == (side - 1) * (side - 1) * 6, "patch tessellated into a triangle grid");
+        if (patch.vertices.size() != side * side) continue;
+        expect(near(patch.vertices.front().position[0], c.first) && near(patch.vertices.front().position[1], c.first) &&
+                near(patch.vertices.back().position[0], c.last) && near(patch.vertices.back().position[1], c.last) &&
+                near(patch.vertices[4].position[0], (c.first + c.last) / 2), c.name);
+        expect(near(std::fabs(patch.vertices[4].normal[2]), 1.0f), "patch normal faces off the surface");
+        expect(near(calls[1].vertices.front().position[0], 7), "patch consumes its control points");
+    }
+}
 int main() {
     const bool checked = std::getenv("SARUSARU_CHECK_DECODE") != nullptr;
     std::ostringstream diagnostics;
@@ -432,6 +467,7 @@ int main() {
     draws();
     registers();
     matrices_transfer_copy();
+    patches();
     if (checked) {
         checked_decode_progress_contract();
         std::cout.rdbuf(original_output);

@@ -1,0 +1,156 @@
+#include "shell/button_prompts.hpp"
+#include "psprecomp/sha256.hpp"
+#include "ui/theme.hpp"
+
+#define STBTT_STATIC
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "imstb_truetype.h"
+
+#include <algorithm>
+#include <cmath>
+#include <fstream>
+#include <iterator>
+
+namespace sarusaru::shell {
+ButtonPrompts::ButtonPrompts() {
+    std::ifstream file(ui::resource_path("fonts/MPLUSRounded1c-Bold.ttf"), std::ios::binary);
+    font_.assign(std::istreambuf_iterator<char>(file), {});
+}
+void ButtonPrompts::configure(const ControlSettings &controls, ui::BindingDevice device, SDL_GamepadType type) {
+    if (controls_ == controls && device_ == device && type_ == type) return;
+    controls_ = controls;
+    device_ = device;
+    type_ = type;
+    ++revision_;
+}
+unsigned ButtonPrompts::identify(const gpu::TextureState &t, std::span<const std::uint32_t> pixels) {
+    // common00/Keypallete.tm2 and common/e_but_{0,1}.tm2.
+    // Hash only logical pixels: power-of-two padding contains unrelated data.
+    unsigned atlas = 0, width = 0, height = 0;
+    std::string_view expected;
+    if (t.width == 128 && t.buffer_width == 96 && t.height == 32) {
+        atlas = 1; width = 96; height = 24;
+        expected = "f5cf92ddc8b96abbee09854cfc712793ad9d4ea48583ac54d2196b6d2b734361";
+    } else if (t.width == 128 && t.buffer_width == 128 && t.height == 128) {
+        atlas = 2; width = 128; height = 120;
+        expected = "09466c6d2b869d6fff2a00acb79b11a16829f77938ec22cab1786c5401c9705b";
+    } else if (t.width == 128 && t.buffer_width == 128 && t.height == 256) {
+        atlas = 3; width = 128; height = 240;
+        expected = "314efab32a5541b6f55f27af74d5f059dab420144aa18e9ab11cac3edd1d6a53";
+    } else return 0;
+    if (pixels.size() < static_cast<std::size_t>(t.width) * height) return 0;
+    std::vector<std::uint8_t> bytes;
+    bytes.reserve(width * height * 4);
+    for (unsigned y = 0; y < height; ++y)
+        for (unsigned x = 0; x < width; ++x)
+            for (unsigned shift = 0; shift < 32; shift += 8)
+                bytes.push_back(static_cast<std::uint8_t>(pixels[y * t.width + x] >> shift));
+    return psprecomp::sha256(bytes) == expected ? atlas : 0;
+}
+void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, unsigned scale,
+                         int x, int y, int w, int h, Action action) const {
+    const auto &bindings = (device_ == ui::BindingDevice::Keyboard ? controls_.keyboard : controls_.gamepad)
+        [static_cast<std::size_t>(action)];
+    // Never leave a misleading PSP button when an action is unbound.
+    const auto glyph = bindings.empty() ? ui::Glyph{ui::Glyph::Kind::Key, "-"} : ui::glyph(bindings.front(), type_);
+    std::string label = glyph.label;
+    const bool face = glyph.kind == ui::Glyph::Kind::Face;
+    const bool ps = type_ == SDL_GAMEPAD_TYPE_PS3 || type_ == SDL_GAMEPAD_TYPE_PS4 || type_ == SDL_GAMEPAD_TYPE_PS5;
+    const bool nintendo = type_ >= SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO && type_ <= SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR;
+    if (face && !ps) {
+        switch (glyph.button) {
+        case SDL_GAMEPAD_BUTTON_SOUTH: label = nintendo ? "B" : "A"; break;
+        case SDL_GAMEPAD_BUTTON_EAST: label = nintendo ? "A" : "B"; break;
+        case SDL_GAMEPAD_BUTTON_WEST: label = nintendo ? "Y" : "X"; break;
+        case SDL_GAMEPAD_BUTTON_NORTH: label = nintendo ? "X" : "Y"; break;
+        default: break;
+        }
+    }
+    x *= scale; y *= scale; w *= scale; h *= scale;
+    const auto put = [&](int px, int py, std::uint32_t color) {
+        if (px >= 0 && px < static_cast<int>(width) && py >= 0 &&
+            static_cast<std::size_t>(py) * width + px < pixels.size()) pixels[py * width + px] = color;
+    };
+    const float cx = x + w * .5f, cy = y + h * .5f, r = std::min(w, h) * .45f;
+    for (int py = y; py < y + h; ++py) for (int px = x; px < x + w; ++px) {
+        const float dx = px + .5f - cx, dy = py + .5f - cy;
+        const bool inside = face ? dx * dx + dy * dy < r * r :
+            std::abs(dx) < w * .48f && std::abs(dy) < h * .43f;
+        put(px, py, inside ? 0xff30251cu : 0);
+        if (inside && (face ? dx * dx + dy * dy > (r - scale) * (r - scale) :
+            std::abs(dx) > w * .48f - scale || std::abs(dy) > h * .43f - scale)) put(px, py, 0xffc7d6e6u);
+    }
+    if (face && ps) {
+        const float a = r * .52f, stroke = std::max(1.f, scale * .75f);
+        for (int py = y; py < y + h; ++py) for (int px = x; px < x + w; ++px) {
+            const float dx = px + .5f - cx, dy = py + .5f - cy;
+            bool ink = false; std::uint32_t color = 0xffffffffu;
+            switch (glyph.button) {
+            case SDL_GAMEPAD_BUTTON_EAST: ink = std::abs(std::sqrt(dx*dx+dy*dy)-a) < stroke; color = 0xff6868efu; break;
+            case SDL_GAMEPAD_BUTTON_WEST: ink = std::abs(std::max(std::abs(dx),std::abs(dy))-a) < stroke; color = 0xffc47be6u; break;
+            case SDL_GAMEPAD_BUTTON_SOUTH: ink = std::abs(std::abs(dx)-std::abs(dy)) < stroke && std::max(std::abs(dx),std::abs(dy)) < a; color = 0xffeeaa78u; break;
+            case SDL_GAMEPAD_BUTTON_NORTH: ink = (std::abs(dy-a) < stroke && std::abs(dx) < a) ||
+                (dy >= -a && dy <= a && std::abs(std::abs(dx)-(dy+a)*.5f) < stroke); color = 0xffa4d65cu; break;
+            default: break;
+            }
+            if (ink) put(px, py, color);
+        }
+        return;
+    }
+    if (font_.empty()) return;
+    stbtt_fontinfo info{};
+    if (!stbtt_InitFont(&info, font_.data(), 0)) return;
+    std::vector<int> codes;
+    const char *at = label.c_str();
+    while (*at) { size_t remaining = label.c_str() + label.size() - at; codes.push_back(SDL_StepUTF8(&at, &remaining)); }
+    float em = stbtt_ScaleForPixelHeight(&info, h * .78f), advance = 0;
+    for (int code : codes) { int a; stbtt_GetCodepointHMetrics(&info, code, &a, nullptr); advance += a * em; }
+    if (advance > w * .83f) em *= w * .83f / advance;
+    int ascent, descent; stbtt_GetFontVMetrics(&info, &ascent, &descent, nullptr);
+    float pen = cx - advance * (em / stbtt_ScaleForPixelHeight(&info, h * .78f)) * .5f;
+    const float baseline = cy + (ascent + descent) * em * .5f;
+    for (int code : codes) {
+        int bw, bh, bx, by, a;
+        auto *bitmap = stbtt_GetCodepointBitmap(&info, em, em, code, &bw, &bh, &bx, &by);
+        for (int j = 0; j < bh; ++j) for (int i = 0; i < bw; ++i) {
+            const int px = static_cast<int>(pen) + bx + i, py = static_cast<int>(baseline) + by + j;
+            if (px < x || px >= x+w || py < y || py >= y+h) continue;
+            const unsigned alpha = bitmap[j*bw+i];
+            if (alpha) {
+                const std::uint32_t background = pixels[py * width + px];
+                std::uint32_t blended = 0xff000000u;
+                for (unsigned shift = 0; shift < 24; shift += 8) {
+                    const unsigned channel = (background >> shift) & 255u;
+                    blended |= ((channel * (255u - alpha) + 255u * alpha) / 255u) << shift;
+                }
+                put(px, py, blended);
+            }
+        }
+        stbtt_FreeBitmap(bitmap, nullptr);
+        stbtt_GetCodepointHMetrics(&info, code, &a, nullptr); pen += a * em;
+    }
+}
+void ButtonPrompts::apply(unsigned atlas, std::vector<std::uint32_t> &pixels, unsigned width, unsigned scale) const {
+    if (font_.empty()) return; // Retain the original if packaged resources are missing.
+    const auto button = [&](int x, int y, int w, int h, Action a) { draw(pixels, width, scale, x,y,w,h,a); };
+    if (atlas == 1) {
+        constexpr Action actions[] = {Action::Square, Action::Triangle, Action::Circle, Action::Cross};
+        for (int i = 0; i < 4; ++i) button(i*24, 0, 24, 24, actions[i]);
+    } else if (atlas == 2) {
+        for (int i = 0; i < 5; ++i) button(0, i*24+6, 26, 14, i < 3 ? Action::Start : Action::Select);
+    } else if (atlas == 3) {
+        // Paired icons are alternatives, not a chord. Each retains its own binding.
+        for (int row : {0,1,4}) {
+            const int x = row < 2 ? 88 : 0;
+            button(x, row*24+5, 12, 16, Action::Square);
+            button(x+12, row*24+5, 12, 16, Action::Triangle);
+        }
+        for (int row : {2,3,7,8}) {
+            button(0, row*24+5, 12, 16, Action::Cross);
+            button(12, row*24+5, 12, 16, Action::Circle);
+        }
+        button(10, 5*24+5, 14, 16, Action::Circle);
+        button(10, 6*24+5, 14, 16, Action::Cross);
+    }
+}
+} // namespace sarusaru::shell

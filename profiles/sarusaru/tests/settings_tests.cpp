@@ -26,6 +26,24 @@ int main() {
     const Settings defaults = default_settings();
     require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
     require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
+    require(defaults.prompt_style == PromptStyle::Auto, "controller prompts must default to auto");
+    for (std::size_t i = 0; i < kPromptStyleNames.size(); ++i) {
+        const auto settings = parse_settings(std::string("[interface]\ncontroller_buttons = ") + std::string(kPromptStyleNames[i]));
+        require(settings.prompt_style == static_cast<PromptStyle>(i) && parse_settings(serialize_settings(settings)) == settings,
+                "controller prompt override did not round-trip");
+    }
+    rejects("[interface]\ncontroller_buttons = invalid");
+    const auto auto_pad = resolve_prompts(PromptStyle::Auto, true, SDL_GAMEPAD_TYPE_PS4);
+    const auto auto_keys = resolve_prompts(PromptStyle::Auto, false, SDL_GAMEPAD_TYPE_PS4);
+    require(auto_pad.gamepad && auto_pad.type == SDL_GAMEPAD_TYPE_PS4 && !auto_keys.gamepad, "auto stopped following detected input");
+    const auto xbox_prompts = resolve_prompts(PromptStyle::Xbox, false, SDL_GAMEPAD_TYPE_PS4);
+    const auto switch_prompts = resolve_prompts(PromptStyle::Switch, true, SDL_GAMEPAD_TYPE_XBOXONE);
+    const auto ps_prompts = resolve_prompts(PromptStyle::PlayStation, false, SDL_GAMEPAD_TYPE_STANDARD);
+    require(xbox_prompts.gamepad && xbox_prompts.type == SDL_GAMEPAD_TYPE_XBOXONE &&
+            switch_prompts.gamepad && switch_prompts.type == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO &&
+            ps_prompts.gamepad && ps_prompts.type == SDL_GAMEPAD_TYPE_PS5 &&
+            !resolve_prompts(PromptStyle::Keyboard, true, SDL_GAMEPAD_TYPE_XBOXONE).gamepad,
+            "explicit prompt style did not override detected input");
     require(!defaults.skip_intro_logos, "intro logos must play by default");
     const auto skipped = parse_settings("[game]\nskip_intro_logos = 1\n");
     require(skipped.skip_intro_logos && parse_settings(serialize_settings(skipped)) == skipped,

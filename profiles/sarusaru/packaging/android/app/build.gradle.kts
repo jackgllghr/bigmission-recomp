@@ -138,6 +138,11 @@ android {
             sourceSets.getByName(name).assets.directories += assets.path
             sourceSets.getByName(name).jniLibs.directories += jniLibs.path
         }
+        debug {
+            // Optimised native code with its debug information: at -O0 the
+            // code generator alone takes over half an hour on a phone.
+            externalNativeBuild.cmake.arguments += "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+        }
         release {
             isMinifyEnabled = false
             // Unsigned until the release policy (PLAN.md, milestone 7) settles signing.

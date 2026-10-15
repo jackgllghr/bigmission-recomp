@@ -680,7 +680,7 @@ void paragraph(const Layer &layer, std::string_view text, float width, ImU32 col
 // --- Button hints ----------------------------------------------------------
 
 void hints(const Layer &layer, std::initializer_list<Hint> list) {
-    if (layer.device() != Device::Gamepad && layer.device() != Device::Keyboard) return;
+    if (layer.prompt_device() != Device::Gamepad && layer.prompt_device() != Device::Keyboard) return;
     const float u = layer.unit();
     ImDrawList *draw = ImGui::GetForegroundDrawList();
     ImFont *font = fonts().strong;
@@ -691,7 +691,7 @@ void hints(const Layer &layer, std::initializer_list<Hint> list) {
 
     // Right-aligned at the bottom: measured first, then drawn.
     const auto draw_glyph = [&](ImDrawList *target, ImVec2 &cursor, Control control) {
-        const bool pad = layer.device() == Device::Gamepad;
+        const bool pad = layer.prompt_device() == Device::Gamepad;
         switch (control) {
         case Control::Confirm:
             if (pad) face_button(target, cursor, u, layer.pad_type(), confirm); else keycap(target, cursor, u, "Enter");

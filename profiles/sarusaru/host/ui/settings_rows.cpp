@@ -11,7 +11,7 @@ namespace {
 constexpr SettingRow kGraphics[] = {SettingRow::Fullscreen, SettingRow::WindowSize, SettingRow::InternalResolution,
     SettingRow::FrameRate, SettingRow::Fov, SettingRow::CelShading, SettingRow::Textures};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone};
-constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::ConfirmButton, SettingRow::SkipIntroLogos};
+constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::ConfirmButton, SettingRow::ControllerButtons, SettingRow::SkipIntroLogos};
 constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabControls, kControls},
                                  {Text::TabInterface, kInterface}};
 
@@ -149,6 +149,14 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
         view.value = on_off(settings.skip_intro_logos);
         view.description = text(Text::DescSkipIntroLogos);
         break;
+    case SettingRow::ControllerButtons: {
+        constexpr Text values[] = {Text::ValuePromptAuto, Text::ValuePromptXbox, Text::ValuePromptSwitch,
+            Text::ValuePromptPlayStation, Text::ValuePromptKeyboard};
+        view.label = text(Text::RowControllerButtons);
+        view.value = text(values[static_cast<std::size_t>(settings.prompt_style)]);
+        view.description = text(Text::DescControllerButtons);
+        break;
+    }
     case SettingRow::ConfirmButton:
         view.label = text(Text::RowConfirm);
         view.value = text(settings.confirm_south ? Text::ValueSouth : Text::ValueEast);
@@ -211,6 +219,9 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
         break;
     case SettingRow::SkipIntroLogos:
         settings.skip_intro_logos = !settings.skip_intro_logos;
+        break;
+    case SettingRow::ControllerButtons:
+        settings.prompt_style = static_cast<shell::PromptStyle>((static_cast<int>(settings.prompt_style) + (direction > 0 ? 1 : 4)) % 5);
         break;
     case SettingRow::ConfirmButton:
         settings.confirm_south = !settings.confirm_south;

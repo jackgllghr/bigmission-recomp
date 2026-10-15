@@ -237,6 +237,10 @@ Settings parse_settings(std::string_view text) {
             } else if (full == "interface.confirm") {
                 if (value != "east" && value != "south") throw std::runtime_error("confirm must be east or south");
                 settings.confirm_south = value == "south";
+            } else if (full == "interface.controller_buttons") {
+                const auto found = std::find(kPromptStyleNames.begin(), kPromptStyleNames.end(), value);
+                if (found == kPromptStyleNames.end()) throw std::runtime_error("controller_buttons must be auto, xbox, switch, playstation or keyboard");
+                settings.prompt_style = static_cast<PromptStyle>(found - kPromptStyleNames.begin());
             } else if (full == "interface.language") {
                 if (value == "auto") settings.language = Language::Auto;
                 else if (value == "en") settings.language = Language::English;
@@ -289,6 +293,7 @@ std::string serialize_settings(const Settings &settings) {
         << (settings.skip_intro_logos ? 1 : 0) << '\n'
         << "\n[interface]\n# The gamepad button that confirms in the launcher: south (cross) or east (circle, as in the game).\n"
         << "confirm = " << (settings.confirm_south ? "south" : "east") << '\n'
+        << "controller_buttons = " << kPromptStyleNames[static_cast<std::size_t>(settings.prompt_style)] << '\n'
         << "# The launcher's language: auto (the system's), en or ja. The game's own text stays Japanese.\n"
         << "language = "
         << (settings.language == Language::English ? "en" : settings.language == Language::Japanese ? "ja" : "auto")

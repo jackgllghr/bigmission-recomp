@@ -177,6 +177,16 @@ void rows() {
     step(SettingRow::FrameRate, settings, -1);
     require(settings.frame_rate == 0, "hand-set frame rate not snapped down to native");
 
+    require(describe(SettingRow::ControllerButtons, settings).value == "Auto", "controller buttons row must default to Auto");
+    constexpr const char *prompt_labels[] = {"Xbox", "Switch", "PlayStation", "Keyboard", "Auto"};
+    for (const auto *label : prompt_labels) {
+        step(SettingRow::ControllerButtons, settings, 1);
+        require(describe(SettingRow::ControllerButtons, settings).value == label, "prompt style row order wrong");
+    }
+    step(SettingRow::ControllerButtons, settings, -1);
+    require(settings.prompt_style == sarusaru::shell::PromptStyle::Keyboard && !restart_only(SettingRow::ControllerButtons),
+            "prompt style must wrap backwards and apply live");
+    settings.prompt_style = sarusaru::shell::PromptStyle::Auto;
     settings.confirm_south = true;
     require(describe(SettingRow::ConfirmButton, settings).face == SDL_GAMEPAD_BUTTON_SOUTH &&
                 describe(SettingRow::ConfirmButton, settings).value == "South",
@@ -235,7 +245,7 @@ void rows() {
             "logo skip did not turn on");
     step(SettingRow::SkipIntroLogos, settings, -1);
     require(!settings.skip_intro_logos, "logo skip did not turn off");
-    require(seen == 12, "settings rows missing from the tabs");
+    require(seen == 13, "settings rows missing from the tabs");
     const auto graphics = settings_tabs().front().rows;
     require(settings_tabs().size() == 3u && graphics.size() == 7u && graphics[0] == SettingRow::Fullscreen &&
                 graphics[1] == SettingRow::WindowSize && graphics[5] == SettingRow::CelShading &&

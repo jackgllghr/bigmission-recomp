@@ -94,5 +94,9 @@ int main() {
     require(controller.pad_at(49999u).buttons == 0u && controller.pad_at(50000u).buttons == 0x4008u &&
                 controller.pad_at(100000u).buttons == 0u,
             "pad follows the script");
+    const auto stick = parse_input_script("1:STICKUP+CIRCLE;2:STICKRIGHT");
+    require(stick && (*stick)[0].pad.ly == 0x00u && (*stick)[0].pad.lx == 0x80u &&
+                (*stick)[0].pad.buttons == kButtonCircle && (*stick)[1].pad.lx == 0xFFu && (*stick)[1].pad.ly == 0x80u,
+            "script moves the analog stick");
     return 0;
 }

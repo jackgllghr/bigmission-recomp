@@ -38,6 +38,19 @@ struct ControlSettings {
 };
 // The launcher's language; Auto follows the system's preferred language.
 enum class Language { Auto, English, Japanese };
+enum class PromptStyle { Auto, Xbox, Switch, PlayStation, Keyboard };
+inline constexpr std::array<std::string_view, 5> kPromptStyleNames = {"auto", "xbox", "switch", "playstation", "keyboard"};
+struct PromptAppearance { bool gamepad; SDL_GamepadType type; };
+[[nodiscard]] constexpr PromptAppearance resolve_prompts(PromptStyle style, bool gamepad, SDL_GamepadType detected) {
+    switch (style) {
+    case PromptStyle::Xbox: return {true, SDL_GAMEPAD_TYPE_XBOXONE};
+    case PromptStyle::Switch: return {true, SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO};
+    case PromptStyle::PlayStation: return {true, SDL_GAMEPAD_TYPE_PS5};
+    case PromptStyle::Keyboard: return {false, detected};
+    case PromptStyle::Auto: return {gamepad, detected};
+    }
+    return {gamepad, detected};
+}
 
 struct Settings {
     std::string translation_language{"ja"};
@@ -69,6 +82,7 @@ struct Settings {
     bool confirm_south{true};
     bool skip_intro_logos{false};
     Language language{Language::Auto};
+    PromptStyle prompt_style{PromptStyle::Auto};
     bool operator==(const Settings &) const = default;
 };
 

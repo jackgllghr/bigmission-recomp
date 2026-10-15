@@ -154,6 +154,15 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
     sarusaru::shell::AudioOutput audio;
     std::optional<sarusaru::shell::Input> input;
     input.emplace(current.controls);
+    sarusaru::shell::ButtonPrompts button_prompts;
+    auto prompt_device = sarusaru::ui::BindingDevice::Keyboard;
+    const auto update_prompts = [&] {
+        layer.set_prompt_style(current.prompt_style);
+        if (layer.prompt_device() == sarusaru::ui::Device::Gamepad) prompt_device = sarusaru::ui::BindingDevice::Gamepad;
+        else if (layer.prompt_device() == sarusaru::ui::Device::Keyboard) prompt_device = sarusaru::ui::BindingDevice::Keyboard;
+        button_prompts.configure(current.controls, prompt_device, layer.pad_type());
+    };
+    update_prompts();
     // 60 FPS motion shows a picture at every vblank: the game's frames and those in between.
     bool interpolating = sarusaru::shell::interpolates(current);
     sarusaru::shell::PresentationClock presentation(interpolating ? 0u : current.frame_rate);
@@ -241,6 +250,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             if (translation_pack) renderer->set_translation_pack(&*translation_pack);
             if (hd_textures) renderer->set_hd_textures(&*hd_textures);
             if (texture_dump) renderer->set_texture_dump(&*texture_dump);
+            renderer->set_button_prompts(&button_prompts);
             if (!renderer->create(error)) throw psprecomp::Error(error);
         };
         make_renderer();
@@ -382,6 +392,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 else
                     layer.observe(event);
             }
+            update_prompts();
             auto controls = input->sample();
             const bool open_menu = controls.menu && !menu_held && !quit;
             menu_held = controls.menu;

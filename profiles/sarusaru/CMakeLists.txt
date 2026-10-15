@@ -137,6 +137,11 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
         set_target_properties(sarusaru_launcher_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
             BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
         add_test(NAME sarusaru_launcher_tests COMMAND sarusaru_launcher_tests)
+        add_executable(sarusaru_button_prompt_tests tests/button_prompt_tests.cpp host/shell/button_prompts.cpp)
+        target_link_libraries(sarusaru_button_prompt_tests PRIVATE sarusaru_ui)
+        set_target_properties(sarusaru_button_prompt_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
+        add_test(NAME sarusaru_button_prompt_tests COMMAND sarusaru_button_prompt_tests)
     endif()
     add_test(NAME sarusaru_prepare_tests
             COMMAND "${Python3_EXECUTABLE}" -m unittest discover
@@ -446,7 +451,7 @@ if(SARUSARU_HAS_RENDERER)
         set_source_files_properties(resources/sarusaru.rc PROPERTIES
             OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/sarusaru.ico")
     endif()
-    set(_sarusaru_shell_sources host/shell/main.cpp host/shell/ge_renderer.cpp
+    set(_sarusaru_shell_sources host/shell/main.cpp host/shell/ge_renderer.cpp host/shell/button_prompts.cpp
         host/shell/audio_output.cpp "${_sarusaru_shaders}" "${_sarusaru_icon}"
         ${_sarusaru_resources})
     if(ANDROID)

@@ -1,6 +1,8 @@
 // Adapted from Yakumo (https://github.com/TeamGDB/Yakumo, revision 39ac05f),
 // MIT License; see profiles/sarusaru/THIRD_PARTY.md.
 #include "ge_state.hpp"
+#include "patch.hpp"
+#include "triangle_indices.hpp"
 
 
 #include <algorithm>
@@ -43,6 +45,9 @@ enum Command : std::uint32_t {
     kAlphaTestEnable = 0x22,
     kDepthTestEnable = 0x23,
     kBoneMatrixNumber = 0x2A,
+    kPatchDivision = 0x36,  // PSUB: u divisions, v divisions << 8
+    kPatchPrimitive = 0x37, // PPRIM: 0 triangles, 1 lines, 2 points
+    kPatchFacing = 0x38,    // PFACE: bit 0 turns the surface around
     kBoneMatrixData = 0x2B,
     kWorldMatrixNumber = 0x3A,
     kWorldMatrixData = 0x3B,
@@ -982,7 +987,11 @@ void GeState::handle_command(const GuestMemory &memory, std::uint32_t command, s
 
     case kNop:
     case kTextureFlush:
-        break;
+    case kPatchDivision:
+    case kPatchPrimitive:
+    case kPatchFacing:
+        break; // read from registers_
+
 
     default:
         // The per-light runs: three floats per light for positions, directions
@@ -1068,7 +1077,40 @@ void GeState::trace_unhandled(std::uint32_t command, std::uint32_t data) {
 void GeState::draw_primitive(const GuestMemory &memory, std::uint32_t data) {
     const std::uint32_t count = data & 0xFFFFu;
     const auto primitive = static_cast<PrimitiveType>((data >> 16u) & 7u);
-    if (count == 0u || vertex_address_ == 0u) return;
+    if (!load_call(memory, primitive, count, true)) return;
+    submit_call();
+}
+
+void GeState::draw_patch(const GuestMemory &memory, std::uint32_t command, std::uint32_t data) {
+    PatchSettings settings;
+    settings.spline = command == kSpline;
+    settings.u_count = data & 0xFFu;
+    settings.v_count = (data >> 8u) & 0xFFu;
+    settings.u_type = (data >> 16u) & 3u;
+    settings.v_type = (data >> 18u) & 3u;
+    settings.u_divisions = registers_[kPatchDivision] & 0xFFu;
+    settings.v_divisions = (registers_[kPatchDivision] >> 8u) & 0xFFu;
+    settings.primitive = registers_[kPatchPrimitive] & 3u;
+    settings.reverse = (registers_[kPatchFacing] & 1u) != 0u;
+    settings.has_texcoords = (vertex_type_ & 3u) != 0u;
+    settings.has_colors = ((vertex_type_ >> 2u) & 7u) != 0u;
+    settings.has_normals = ((vertex_type_ >> 5u) & 3u) != 0u;
+    settings.compute_normals = lighting_enabled_;
+    // The control points are read, and the vertex or index pointer advanced,
+    // exactly as for a primitive of that many vertices.
+    const std::uint32_t count = settings.u_count * settings.v_count;
+    if (!load_call(memory, PrimitiveType::Triangles, count, false)) return;
+    DrawCall &call = call_;
+    patch_control_.clear();
+    for (std::uint32_t i = 0; i < count; ++i)
+        patch_control_.push_back(call.vertices[primitive_vertex(call.indices, call.vertices.size(), i)]);
+    if (!tessellate_patch(settings, patch_control_, call.vertices, call.indices, call.primitive)) return;
+    call.primitive_count = static_cast<std::uint32_t>(call.indices.size());
+    submit_call();
+}
+
+bool GeState::load_call(const GuestMemory &memory, PrimitiveType primitive, std::uint32_t count, bool allow_raw) {
+    if (count == 0u || vertex_address_ == 0u) return false;
 
     const std::uint32_t index_type = (vertex_type_ >> 11u) & 3u;
     // One DrawCall is reused for every draw, so its vertex and index vectors
@@ -1111,7 +1153,7 @@ void GeState::draw_primitive(const GuestMemory &memory, std::uint32_t data) {
     if (index_type != 0u && index_address_ != 0u) {
         // A list that points its indices outside RAM is malformed; skip the draw
         // rather than faulting the whole runtime on it.
-        if (!memory.contains(index_address_, count * (index_type == 1u ? 1u : index_type == 2u ? 2u : 4u))) return;
+        if (!memory.contains(index_address_, count * (index_type == 1u ? 1u : index_type == 2u ? 2u : 4u))) return false;
         const std::uint32_t index_size = index_type == 1u ? 1u : index_type == 2u ? 2u : 4u;
         // Resolve the index run once; a run that is not contiguous in host
         // memory falls back to checked loads.
@@ -1153,9 +1195,9 @@ void GeState::draw_primitive(const GuestMemory &memory, std::uint32_t data) {
     }
 
     const std::uint32_t probe = decode_vertices(memory, vertex_address_, vertex_type_, 0u, call.vertices);
-    if (probe == 0u) return;
+    if (probe == 0u) return false;
     const std::uint32_t first_address = vertex_address_ + first_vertex * probe;
-    if (!memory.contains(first_address, static_cast<std::size_t>(probe) * vertex_count)) return;
+    if (!memory.contains(first_address, static_cast<std::size_t>(probe) * vertex_count)) return false;
     call.raw_vertices = nullptr;
     call.raw_count = 0u;
     call.raw_stride = 0u;
@@ -1165,7 +1207,7 @@ void GeState::draw_primitive(const GuestMemory &memory, std::uint32_t data) {
         primitive == PrimitiveType::TriangleFan;
     const bool one_morph = ((vertex_type_ >> 18u) & 7u) == 0u;
     const bool positioned = ((vertex_type_ >> 7u) & 3u) != 0u;
-    if (raw_vertices_ && !call.through && triangles && one_morph && positioned && vertex_count != 0u) {
+    if (allow_raw && raw_vertices_ && !call.through && triangles && one_morph && positioned && vertex_count != 0u) {
         call.raw_vertices = memory.raw_pointer(first_address, static_cast<std::size_t>(probe) * vertex_count);
         if (call.raw_vertices != nullptr) {
             call.raw_count = vertex_count;
@@ -1177,7 +1219,7 @@ void GeState::draw_primitive(const GuestMemory &memory, std::uint32_t data) {
     if (call.raw_vertices == nullptr || raw_also_decoded_)
         stride =
             decode_vertices(memory, first_address, vertex_type_, vertex_count, call.vertices, bone_matrices_.data());
-    if (stride == 0u || (call.vertices.empty() && call.raw_vertices == nullptr)) return;
+    if (stride == 0u || (call.vertices.empty() && call.raw_vertices == nullptr)) return false;
     // A prim leaves VADDR/IADDR alone but advances the pointer it consumed, so
     // a run of prims can share one setup. An indexed prim consumes indices, not
     // vertices: advancing the vertex pointer instead walked it off the mesh and
@@ -1186,6 +1228,11 @@ void GeState::draw_primitive(const GuestMemory &memory, std::uint32_t data) {
         index_address_ += count * (index_type == 1u ? 1u : index_type == 2u ? 2u : 4u);
     else
         vertex_address_ += stride * count;
+    return true;
+}
+
+void GeState::submit_call() {
+    DrawCall &call = call_;
 
     // Which register values a lit draw is actually made with: one line per
     // distinct combination of vertex type, enables and material registers,
@@ -1236,8 +1283,8 @@ void GeState::process(const GuestMemory &memory, std::uint32_t address, std::uin
         return;
     case kBezier:
     case kSpline:
-        ++unhandled_commands_;
-        trace_unhandled(command, data);
+        command_pc_ = address;
+        draw_patch(memory, command, data);
         return;
     default:
         handle_command(memory, command, data);
@@ -1303,9 +1350,8 @@ std::uint32_t GeState::execute(const GuestMemory &memory, std::uint32_t pc, std:
             continue;
         case kBezier:
         case kSpline:
-            // Curved surfaces are not tessellated yet.
-            ++unhandled_commands_;
-            trace_unhandled(command, data);
+            command_pc_ = pc - 4u;
+            draw_patch(memory, command, data);
             continue;
         default:
             handle_command(memory, command, data);

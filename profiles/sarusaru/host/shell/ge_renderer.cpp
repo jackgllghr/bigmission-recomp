@@ -227,6 +227,7 @@ void GeRenderer::destroy() {
         vk_.destroy_image(texture.image);
     }
     textures_.clear();
+    prompt_atlases_.clear();
     for (auto &[key, texture] : host_textures_) vk_.destroy_image(texture.image);
     host_textures_.clear();
     for (auto &[key, pipeline] : pipelines_) {
@@ -473,7 +474,10 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     if (const auto found = game.find(canonical(texture.address)); found != game.end() &&
         found->first != canonical(call.target.color_address))
         return sample_target(*found->second, texture, u_scale, v_scale);
-    const std::uint64_t key = gpu::texture_key(memory, texture);
+    const std::uint64_t source_key = gpu::texture_key(memory, texture);
+    const auto known_prompt = prompt_atlases_.find(source_key);
+    const auto prompt_revision = button_prompts_ ? button_prompts_->revision() * 0x9e3779b97f4a7c15ull : 0ull;
+    std::uint64_t key = source_key ^ (known_prompt != prompt_atlases_.end() ? prompt_revision : 0ull);
     if (const auto found = textures_.find(key); found != textures_.end()) {
         found->second.last_frame = frame_;
         return found->second.image.view;
@@ -481,6 +485,12 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     std::vector<std::uint32_t> texels;
     if (!gpu::decode_texture(memory, texture, texels) || texels.size() < static_cast<std::size_t>(texture.width) * texture.height)
         return VK_NULL_HANDLE;
+    const unsigned prompt_atlas = button_prompts_ ? (known_prompt != prompt_atlases_.end()
+        ? known_prompt->second : ButtonPrompts::identify(texture, texels)) : 0;
+    if (prompt_atlas) {
+        prompt_atlases_[source_key] = prompt_atlas;
+        key = source_key ^ prompt_revision;
+    }
     std::uint32_t width = texture.width, height = texture.height;
     const auto translation_scale = translation_pack_ != nullptr
         ? translation_pack_->apply_scaled(texture, texels, scale_) : 0u;
@@ -511,6 +521,7 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
                 texels = std::move(scaled);
             }
     }
+    if (prompt_atlas) button_prompts_->apply(prompt_atlas, texels, width, width / texture.width);
     Texture entry;
     if (!vk_.create_image(width, height, kColorFormat,
                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, entry.image))

@@ -77,6 +77,11 @@ std::optional<std::vector<Controller::ScriptEvent>> parse_input_script(std::stri
                 const auto plus = buttons.find('+');
                 const std::string_view name = buttons.substr(0u, plus);
                 buttons = plus == std::string_view::npos ? std::string_view{} : buttons.substr(plus + 1u);
+                // The analog stick, pushed fully in one direction.
+                if (name == "STICKLEFT") { event.pad.lx = 0x00u; continue; }
+                if (name == "STICKRIGHT") { event.pad.lx = 0xFFu; continue; }
+                if (name == "STICKUP") { event.pad.ly = 0x00u; continue; }
+                if (name == "STICKDOWN") { event.pad.ly = 0xFFu; continue; }
                 const auto found = std::ranges::find_if(kNames, [name](const auto &known) { return known.first == name; });
                 if (found == std::end(kNames)) return std::nullopt;
                 event.pad.buttons |= found->second;

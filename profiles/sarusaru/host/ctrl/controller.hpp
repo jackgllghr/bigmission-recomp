@@ -75,7 +75,8 @@ inline constexpr std::uint32_t kButtonSelect = 0x0001u, kButtonStart = 0x0008u, 
                                kButtonCircle = 0x2000u, kButtonCross = 0x4000u, kButtonSquare = 0x8000u;
 
 // Parses "SECONDS:BUTTONS;..." (buttons joined with '+', '-' for none), e.g.
-// "60:START;60.2:-;65:CROSS+UP". Times must increase. nullopt if malformed.
+// "60:START;60.2:-;65:CROSS+UP". STICKLEFT, STICKRIGHT, STICKUP and STICKDOWN
+// push the analog stick fully that way. Times must increase. nullopt if malformed.
 [[nodiscard]] std::optional<std::vector<Controller::ScriptEvent>> parse_input_script(std::string_view text);
 
 void register_ctrl(Controller &controller, kernel::EarlyKernel &kernel, psprecomp::Runtime &runtime);

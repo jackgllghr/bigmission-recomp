@@ -310,8 +310,11 @@ code, unless that changes.
       libc++'s headers come out identical to the NDK's). On the OnePlus 13
       the shipped clang compiles a game unit in about 8.5 s and lld links
       against the phone's own C library. The APK grows from 17 to 60 MB.
-      Still to do: an install run through the launcher, the installation in
-      a foreground service, the toolchain build in CI.
+      The launcher installs the game there in about 8 minutes (2.5 to
+      generate the code, 5.5 to compile with 8 jobs) and the game then
+      starts. Still to do: the installation in a foreground service (it
+      stops if the app is left), phone wording on the install screen, the
+      toolchain build in CI.
 - [ ] Fallback for phones that cannot compile: the desktop launcher
       cross-compiles an Android module that the app imports.
 - [ ] Distribution channel: sideloaded APK first. Whether Google Play's rules
@@ -493,9 +496,9 @@ In priority order:
   verified, and the release workflow has never run.
 - Distribution: macOS signing and notarisation, a Windows build without a
   console window, and the public release policy.
-- Android: a debug APK of the launcher builds (`packaging/android`) but has
-  not run on a device, and cannot install the game yet. Next are a device
-  run, the unit-span choice and the in-process compiler.
+- Android: the APK installs the game on the phone with the compiler it
+  ships and plays it (OnePlus 13). Next are a foreground service for the
+  installation, the unit-span choice and CI for the toolchain.
 - Interpolation and FOV are unverified in cutscenes, dialogs and other stage
   types; higher simulation rates remain uncompensated.
 - Launcher: save management, on-screen keyboard; removal of
