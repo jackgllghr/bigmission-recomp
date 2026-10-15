@@ -148,7 +148,7 @@ dependencies. [Flatpak repositories](https://docs.flatpak.org/en/latest/reposito
    one compatible APK. Its GitHub source uses the API and has optional latest-tag
    and release filters. [Obtainium sources](https://wiki.obtainium.imranr.dev/sources/)
 4. Publish a README/download-page badge and Android launcher action using
-   `obtainium://add/https://github.com/jackgllghr/sarusaru-recomp`, or an encoded
+   `obtainium://add/https://github.com/jackgllghr/bigmission-recomp`, or an encoded
    `obtainium://app/<JSON>` configuration containing the real package ID, source
    URL and tested filters. Export the tested configuration from Obtainium rather
    than inventing undocumented `additionalSettings` keys. Offer the documented
@@ -185,7 +185,7 @@ Proposed shared release contract:
   GitHub releases directly. Keep feed generation in the release process.
 
 For a lightweight shared check-only implementation, the public endpoint is
-`GET https://api.github.com/repos/jackgllghr/sarusaru-recomp/releases/latest`.
+`GET https://api.github.com/repos/jackgllghr/bigmission-recomp/releases/latest`.
 It excludes drafts/prereleases; asset metadata includes `browser_download_url`,
 size and digest. Use explicit version comparison and exact platform selection;
 never choose the first archive or GitHub's generated source ZIP. Handle missing

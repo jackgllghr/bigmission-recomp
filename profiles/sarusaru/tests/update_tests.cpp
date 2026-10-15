@@ -6,7 +6,7 @@ using namespace sarusaru::install;
 void require(bool ok, const char *message) { if (!ok) { std::cerr << message << '\n'; std::exit(1); } }
 int main() {
     using State = UpdateResult::State;
-    const std::string feed = "SaruSaruRecomp-Update-v1\nversion\t1.2.10\nwindows-x64\thttps://github.com/jackgllghr/sarusaru-recomp/releases/download/v1.2.10/SaruSaruRecomp-v1.2.10-windows-x64.zip\n";
+    const std::string feed = "SaruSaruRecomp-Update-v1\nversion\t1.2.10\nwindows-x64\thttps://github.com/jackgllghr/bigmission-recomp/releases/download/v1.2.10/SaruSaruRecomp-v1.2.10-windows-x64.zip\n";
     const auto result = parse_update_feed(feed, "1.2.9", "windows-x64");
     require(result.state == State::Available && result.version == "1.2.10" && !result.download_url.empty(), "numeric version comparison failed");
     require(parse_update_feed(feed, "1.2.10", "windows-x64").state == State::Current, "equal version is an update");

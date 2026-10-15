@@ -10,9 +10,9 @@
 #include <thread>
 
 namespace sarusaru::install {
-inline constexpr std::string_view kReleasePage = "https://github.com/jackgllghr/sarusaru-recomp/releases/latest";
-inline constexpr std::string_view kUpdateFeed = "https://github.com/jackgllghr/sarusaru-recomp/releases/latest/download/update-info.txt";
-inline constexpr std::string_view kObtainium = "obtainium://add/https://github.com/jackgllghr/sarusaru-recomp";
+inline constexpr std::string_view kReleasePage = "https://github.com/jackgllghr/bigmission-recomp/releases/latest";
+inline constexpr std::string_view kUpdateFeed = "https://github.com/jackgllghr/bigmission-recomp/releases/latest/download/update-info.txt";
+inline constexpr std::string_view kObtainium = "obtainium://add/https://github.com/jackgllghr/bigmission-recomp";
 using ReleaseVersion = std::array<std::uint32_t, 3>;
 [[nodiscard]] std::optional<ReleaseVersion> parse_release_version(std::string_view text);
 [[nodiscard]] std::string_view update_platform();

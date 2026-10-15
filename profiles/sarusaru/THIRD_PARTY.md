@@ -124,3 +124,11 @@ disc (docs/hd-textures.md).
 `23856752fbd139da0b8ca6e471a13d5bcc99a08d`, as vendored by Yakumo; released
 into the public domain under the Unlicense (`third_party/tiny_aes/UNLICENSE`).
 They are compiled as C++.
+
+## Application icon (Flaticon license, attribution required)
+
+`include/image/logo.png` and `resources/sarusaru.ico` (the same image at 16 to
+256 pixels) are the [Banana icon](https://www.flaticon.com/free-icon/banana_7246727)
+created by [Magnific](https://www.flaticon.com/authors/magnific) -
+[Flaticon](https://www.flaticon.com/), used under Flaticon's free license with
+this attribution.

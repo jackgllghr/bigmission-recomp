@@ -64,7 +64,7 @@ UpdateResult parse_update_feed(std::string_view feed, std::string_view installed
     }
     const auto &url = fields.at(std::string(platform));
     const auto extension = platform.starts_with("linux-") ? ".AppImage" : ".zip";
-    const auto expected = "https://github.com/jackgllghr/sarusaru-recomp/releases/download/v" + result.version +
+    const auto expected = "https://github.com/jackgllghr/bigmission-recomp/releases/download/v" + result.version +
         "/SaruSaruRecomp-v" + result.version + "-" + std::string(platform) + extension;
     if (url != expected) return failed;
     result.state = UpdateResult::State::Available;

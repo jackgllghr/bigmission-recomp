@@ -78,7 +78,7 @@ migration on a device before distributing the first production release.
 ## Obtainium onboarding
 
 Install the signed release APK, then use **Settings → Updates → Add to Obtainium**,
-or add `https://github.com/jackgllghr/sarusaru-recomp` in Obtainium. The launcher
+or add `https://github.com/jackgllghr/bigmission-recomp` in Obtainium. The launcher
 uses the documented `obtainium://add/` deep link and offers Obtainium's website
 if Android cannot handle it. A release contains exactly one APK, so no variant
 filter is needed. Keep debug APKs as workflow artifacts rather than release
@@ -101,7 +101,7 @@ assets. See [Obtainium deep links](https://wiki.obtainium.imranr.dev/deep_links/
 
 The small desktop feed is fetched from GitHub's documented
 [latest-release asset URL](https://docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases):
-`https://github.com/jackgllghr/sarusaru-recomp/releases/latest/download/update-info.txt`.
+`https://github.com/jackgllghr/bigmission-recomp/releases/latest/download/update-info.txt`.
 It contains a schema header, stable version, and exact versioned download URLs
 for Windows x64, macOS arm64, and Linux x64/arm64. The parser restricts links to
 this repository's matching platform packages and rejects malformed, duplicate,

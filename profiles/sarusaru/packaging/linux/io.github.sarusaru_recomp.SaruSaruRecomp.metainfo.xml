@@ -15,7 +15,7 @@
     <p>Not affiliated with or endorsed by Sony Interactive Entertainment.</p>
   </description>
   <launchable type="desktop-id">io.github.sarusaru_recomp.SaruSaruRecomp.desktop</launchable>
-  <url type="homepage">https://github.com/jackgllghr/sarusaru-recomp</url>
+  <url type="homepage">https://github.com/jackgllghr/bigmission-recomp</url>
   <content_rating type="oars-1.1"/>
   <supports>
     <control>keyboard</control>

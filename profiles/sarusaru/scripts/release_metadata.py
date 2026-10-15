@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 import re
 
-REPOSITORY = 'https://github.com/jackgllghr/sarusaru-recomp'
+REPOSITORY = 'https://github.com/jackgllghr/bigmission-recomp'
 HEADER = 'SaruSaruRecomp-Update-v1'
 
 
