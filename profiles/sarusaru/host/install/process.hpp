@@ -32,7 +32,12 @@ public:
 
 private:
     mutable std::mutex mutex_;
+#if defined(__ANDROID__)
+    // SDL has no processes on Android; there they are posix_spawn's, by pid.
+    std::vector<int> running_;
+#else
     std::vector<SDL_Process *> running_;
+#endif
     bool cancelled_{};
 };
 

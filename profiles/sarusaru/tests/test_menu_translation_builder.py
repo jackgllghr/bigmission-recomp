@@ -116,6 +116,62 @@ class MenuCatalogTests(unittest.TestCase):
         self.assertGreaterEqual(gold_span(tracked), gold_span(untracked) + 1)
         self.assertLessEqual(gold_span(tracked), gold_span(untracked) + 3)
 
+    def test_controls_have_centered_orange_and_outer_red_borders(self):
+        image = render_ui_label('H', 24, 80, 40, controls=True)
+        colors = {'gold': [], 'orange': [], 'red': []}
+        for y in range(image.height):
+            for x in range(image.width):
+                r, g, b, a = image.getpixel((x, y))
+                if a > 200 and r > 180 and b < 80:
+                    colors['gold' if g > 185 else 'orange' if g > 100 else 'red'].append((x, y))
+        for axis in (0, 1):
+            spans = []
+            self.assertTrue(colors['orange'], 'Missing orange inner border')
+            for name in ('gold', 'red'):
+                points = colors[name]
+                self.assertTrue(points, f'Missing {name} layer')
+                low, high = min(p[axis] for p in points), max(p[axis] for p in points)
+                spans.append(high - low)
+                gold = colors['gold']
+                center = (min(p[axis] for p in gold) + max(p[axis] for p in gold)) / 2
+                self.assertAlmostEqual((low + high) / 2, center, delta=0.5)
+            self.assertLess(spans[0], spans[1])
+        self.catalog['labels'].append({'id': 'control.test', 'text': 'H',
+            'asset': 'common00/action_name.tm2', 'rect': [0, 0, 80, 40], 'font_size': 24})
+        render_labels(self.catalog, self.images)
+        from PIL import Image
+        composited = Image.new('RGBA', image.size)
+        composited.alpha_composite(image)
+        self.assertEqual(self.images['common00/action_name.tm2'].crop((0, 0, 80, 40)).tobytes(),
+                         composited.tobytes())
+
+    def test_controls_and_footer_hints_have_navy_bars(self):
+        for asset in ('common00/action_name.tm2', 'e_but_0.lzs', 'e_but_1.lzs'):
+            with self.subTest(asset=asset):
+                authored = {'schema': 1, 'locale': 'en', 'labels': [{'id': 'hint',
+                    'asset': asset, 'text': 'OK', 'font_size': 12, 'rect': [0, 0, 64, 20]}]}
+                render_labels(authored, self.images, require_title=False)
+                bar_y = 2 if asset == 'e_but_1.lzs' else 16
+                navy = (11, 19, 71, 255) if asset == 'e_but_1.lzs' else (0, 12, 100, 255)
+                pixel = self.images[asset].getpixel((6, bar_y))
+                self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, navy)), 1)
+                if asset == 'e_but_1.lzs':
+                    self.assertEqual(self.images[asset].getpixel((6, 16))[3], 0)
+                if asset != 'e_but_1.lzs':
+                    self.assertEqual(self.images[asset].getpixel((0, 0))[3], 0)
+
+    def test_header_has_thick_white_border_and_hd_contains_finer_detail(self):
+        from PIL import Image
+        native = render_ui_label('Jungle', 24, 288, 64, header=True)
+        hd = render_ui_label('Jungle', 24, 288, 64, header=True, output_scale=8)
+        self.assertEqual(hd.size, (2304, 512))
+        self.assertNotEqual(hd.tobytes(), native.resize(hd.size, Image.Resampling.NEAREST).tobytes())
+        for image in (native, hd):
+            white = [p for p in image.get_flattened_data() if p[3] > 200 and min(p[:3]) > 235]
+            self.assertGreater(len(white), image.width)
+        plain = render_ui_label('Jungle', 24, 288, 64)
+        self.assertFalse(any(p[3] > 200 and min(p[:3]) > 235 for p in plain.get_flattened_data()))
+
     def test_rejects_missing_labels_overlap_overflow_and_uncovered_glyphs(self):
         variants = []
         missing = copy.deepcopy(self.catalog); missing['labels'].pop(1); variants.append(missing)

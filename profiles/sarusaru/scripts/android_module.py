@@ -119,8 +119,9 @@ def main():
         objects = list(pool.map(compile_unit, sources))
     module = work / MODULE
     # The NDK's clang++ links libc++_shared, the C++ runtime the APK ships.
-    run(clang, f"--target=aarch64-linux-android{API_LEVEL}", "-shared", "-Wl,-z,max-page-size=16384",
-        "-o", module, *objects, runtime)
+    print(f"Linking {len(objects)} objects", flush=True)
+    subprocess.run([str(clang), f"--target=aarch64-linux-android{API_LEVEL}", "-shared", "-Wl,-z,max-page-size=16384",
+                    "-o", str(module), *map(str, objects), str(runtime)], check=True)
     print(f"Built {module} for interface {abi}")
     if args.no_push:
         return

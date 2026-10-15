@@ -9,7 +9,7 @@
 
 namespace sarusaru::translation {
 namespace {
-constexpr std::size_t kMaxPackBytes = 32u * 1024u * 1024u;
+constexpr std::size_t kMaxPackBytes = 64u * 1024u * 1024u;
 [[noreturn]] void invalid(std::string_view reason) {
     throw std::runtime_error("translation pack: " + std::string(reason));
 }
@@ -70,10 +70,10 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) invalid("short read");
     Reader reader(bytes);
     const auto magic = reader.text(8);
-    if (magic != "SSTEXPK1" && magic != "SSTEXPK2" && magic != "SSTEXPK3" && magic != "SSTEXPK4") invalid("unsupported format/version");
+    if (magic != "SSTEXPK1" && magic != "SSTEXPK2" && magic != "SSTEXPK3" && magic != "SSTEXPK4" && magic != "SSTEXPK5") invalid("unsupported format/version");
     if (disc_id.size() != 9 || reader.text(9) != disc_id || reader.digest() != executable_hash) invalid("incompatible game");
     TexturePack pack;
-    pack.padded_strings_ = magic == "SSTEXPK3" || magic == "SSTEXPK4";
+    pack.padded_strings_ = magic == "SSTEXPK3" || magic == "SSTEXPK4" || magic == "SSTEXPK5";
     pack.locale_ = reader.text(2);
     if (pack.locale_ != "en") invalid("unsupported locale");
     const auto source_count = reader.integer(4);
@@ -176,7 +176,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             pack.runs_.push_back(std::move(run));
         }
     }
-    if (magic == "SSTEXPK4") {
+    if (magic == "SSTEXPK4" || magic == "SSTEXPK5") {
         const auto count = reader.integer(2);
         if (count > 512) invalid("too many compact messages");
         std::set<std::uint32_t> pointers;
@@ -198,6 +198,32 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             const auto bytes = reader.take(size);
             entry.encoded.assign(bytes.begin(), bytes.end());
             pack.dialogue_.push_back(std::move(entry));
+        }
+    }
+    if (magic == "SSTEXPK5") {
+        const auto count = reader.integer(2);
+        if (count > pack.entries_.size()) invalid("too many HD layers");
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const auto id = reader.name(128);
+            auto entry = std::ranges::find(pack.entries_, id, &Entry::id);
+            if (entry == pack.entries_.end() || entry->hd_scale) invalid("unknown or duplicate HD layer");
+            const auto scale = reader.integer(2);
+            if (scale != 2 && scale != 4 && scale != 8) invalid("invalid HD scale");
+            const auto size = reader.integer(4);
+            if (!size || size % 6) invalid("invalid HD runs");
+            const auto runs = reader.take(size);
+            Reader pixels(runs);
+            const std::size_t expected = std::size_t(entry->width) * entry->height * scale * scale;
+            std::size_t total = 0;
+            while (!pixels.empty()) {
+                const auto length = pixels.integer(2);
+                (void)pixels.integer(4);
+                if (!length || length > expected - total) invalid("HD run exceeds image");
+                total += length;
+            }
+            if (total != expected) invalid("short HD image");
+            entry->hd_scale = static_cast<std::uint16_t>(scale);
+            entry->hd_runs.assign(runs.begin(), runs.end());
         }
     }
     if (!reader.empty()) invalid("trailing data");
@@ -267,7 +293,13 @@ void TexturePack::apply_strings(psprecomp::GuestMemory &memory, const psprecomp:
 }
 
 bool TexturePack::apply(const gpu::TextureState &texture, std::vector<std::uint32_t> &pixels) const {
-    if (pixels.size() != static_cast<std::size_t>(texture.width) * texture.height) return false;
+    return apply_scaled(texture, pixels, 1) != 0;
+}
+
+std::uint32_t TexturePack::apply_scaled(const gpu::TextureState &texture, std::vector<std::uint32_t> &pixels,
+                                       std::uint32_t requested_scale) const {
+    if (requested_scale < 1 || requested_scale > 8 ||
+        pixels.size() != static_cast<std::size_t>(texture.width) * texture.height) return 0;
     for (const auto &entry : entries_) {
         if (texture.width != entry.ge_width || texture.height != entry.ge_height || texture.buffer_width != entry.buffer_width) continue;
         std::vector<std::uint8_t> source;
@@ -277,6 +309,45 @@ bool TexturePack::apply(const gpu::TextureState &texture, std::vector<std::uint3
             for (unsigned shift = 0; shift < 32; shift += 8) source.push_back(static_cast<std::uint8_t>(value >> shift));
         }
         if (psprecomp::sha256(source) != entry.source_hash) continue;
+        if (requested_scale > 1 && entry.hd_scale) {
+            // Select a mip at least as sharp as the render target. Non-power-
+            // of-two render scales use the next mip; normalized UVs stay fixed.
+            std::uint32_t scale = 2;
+            while (scale < requested_scale && scale < entry.hd_scale) scale *= 2;
+            std::vector<std::uint32_t> hd;
+            hd.reserve(std::size_t(entry.width) * entry.height * entry.hd_scale * entry.hd_scale);
+            Reader runs(entry.hd_runs);
+            while (!runs.empty()) {
+                const auto count = runs.integer(2), pixel = runs.integer(4);
+                hd.insert(hd.end(), count, pixel);
+            }
+            const auto width = texture.width * scale, height = texture.height * scale;
+            std::vector<std::uint32_t> scaled(std::size_t(width) * height);
+            for (std::uint32_t y = 0; y < height; ++y)
+                for (std::uint32_t x = 0; x < width; ++x)
+                    scaled[std::size_t(y) * width + x] = pixels[std::size_t(y / scale) * texture.width + x / scale];
+            const auto step = entry.hd_scale / scale;
+            const auto hd_width = entry.width * entry.hd_scale;
+            for (const auto &region : entry.regions)
+                for (std::uint32_t y = region.y * scale; y < (region.y + region.height) * scale; ++y)
+                    for (std::uint32_t x = region.x * scale; x < (region.x + region.width) * scale; ++x) {
+                        std::uint32_t sums[4]{};
+                        for (std::uint32_t dy = 0; dy < step; ++dy)
+                            for (std::uint32_t dx = 0; dx < step; ++dx) {
+                                const auto pixel = hd[std::size_t(y * step + dy) * hd_width + x * step + dx];
+                                const auto alpha = pixel >> 24;
+                                for (unsigned c = 0; c < 3; ++c) sums[c] += ((pixel >> (8 * c)) & 255u) * alpha;
+                                sums[3] += alpha;
+                            }
+                        std::uint32_t value = ((sums[3] + step * step / 2) / (step * step)) << 24;
+                        if (sums[3])
+                            for (unsigned c = 0; c < 3; ++c)
+                                value |= ((sums[c] + sums[3] / 2) / sums[3]) << (8 * c);
+                        scaled[std::size_t(y) * width + x] = value;
+                    }
+            pixels = std::move(scaled);
+            return scale;
+        }
         // Preserve icons, backgrounds, untranslated labels and padding outside the authored regions.
         for (const auto &region : entry.regions)
         for (std::size_t y = region.y; y < region.y + region.height; ++y)
@@ -286,9 +357,9 @@ bool TexturePack::apply(const gpu::TextureState &texture, std::vector<std::uint3
             for (unsigned byte = 0; byte < 4; ++byte) value |= std::uint32_t(entry.rgba[offset + byte]) << (byte * 8);
             pixels[y * texture.width + x] = value;
         }
-        return true;
+        return 1;
     }
-    return false;
+    return 0;
 }
 
 } // namespace sarusaru::translation

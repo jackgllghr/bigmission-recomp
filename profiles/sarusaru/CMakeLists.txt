@@ -299,7 +299,12 @@ if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(SARUSARU_INSTALL_TOOLCHAIN apple)
 elseif(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(SARUSARU_INSTALL_TOOLCHAIN llvm-mingw)
-elseif(UNIX AND NOT APPLE AND NOT ANDROID AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+elseif(ANDROID)
+    # The clang the APK ships, built by packaging/android/toolchain.
+    set(SARUSARU_INSTALL_TOOLCHAIN android)
+    set(SARUSARU_ANDROID_TARGET "aarch64-linux-android${ANDROID_PLATFORM_LEVEL}")
+    set(SARUSARU_ANDROID_CLANG_MAJOR 21)
+elseif(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(SARUSARU_INSTALL_TOOLCHAIN gnu)
 else()
     # MSVC and the rest: the game module comes from SARUSARU_GAME_MODULE only.
@@ -461,11 +466,27 @@ if(SARUSARU_HAS_RENDERER)
                     "${CMAKE_BINARY_DIR}/bin/lib/FFmpeg-COPYING.LGPLv2.1.txt" "${CMAKE_BINARY_DIR}/bin/lib/FFmpeg-SOURCE.txt"
                     "${SARUSARU_ANDROID_ASSETS}/resources/")
             endif()
+            # What builds the game on the phone (cmake/android_builder.cmake).
+            set(SARUSARU_ANDROID_JNILIBS "" CACHE PATH "Where to put the APK's extra native libraries (set by the Gradle build)")
+            set(SARUSARU_ANDROID_TOOLCHAIN "${PROJECT_SOURCE_DIR}/out/android-toolchain/stage" CACHE PATH
+                "The compiler for the phone (packaging/android/toolchain/build_toolchain.py)")
+            set(_sarusaru_android_builder "")
+            if(NOT SARUSARU_ANDROID_JNILIBS STREQUAL "")
+                set(_sarusaru_android_builder COMMAND "${CMAKE_COMMAND}" "-DSDK=${_sarusaru_sdk}"
+                    "-DCODE_GENERATOR=$<TARGET_FILE:psp_recomp>" "-DTOOLCHAIN=${SARUSARU_ANDROID_TOOLCHAIN}"
+                    "-DJNILIBS=${SARUSARU_ANDROID_JNILIBS}/${ANDROID_ABI}" "-DASSETS=${SARUSARU_ANDROID_ASSETS}"
+                    "-DWORK=${CMAKE_BINARY_DIR}/android-sdk" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/android_builder.cmake")
+                # Run as a program, it gets no library path from the app (and
+                # CMake has no rpaths for Android): it carries its own C++ library.
+                target_link_options(psp_recomp PRIVATE -static-libstdc++)
+            endif()
             add_custom_target(sarusaru_android_assets
                 COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different "${CMAKE_BINARY_DIR}/bin/resources"
                     "${SARUSARU_ANDROID_ASSETS}/resources"
                 ${_sarusaru_android_notices}
-                COMMENT "Copying the shipped resources to the APK's assets")
+                ${_sarusaru_android_builder}
+                COMMENT "Copying the shipped resources, the SDK and the compiler into the APK")
+            add_dependencies(sarusaru_android_assets psp_recomp)
             add_dependencies(sarusaru sarusaru_android_assets)
         endif()
     else()

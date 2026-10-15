@@ -38,12 +38,13 @@ python3 profiles/sarusaru/scripts/build_and_run.py -- \
   --translation-pack out/translations/english-dialogue-v1.sstp
 ```
 
-Rebuild both the executable and pack. The record layout remains `SSTEXPK4`,
-but its bounded runtime limits are now 1024 strings and 512 compact records
+Rebuild both the executable and pack. New packs use `SSTEXPK5`, retaining V4
+compact records and adding high-resolution image lettering. Runtime limits are
+1024 strings and 512 compact records
 (previously 256 and 88). Other size, source, section, overlap, grammar and
 allocation checks remain enforced. Older packs still load in this runtime.
-The full gameplay catalog uses V4 even when dialogue is omitted, because it
-includes compact names. The menu-only catalog also uses V4 for pause UI captions.
+Gameplay names and pause UI captions use compact records even when dialogue
+is omitted.
 
 ## Source matching
 
@@ -141,6 +142,17 @@ Both layers are measured together
 at 4x resolution before downsampling. Source byte/layout checks, icons and
 numerals use their existing paths. The supplied title logo is unchanged.
 
+The gameplay controls atlas (`common00/action_name.tm2`) uses a centered
+border instead: gold ink, an orange inner edge, then a red outer edge, with no
+shadow offset. The bottom menu hints (`e_but_0.lzs`, `e_but_1.lzs`) share this
+style. Navy bars follow their original placement: below controls/shortcuts
+and above dialog hints, joining the preserved bar ends and controller icons.
+Large stage titles (`tenso/e_s_title_*.tm2`) and warp introduction banners
+(`common/e_nabi_a2.tm2`, `common/e_nabi_a4.tm2`) have a separate centered style
+with an additional four-pixel white outer stroke. One long title uses a
+one-point smaller font to accommodate the extra border. Other UI labels keep
+the offset red treatment.
+
 The clipping regression projects authored badge pixels through four actual
 GE triangle transforms and checks that the visible ink remains inside the
 screen. It failed before the layout correction. Lettering tests also verify
@@ -154,3 +166,41 @@ absent. Stage titles, best-time text and button legends show the heavier gold
 ink and offset red edge. Local ignored evidence is under
 `progress/translation-ui/lettering-stage-select.png` and
 `progress/translation-ui/lettering-comparison.png`.
+
+## Resolution-aware image lettering
+
+New builds emit `SSTEXPK5`. Native replacement images, string slots, help runs
+and compact records retain their existing representation. A final optional
+section supplies source-associated 8x lettering atlases as bounded RGBA runs
+(`u16 count`, `u32 RGBA`, little endian). Each layer names an existing image
+entry, specifies scale 2/4/8 and its byte length. The loader rejects duplicate
+or unknown IDs, invalid scales, zero runs, overflows, truncated payloads and
+decoded sizes that differ from the image dimensions. File size is capped at
+64 MiB; the combined English pack is about 19.8 MB. Existing V1-V4 packs load
+as before, and the original disc/save files remain untouched.
+
+Lettering is rasterized from the font at 8x, including outlines, spacing and
+navy bars. The Vulkan renderer selects a 2x, 4x or 8x mip according to internal
+render resolution, using alpha-weighted box filtering for smaller mips.
+Non-power-of-two render scales use the next available mip. Normalized guest
+UVs, layout and on-screen text size stay fixed. Outside authored replacement
+regions, original texels (including icons and row padding) are preserved.
+Translation layers take precedence over generic HD texture art. Native 1x
+rendering and software consumers continue using the base image payload.
+
+This improves the 242 image labels, including controls, hints and stage
+headers. The supplied logo, guest-rendered dialogue/monkey names and four
+prepared help lines retain their existing rendering paths.
+
+Native tests exercise every render scale from 1 through 8, verify finer detail
+inside a single guest texel, preserve surrounding pixels, and reject malformed
+HD layers. Authoring tests cover navy backgrounds, white borders and genuine
+high-resolution glyph detail.
+
+Verification passes all 40 native tests and 37 translation/dialogue authoring
+tests. A native run applies 467 strings and 278 compact records and verifies
+37 atlas replacements against authored pixels. Vulkan captures at 1920x1088
+(4x) confirm sharp stage headers, white warp-banner outlines, preserved clear
+badges, joined footer bars and navy gameplay-control bars. Ignored evidence:
+`progress/translation-ui/hd-stage-select.png`, `hd-stage-intro.png` and
+`hd-controls.png`. Verification uses a disposable save copy.

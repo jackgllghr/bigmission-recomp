@@ -122,6 +122,48 @@ int main() {
     auto masked = load(v2); texture.buffer_width = 4; actual = native;
     require(masked.apply(texture, actual) && actual[0] == native[0] && actual[1] == 0x21454341u,
             "partial atlas replacement damaged an unselected region");
+
+    // V5 retains the native replacement and adds subpixel lettering. The two
+    // colors occupy halves of one guest texel, proving this is real HD detail.
+    auto hd_fixture = [&](unsigned scale = 8, std::string_view id = "menu.synthetic") {
+        auto result = version2(); result[7] = '5';
+        integer(result, 0, 4); integer(result, 0, 2); integer(result, 0, 2);
+        integer(result, 1, 2); name(result, id); integer(result, scale, 2);
+        Bytes runs;
+        for (unsigned y = 0; y < 8; ++y)
+            for (unsigned x = 0; x < 16; ++x) {
+                integer(runs, 1, 2);
+                integer(runs, x < 8 ? 0xffffffffu : x < 12 ? 0xff0000ffu : 0xff00ff00u, 4);
+            }
+        integer(result, runs.size(), 4); result.insert(result.end(), runs.begin(), runs.end());
+        return result;
+    };
+    auto hd_pack = load(hd_fixture());
+    for (unsigned requested = 1; requested <= 8; ++requested) {
+        actual = native;
+        const auto scale = hd_pack.apply_scaled(texture, actual, requested);
+        const auto expected_scale = requested == 1 ? 1u : requested <= 2 ? 2u : requested <= 4 ? 4u : 8u;
+        require(scale == expected_scale && actual.size() == native.size() * scale * scale,
+                "HD replacement did not follow render resolution");
+        for (unsigned y = 0; y < texture.height * scale; ++y)
+            for (unsigned x = 0; x < texture.width * scale; ++x) {
+                const bool replaced = y < scale && x >= scale && x < 2 * scale;
+                const auto expected = !replaced ? native[(y / scale) * texture.width + x / scale]
+                    : scale == 1 ? 0x21454341u : x < scale + scale / 2 ? 0xff0000ffu : 0xff00ff00u;
+                require(actual[y * texture.width * scale + x] == expected,
+                        "HD text lost subpixel detail or changed icons/padding");
+            }
+    }
+    actual = native; actual[0] ^= 1; const auto unmatched_hd = actual;
+    require(hd_pack.apply_scaled(texture, actual, 8) == 0 && actual == unmatched_hd,
+            "HD replacement skipped source verification");
+    actual = native;
+    require(hd_pack.apply_scaled(texture, actual, 9) == 0 && actual == native, "unbounded HD scale accepted");
+    rejects(hd_fixture(0)); rejects(hd_fixture(8, "unknown"));
+    auto bad_hd = hd_fixture(); bad_hd[bad_hd.size() - 6] = 0; rejects(bad_hd);
+    bad_hd = hd_fixture(); bad_hd[bad_hd.size() - 6] = 2; rejects(bad_hd);
+    bad_hd = hd_fixture(); bad_hd.pop_back(); rejects(bad_hd);
+
     Bytes first; text(first, "Value %s is ready."); first.push_back(0);
     Bytes second; text(second, "Second original string."); second.push_back(0);
     auto elf = string_elf(first, second);

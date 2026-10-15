@@ -481,10 +481,16 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     std::vector<std::uint32_t> texels;
     if (!gpu::decode_texture(memory, texture, texels) || texels.size() < static_cast<std::size_t>(texture.width) * texture.height)
         return VK_NULL_HANDLE;
-    if (translation_pack_ != nullptr)
-        translation_pack_->apply(texture, texels);
     std::uint32_t width = texture.width, height = texture.height;
-    if (hd_pack_ != nullptr || texture_dump_ != nullptr) {
+    const auto translation_scale = translation_pack_ != nullptr
+        ? translation_pack_->apply_scaled(texture, texels, scale_) : 0u;
+    if (translation_scale) {
+        width *= translation_scale;
+        height *= translation_scale;
+    }
+    // Translation layers own their authored regions. Generic HD art must not
+    // replace their lettering, and dumps retain native texture dimensions.
+    if (!translation_scale && (hd_pack_ != nullptr || texture_dump_ != nullptr)) {
         const auto identity = gpu::identify_texture(texture, texels);
         if (texture_dump_ != nullptr) texture_dump_->record(texture, identity, texels);
         if (hd_pack_ != nullptr)

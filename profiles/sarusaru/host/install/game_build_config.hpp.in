@@ -6,7 +6,8 @@
 
 namespace sarusaru::install {
 // apple (Xcode's clang), gnu (the system's g++ or clang++), llvm-mingw (a
-// downloaded llvm-mingw), or empty: this build cannot install the game.
+// downloaded llvm-mingw), android (the clang the APK ships), or empty: this
+// build cannot install the game.
 inline constexpr std::string_view kToolchain = "@SARUSARU_INSTALL_TOOLCHAIN@";
 // Compiler options for the generated code, space-separated.
 inline constexpr std::string_view kOptimization = "@SARUSARU_AOT_OPTIMIZATION@";
@@ -16,4 +17,8 @@ inline constexpr std::string_view kMacosDeploymentTarget = "@CMAKE_OSX_DEPLOYMEN
 inline constexpr std::string_view kLlvmMingwUrl = "@SARUSARU_LLVM_MINGW_URL@";
 inline constexpr std::string_view kLlvmMingwSha256 = "@SARUSARU_LLVM_MINGW_SHA256@";
 inline constexpr std::string_view kLlvmMingwSize = "@SARUSARU_LLVM_MINGW_SIZE@";
+// Android: the module's target (the app's minimum API level) and the major
+// version of the shipped clang, which names its headers' directory.
+inline constexpr std::string_view kAndroidTarget = "@SARUSARU_ANDROID_TARGET@";
+inline constexpr std::string_view kAndroidClangMajor = "@SARUSARU_ANDROID_CLANG_MAJOR@";
 } // namespace sarusaru::install

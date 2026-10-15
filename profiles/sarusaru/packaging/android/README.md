@@ -3,10 +3,8 @@
 The Android port is SDL's `SDLActivity` around the port's shell, built as
 `libmain.so` from the repository's CMake project with the NDK. Like the
 desktop packages, the APK holds the launcher and its libraries, never the
-game: building the game module on the device (the code generator, clang and
-lld in-process) is the next step of the Android chunk in
-[`PLAN.md`](../../../../PLAN.md). Until then the launcher opens but cannot
-install the game.
+game, which the launcher builds on the phone from the player's disc, with a
+compiler the APK ships (below).
 
 ## What is here
 
@@ -49,6 +47,52 @@ cd profiles/sarusaru/packaging/android
 The APK is `app/build/outputs/apk/debug/app-debug.apk`. The first build
 cross-compiles FFmpeg, as the desktop builds do. Release builds are unsigned
 until the release policy settles signing.
+
+## The compiler the app ships
+
+The app builds the game as the desktop launchers do: the code generator
+(`libpsp_recomp.so`) and clang and lld (one LLVM program,
+`libsarusaru_llvm.so`) run as programs from the APK's native library
+directory, the only place Android 10 and later let an app run them, and the
+module is linked against the phone's own C library and the APK's
+`libc++_shared.so`. The headers and link files they need are `sdk.zip`
+among the assets, unpacked by the activity.
+
+`toolchain/build_toolchain.py` builds all of that from pinned source into
+`out/android-toolchain/stage/`, which the Gradle build picks up (without it
+the APK builds but cannot install the game):
+
+```bash
+brew install gpatch
+python3 profiles/sarusaru/packaging/android/toolchain/build_toolchain.py
+```
+
+- clang, lld, clang's headers, libc++'s headers, compiler-rt's builtins and
+  libunwind: llvm-project at the revision the NDK r29 clang is based on, with
+  the same 46 Android patches (`toolchain/llvm_android` at the commit its
+  `clang_source_info.md` names). libc++'s headers come out identical to the
+  NDK's, so the module and `libc++_shared.so` agree on the C++ ABI.
+- The C library's headers and the shared-object start and end files: bionic
+  at NDK r29's revision.
+
+Nothing is copied from the NDK; it is only the compiler that builds these.
+The LLVM build takes about an hour on an M-series Mac.
+
+## Play before the app can install the game
+
+Until the on-device build exists, build the game module on this computer
+from your own disc and push it to the phone (USB debugging on, the debug APK
+installed):
+
+```bash
+python3 profiles/sarusaru/scripts/android_module.py --iso /path/to/game.iso
+```
+
+It runs the installer's steps with the NDK's clang (the code generator from
+`out/macos-arm64`, the runtime and SDK of the APK's own build, so the
+interface hash matches) and copies `sarusaru_game.so` into the app's
+`files/game/<hash>/`. The generated code and the module stay in
+`out/android-module/` and on the phone; they are never packaged.
 
 ## Run
 

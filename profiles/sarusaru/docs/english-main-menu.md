@@ -57,7 +57,8 @@ Latin name entry. Existing player names and save metadata are preserved.
 Other gameplay text, movies, minigame content beyond shared controls and other unrecognized
 text retain Japanese. The fourth main-menu entry remains progression-dependent.
 The optional [English v1 build](english-v1.md) additionally includes machine
-drafts for 400 structured gameplay names; the menu-only pack now uses V4 for compact pause help.
+drafts for 400 structured gameplay names. New builds use V5 for HD image
+lettering, retaining V4 compact pause help.
 The [English dialogue v1 pack](english-dialogue-v1.md) also includes 71 compact
 messages, with source page counts and controller glyphs preserved.
 
@@ -167,7 +168,8 @@ retain their original validation rules. The [gameplay v1 builder](english-v1.md)
 uses padded fields only for observed fixed name fields, with full field hashes and padding
 validation; it does not expand packed area strings into neighboring data.
 
-Limits include 32 MiB per pack/source, 16 source files, 64 images, 64 regions per
+V5 appends optional HD image layers; see [expanded UI](english-expanded-ui.md#resolution-aware-image-lettering).
+Limits include 64 MiB per pack/source, 16 source files, 64 images, 64 regions per
 image, 1024 strings, 32 glyph lines, GE extents up to 512, IDs up to 128 bytes and
 paths up to 255 bytes. Unsafe paths, duplicate identities, overlapping regions,
 malformed data, incompatible hashes and trailing bytes are rejected. A single

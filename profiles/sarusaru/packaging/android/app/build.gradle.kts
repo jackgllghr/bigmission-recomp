@@ -129,9 +129,14 @@ android {
 
     buildTypes {
         all {
+            // Filled by the native build: the shipped resources and the SDK
+            // as assets, the code generator and compiler as native libraries.
             val assets = generated.get().dir("assets/$name").asFile
-            externalNativeBuild.cmake.arguments += "-DSARUSARU_ANDROID_ASSETS=$assets"
+            val jniLibs = generated.get().dir("jniLibs/$name").asFile
+            externalNativeBuild.cmake.arguments += listOf("-DSARUSARU_ANDROID_ASSETS=$assets",
+                "-DSARUSARU_ANDROID_JNILIBS=$jniLibs")
             sourceSets.getByName(name).assets.directories += assets.path
+            sourceSets.getByName(name).jniLibs.directories += jniLibs.path
         }
         release {
             isMinifyEnabled = false
@@ -159,8 +164,9 @@ android {
     }
 }
 
-// The assets come out of the native build (SARUSARU_ANDROID_ASSETS).
+// The assets and extra native libraries come out of the native build
+// (SARUSARU_ANDROID_ASSETS and SARUSARU_ANDROID_JNILIBS).
 tasks.configureEach {
-    val variant = Regex("""^merge(\w+)Assets$""").find(name)?.groupValues?.get(1)
+    val variant = Regex("""^merge(\w+)(Assets|JniLibFolders)$""").find(name)?.groupValues?.get(1)
     if (variant != null) dependsOn("externalNativeBuild$variant")
 }

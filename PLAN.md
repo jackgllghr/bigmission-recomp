@@ -297,8 +297,21 @@ code, unless that changes.
       read permission. Verified on a OnePlus 13 (Android 16): picked, checked
       as the supported disc, and reopened after a restart.
 - [ ] A `DocumentsProvider` exposing saves and settings to the Files app.
-- [ ] In-process generator, clang and lld; installation in a foreground
-      service, with job count from available memory; APK size measured.
+- [x] Development path: `scripts/android_module.py` builds the module on a
+      computer with the NDK from the player's disc and pushes it with adb.
+      The game boots and plays on a OnePlus 13 this way (SDL's thread needs
+      the 64 MiB stack the shell now gives it).
+- [ ] On-device build: psp_recomp, clang and lld built for Android and
+      shipped as executables in the APK's native library directory (which
+      Android 10+ lets an app execute), with a sysroot built from AOSP and
+      LLVM source rather than copied from the NDK
+      (`packaging/android/toolchain/build_toolchain.py`: llvm-project at the
+      NDK r29 clang's base with its 46 Android patches, bionic at NDK r29;
+      libc++'s headers come out identical to the NDK's). On the OnePlus 13
+      the shipped clang compiles a game unit in about 8.5 s and lld links
+      against the phone's own C library. The APK grows from 17 to 60 MB.
+      Still to do: an install run through the launcher, the installation in
+      a foreground service, the toolchain build in CI.
 - [ ] Fallback for phones that cannot compile: the desktop launcher
       cross-compiles an Android module that the app imports.
 - [ ] Distribution channel: sideloaded APK first. Whether Google Play's rules

@@ -2,8 +2,9 @@
 
 // The C++ compiler that builds the game module on the player's machine, set
 // up to match how this build of the port was compiled (game_build_config.hpp):
-// Xcode's clang on macOS, the system's g++ or clang++ on Linux, and on
-// Windows the pinned llvm-mingw, downloaded into the per-user data directory.
+// Xcode's clang on macOS, the system's g++ or clang++ on Linux, on Windows
+// the pinned llvm-mingw, downloaded into the per-user data directory, and on
+// Android the clang and lld the APK ships (packaging/android/toolchain).
 #include "install/process.hpp"
 
 #include <cstdint>
@@ -17,9 +18,15 @@ namespace sarusaru::install {
 
 struct Toolchain {
     std::string compiler;
+    // Right after the program, for both compiling and (without `linker`)
+    // linking: which tool of a multicall program (Android's `llvm clang++`).
+    std::vector<std::string> compiler_arguments;
     // Before the source and object for one unit: compiler -c <flags> src -o obj.
     std::vector<std::string> compile_flags;
-    // compiler <link_flags> -o module <objects> <link_libraries>.
+    // compiler <link_flags> -o module <objects> <link_libraries>, or the
+    // linker called directly instead when set (Android's `llvm ld.lld`).
+    std::string linker;
+    std::vector<std::string> linker_arguments;
     std::vector<std::string> link_flags;
     std::vector<std::string> link_libraries;
 };

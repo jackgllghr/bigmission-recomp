@@ -20,14 +20,17 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
  * SDL's activity around the port's libmain.so (host/shell/main.cpp).
  *
- * The port reads its shipped resources (fonts, licences) as files, which an
- * APK's assets are not, so they are copied to app-private storage once per
- * installed version, and the copy is named to the port through
- * SARUSARU_SHIPPED_FILES (host/platform/paths.cpp).
+ * The port reads its shipped resources (fonts, licences) and the SDK the game
+ * is built against (sdk.zip: the runtime's headers, the compiler's sysroot)
+ * as files, which an APK's assets are not, so they are copied to app-private
+ * storage once per installed version, and the copy is named to the port
+ * through SARUSARU_SHIPPED_FILES (host/platform/paths.cpp).
  *
  * The disc image the player picks is a document URI, which the port opens
  * through SDL (host/platform/documents.hpp); the activity keeps the right to
@@ -39,6 +42,7 @@ import java.nio.file.Files;
 public class SaruSaruActivity extends SDLActivity {
     private static final String TAG = "sarusaru";
     private static final String ASSETS = "resources";
+    private static final String SDK_ARCHIVE = "sdk.zip";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -102,6 +106,7 @@ public class SaruSaruActivity extends SDLActivity {
             return shipped;
         deleteTree(shipped);
         copyAssets(getAssets(), ASSETS, new File(shipped, ASSETS));
+        unzipAsset(getAssets(), SDK_ARCHIVE, shipped);
         try (OutputStream out = new FileOutputStream(stamp)) {
             out.write(version.getBytes(StandardCharsets.UTF_8));
         }
@@ -128,6 +133,34 @@ public class SaruSaruActivity extends SDLActivity {
         try (InputStream in = assets.open(path); OutputStream out = new FileOutputStream(target)) {
             byte[] buffer = new byte[64 * 1024];
             for (int length; (length = in.read(buffer)) > 0;) out.write(buffer, 0, length);
+        }
+    }
+
+    /** Unpacks an archive among the assets into `target`, if the APK has it. */
+    private static void unzipAsset(AssetManager assets, String name, File target) throws IOException {
+        InputStream source;
+        try {
+            source = assets.open(name);
+        } catch (IOException missing) {
+            return;  // an APK without the compiler
+        }
+        String root = target.getCanonicalPath() + File.separator;
+        byte[] buffer = new byte[64 * 1024];
+        try (ZipInputStream zip = new ZipInputStream(source)) {
+            for (ZipEntry entry; (entry = zip.getNextEntry()) != null;) {
+                File file = new File(target, entry.getName());
+                if (!file.getCanonicalPath().startsWith(root)) throw new IOException("bad entry " + entry.getName());
+                if (entry.isDirectory()) {
+                    if (!file.isDirectory() && !file.mkdirs()) throw new IOException("cannot create " + file);
+                    continue;
+                }
+                File parent = file.getParentFile();
+                if (parent != null && !parent.isDirectory() && !parent.mkdirs())
+                    throw new IOException("cannot create " + parent);
+                try (OutputStream out = new FileOutputStream(file)) {
+                    for (int length; (length = zip.read(buffer)) > 0;) out.write(buffer, 0, length);
+                }
+            }
         }
     }
 

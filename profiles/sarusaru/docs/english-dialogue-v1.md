@@ -26,8 +26,8 @@ python3 profiles/sarusaru/scripts/build_and_run.py -- \
   --translation-pack out/translations/english-dialogue-v1.sstp
 ```
 
-Use the rebuilt executable. Dialogue packs use `SSTEXPK4`; the updated runtime
-still supports V1/V2/V3 packs. Japanese remains the default and is restored by
+Use the rebuilt executable. New dialogue packs use `SSTEXPK5` with HD image
+lettering; the updated runtime still supports V1-V4 packs. Japanese remains the default and is restored by
 `[translation] language = ja`. To persist English, select `language = en` and
 the absolute pack path in your settings. Dialogue remains optional: omitting
 `--dialogue-catalog` produces the earlier menu/gameplay pack.

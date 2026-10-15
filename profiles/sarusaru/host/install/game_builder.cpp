@@ -172,7 +172,9 @@ void GameBuilder::install() {
     const auto compile = [&] {
         for (std::size_t index = next++; index < sources.size(); index = next++) {
             objects[index] = path_argument(work / "obj" / (sources[index].stem().string() + ".o"));
-            std::vector<std::string> args{toolchain->compiler, "-c"};
+            std::vector<std::string> args{toolchain->compiler};
+            args.insert(args.end(), toolchain->compiler_arguments.begin(), toolchain->compiler_arguments.end());
+            args.push_back("-c");
             args.insert(args.end(), toolchain->compile_flags.begin(), toolchain->compile_flags.end());
             args.insert(args.end(), {path_argument(sources[index]), "-o", objects[index]});
             auto result = processes_.run(args);
@@ -199,7 +201,14 @@ void GameBuilder::install() {
 
     set(Progress::Step::Linking);
     const auto built = work / std::string(game_module_file_name());
-    std::vector<std::string> args{toolchain->compiler};
+    std::vector<std::string> args;
+    if (toolchain->linker.empty()) {
+        args.push_back(toolchain->compiler);
+        args.insert(args.end(), toolchain->compiler_arguments.begin(), toolchain->compiler_arguments.end());
+    } else {
+        args.push_back(toolchain->linker);
+        args.insert(args.end(), toolchain->linker_arguments.begin(), toolchain->linker_arguments.end());
+    }
     args.insert(args.end(), toolchain->link_flags.begin(), toolchain->link_flags.end());
     args.insert(args.end(), {"-o", path_argument(built)});
     args.insert(args.end(), objects.begin(), objects.end());

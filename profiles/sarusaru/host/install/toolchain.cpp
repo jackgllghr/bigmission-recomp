@@ -78,6 +78,23 @@ bool download_llvm_mingw(ProcessGroup &processes, const std::filesystem::path &d
     return true;
 }
 
+#if defined(__ANDROID__)
+// Android: clang and lld as one program, shipped among the APK's libraries
+// (the only place an app may run programs from), and the headers and link
+// files they need, among its assets (packaging/android/toolchain).
+std::optional<std::filesystem::path> android_compiler() {
+    const auto libraries = platform::library_directory();
+    if (!libraries) return std::nullopt;
+    return *libraries / "libsarusaru_llvm.so";
+}
+
+std::optional<std::filesystem::path> android_sysroot() {
+    const auto shipped = platform::shipped_files_directory();
+    if (!shipped) return std::nullopt;
+    return *shipped / "sdk" / "sysroot";
+}
+#endif
+
 } // namespace
 
 std::optional<Kit> find_kit(std::string &missing) {
@@ -95,6 +112,10 @@ std::optional<Kit> find_kit(std::string &missing) {
 #elif defined(__APPLE__)
     kit.code_generator = *directory / "psp_recomp";
     kit.runtime_library = *libraries / "libpsprecomp_runtime.dylib";
+#elif defined(__ANDROID__)
+    // Named as a library so that the APK installs it where it may run.
+    kit.code_generator = *libraries / "libpsp_recomp.so";
+    kit.runtime_library = *libraries / "libpsprecomp_runtime.so";
 #else
     kit.code_generator = *directory / "psp_recomp";
     kit.runtime_library = *libraries / "libpsprecomp_runtime.so";
@@ -122,6 +143,13 @@ ToolchainCheck check_toolchain(ProcessGroup &processes) {
         check.status = ready ? ToolchainCheck::Status::Ready : ToolchainCheck::Status::NeedXcode;
     } else if (kToolchain == "gnu") {
         check.status = system_compiler() ? ToolchainCheck::Status::Ready : ToolchainCheck::Status::NeedCompiler;
+#if defined(__ANDROID__)
+    } else if (kToolchain == "android") {
+        const auto compiler = android_compiler();
+        const auto sysroot = android_sysroot();
+        if (compiler && sysroot && is_file(*compiler) && is_file(*sysroot / "usr" / "lib" / "crtbegin_so.o"))
+            check.status = ToolchainCheck::Status::Ready;
+#endif
     } else if (kToolchain == "llvm-mingw") {
         const auto directory = llvm_mingw_directory();
         if (directory && is_file(llvm_mingw_compiler(*directory))) {
@@ -182,6 +210,36 @@ std::optional<Toolchain> prepare_toolchain(ProcessGroup &processes, const Kit &k
         toolchain.compiler = *compiler;
         toolchain.compile_flags.push_back("-fPIC");
         toolchain.link_flags = {"-shared"};
+#if defined(__ANDROID__)
+    } else if (kToolchain == "android") {
+        const auto compiler = android_compiler();
+        const auto sysroot = android_sysroot();
+        const auto libraries = platform::library_directory();
+        if (!compiler || !sysroot || !libraries || !is_file(*compiler)) {
+            error = "This build of the app has no compiler for the game";
+            return std::nullopt;
+        }
+        const auto lib = *sysroot / "usr" / "lib";
+        toolchain.compiler = path_argument(*compiler);
+        toolchain.compiler_arguments = {"clang++"};
+        const std::string target = "--target=" + std::string(kAndroidTarget);
+        toolchain.compile_flags.insert(toolchain.compile_flags.end(), {"-fPIC", target,
+            "--sysroot=" + path_argument(*sysroot),
+            "-resource-dir=" + path_argument(*sysroot / "lib" / "clang" / std::string(kAndroidClangMajor))});
+        // The NDK clang's own link of a shared object (clang -###), with the
+        // phone's C library (/system/lib64) and the APK's C++ library.
+        toolchain.linker = toolchain.compiler;
+        toolchain.linker_arguments = {"ld.lld"};
+        toolchain.link_flags = {"-EL", "--fix-cortex-a53-843419", "-z", "now", "-z", "relro",
+            "-z", "max-page-size=16384", "--use-android-relr-tags", "--pack-dyn-relocs=relr",
+            "--hash-style=gnu", "--eh-frame-hdr", "-m", "aarch64linux", "-shared",
+            "--build-id=sha1", path_argument(lib / "crtbegin_so.o")};
+        const std::string builtins = path_argument(lib / "libclang_rt.builtins.a");
+        const std::string unwind = path_argument(lib / "libunwind.a");
+        toolchain.link_libraries.insert(toolchain.link_libraries.end(), {
+            path_argument(*libraries / "libc++_shared.so"), "-L/system/lib64", "-lm", builtins, unwind, "-ldl",
+            "-lc", builtins, unwind, "-ldl", path_argument(lib / "crtend_so.o")});
+#endif
     } else if (kToolchain == "llvm-mingw") {
         const auto directory = llvm_mingw_directory();
         if (!directory) {

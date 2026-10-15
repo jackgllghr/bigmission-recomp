@@ -81,46 +81,73 @@ def name(text):
     return struct.pack('<H', len(data)) + data
 
 
-def render_ui_label(text, size, width, height, alignment='center'):
-    """Bold gold ink with 0.25px tracking and an offset 2px red edge.
+def encode_pixel_runs(rgba):
+    """Bounded little-endian RGBA runs, independent of host byte order."""
+    from itertools import groupby
+    result = bytearray()
+    for (pixel,), group in groupby(struct.iter_unpack('<I', rgba)):
+        count = sum(1 for _ in group)
+        while count:
+            run = min(count, 65535)
+            result += struct.pack('<HI', run, pixel)
+            count -= run
+    return result
 
-    Measure both layers together so the asymmetric outline stays inside the
-    guest's sampling rectangle, including at the smallest 16px label sizes.
-    """
+
+def render_ui_label(text, size, width, height, alignment='center', *, controls=False,
+                    header=False, top_hint_bar=False, output_scale=1):
+    """Render UI styles in logical pixels, retaining detail at output_scale."""
     from PIL import Image, ImageDraw, ImageFont
     if alignment not in ('left', 'center'):
         raise ValueError('Label alignment must be left or center')
-    scale = 4
+    scale = max(4, output_scale)
     font = ImageFont.load_default(size=size * scale)
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
-    body, outline, offset = 2, 8, 3
+    body, outline, offset = scale / 2, 2 * scale, 3 * scale / 4
+    body, outline, offset = int(body), int(outline), int(offset)
     gold, red = (255, 224, 32, 255), (220, 55, 8, 255)
+    layers = ((0, outline, red), (0, 5 * scale // 4, (255, 140, 8, 255)), (0, body, gold)) if controls or header else (
+        (offset, outline, red), (0, body, gold))
+    if header:
+        layers = ((0, 4 * scale, (255, 255, 255, 255)),) + layers
     # Preserve the font's kerning, adding one supersampled pixel between glyphs.
-    glyphs = [(char, font.getlength(text[:i + 1]) - font.getlength(char) + i)
+    glyphs = [(char, font.getlength(text[:i + 1]) - font.getlength(char) + i * scale / 4)
               for i, char in enumerate(text)]
     boxes = [draw.textbbox((advance + shift, shift), char, font=font,
                            stroke_width=stroke)
              for char, advance in glyphs
              if char != ' '
-             for shift, stroke in ((0, body), (offset, outline))]
+             for shift, stroke, _ in layers]
     if not boxes:
         boxes = [draw.textbbox((0, 0), text, font=font, stroke_width=outline)]
     bounds = (min(b[0] for b in boxes), min(b[1] for b in boxes),
               max(b[2] for b in boxes), max(b[3] for b in boxes))
     tw, th = bounds[2] - bounds[0], bounds[3] - bounds[1]
-    if tw > layer.width - 2 * scale or th > layer.height - 2 * scale:
+    # Hinting at 8x can add a fraction of a logical pixel to a tight label.
+    # Retain at least half a logical pixel of padding on the HD layer.
+    margin = scale if output_scale == 1 else scale / 2
+    if tw > layer.width - 2 * margin or th > layer.height - 2 * margin:
         raise ValueError('Text exceeds pixel budget; shorten it or reduce font_size')
     x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
     y = (layer.height - th) / 2 - bounds[1]
-    for shift, stroke, color in ((offset, outline, red), (0, body, gold)):
+    if controls:
+        if top_hint_bar:
+            # Dialog hints sample the middle of a longer top bar. Its rounded
+            # ends and controller artwork live outside this replacement slot.
+            draw.rectangle((0, 0, width * scale, 4 * scale - 1), fill=(11, 19, 71, 255))
+        else:
+            draw.rounded_rectangle((scale, (height - 8) * scale,
+                                    (width - 1) * scale, (height - 1) * scale),
+                                   radius=3.5 * scale, fill=(0, 12, 100, 255))
+    for shift, stroke, color in layers:
         for char, advance in glyphs:
             draw.text((x + advance + shift, y + shift), char, font=font,
                       fill=color, stroke_width=stroke, stroke_fill=color)
-    return layer.resize((width, height), Image.Resampling.LANCZOS)
+    return layer.resize((width * output_scale, height * output_scale), Image.Resampling.LANCZOS)
 
 
-def render_labels(catalog, images, require_title=True):
+def render_labels(catalog, images, require_title=True, *, output_scale=1):
     if catalog.get('schema') != 1 or catalog.get('locale') != 'en':
         raise ValueError('Unsupported catalog schema/locale')
     seen = set()
@@ -139,7 +166,7 @@ def render_labels(catalog, images, require_title=True):
             raise ValueError('Invalid label rectangle')
         x, y, width, height = rect
         image = images[asset]
-        if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > image.width or y + height > image.height:
+        if x < 0 or y < 0 or width <= 0 or height <= 0 or (x + width) * output_scale > image.width or (y + height) * output_scale > image.height:
             raise ValueError('Label rectangle outside image')
         for a, b, w, h in rectangles.setdefault(asset, []):
             if x < a + w and a < x + width and y < b + h and b < y + height:
@@ -155,10 +182,15 @@ def render_labels(catalog, images, require_title=True):
         if tx < 0 or ty < 0 or tw <= 0 or th <= 0 or tx + tw > width or ty + th > height:
             raise ValueError('Text rectangle outside replacement region')
         try:
-            layer = render_ui_label(text, size, tw, th, label.get('align', 'center'))
+            layer = render_ui_label(text, size, tw, th, label.get('align', 'center'),
+                                    controls=asset in ('common00/action_name.tm2', 'e_but_0.lzs', 'e_but_1.lzs'),
+                                    header=(asset.startswith('tenso/e_s_title_') or asset in (
+                                        'common/e_nabi_a4.tm2', 'common/e_nabi_a2.tm2')),
+                                    top_hint_bar=asset == 'e_but_1.lzs',
+                                    output_scale=output_scale)
         except ValueError as exc:
             raise ValueError(f'{key}: {exc}') from exc
-        image.alpha_composite(layer, (x + tx, y + ty))
+        image.alpha_composite(layer, ((x + tx) * output_scale, (y + ty) * output_scale))
     expected = {'title.press_start', 'menu.new_game', 'menu.continue', 'menu.options', 'menu.gachi_king'}
     if require_title and not expected.issubset(seen):
         raise ValueError('The five title/main-menu labels are required')
@@ -268,8 +300,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
     regions = render_labels(catalog, images)
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
-    result = bytearray(b'SSTEXPK4' if dialogue_catalog is not None or name_count or ui_count else
-        b'SSTEXPK3' if any('capacity' in entry for entry in catalog.get('strings', [])) else b'SSTEXPK2')
+    result = bytearray(b'SSTEXPK5')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', len(sources))
     for source_path, source in sources.items():
@@ -337,7 +368,19 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         result += run['signature'].encode('ascii') + struct.pack('<H', run['glyph_count'])
         rgba = canvas.tobytes()
         result += struct.pack('<I', len(rgba)) + rgba
-    result += dialogue_bytes
+    result += dialogue_bytes or struct.pack('<H', 0)
+    # Keep base-resolution pixels for native rendering and software consumers.
+    # An optional high-resolution layer is rasterized from lettering, never
+    # enlarged from that base bitmap. The supplied title logo stays on its path.
+    hd_assets = [asset for asset in selected if asset != 'i_g_titl_l.lzs']
+    result += struct.pack('<H', len(hd_assets))
+    for asset in hd_assets:
+        key, (width, height), _ = ASSETS[asset]
+        hd = Image.new('RGBA', (width * 8, height * 8))
+        labels = dict(catalog, labels=[label for label in catalog['labels'] if label['asset'] == asset])
+        render_labels(labels, {asset: hd}, require_title=False, output_scale=8)
+        pixel_runs = encode_pixel_runs(hd.tobytes())
+        result += name(key) + struct.pack('<HI', 8, len(pixel_runs)) + pixel_runs
     # Atomic replacement of this explicit output file; no ISO writes or asset extraction.
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix='.translation-', delete=False) as temporary:

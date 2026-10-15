@@ -29,8 +29,8 @@ python3 profiles/sarusaru/scripts/build_and_run.py -- \
   --translation-pack out/translations/english-v1.sstp
 ```
 
-Use the rebuilt executable: the full gameplay catalog now uses `SSTEXPK4`
-to include 201 compact capture/collection name lookups. Existing V1/V2/V3 packs still
+Use the rebuilt executable: the full gameplay catalog now uses `SSTEXPK5`
+with HD image lettering and 201 compact capture/collection name lookups. Existing V1-V4 packs still
 load in the updated runtime; omitting `--gameplay-catalog` still builds the
 menu-only pack. Persist selection with `[translation]`, `language = en` and
 `pack = /absolute/path/to/english-v1.sstp` in your settings. `language = ja`
