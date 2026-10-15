@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-def fixture(invalid_scalar=False, tail_call=False, unknown_target=False):
+def fixture(invalid_scalar=False, tail_call=False, unknown_target=False, linked=False):
     base = 0x08804000
     data = bytearray(0x300)
     data[:7] = b"\x7fELF\x01\x01\x01"
@@ -21,6 +21,13 @@ def fixture(invalid_scalar=False, tail_call=False, unknown_target=False):
     if invalid_scalar:
         struct.pack_into("<IIIIII", data, 0x80, 0x486800FF, 0x48E900FF,
                          (3 << 26) | ((base + 0x80) >> 2), 0x24020007, 0x03E00008, 0)
+    if linked:
+        # Exercise an unsuccessful SC, an LL/SC update, LL $zero (which must
+        # skip its unmapped read), and SC $zero (which must still store).
+        struct.pack_into("<" + "I" * 13, data, 0x80,
+                         0x3C0A0880, 0x354A4400, 0x240B007B, 0xE14B0000,
+                         0xC14B0000, 0x240B002A, 0xE14B0000, 0xC0000000,
+                         0xE1400004, (3 << 26) | (target >> 2), 0x24020007, 0x03E00008, 0)
     struct.pack_into("<II", data, 0x100, 0x03E00008, 0x0000000C)
     # Module info points at one PSP import descriptor.
     data[0x184:0x18C] = b"Fixture\0"
@@ -43,7 +50,7 @@ DRIVER = r'''
 #include "psprecomp/runtime.hpp"
 #include <cstdlib>
 int main(int argc, char **argv) {
-    if (argc != 5) return 1;
+    if (argc != 6) return 1;
     psprecomp::Runtime runtime;
     auto elf = psprecomp::Elf32Image::from_file(argv[1]);
     elf.load_into(runtime.memory());
@@ -51,6 +58,7 @@ int main(int argc, char **argv) {
     runtime.cpu().gpr[8] = 123u;
     runtime.cpu().gpr[9] = 456u;
     runtime.cpu().vfpu_ctrl.fill(0xABCDEFu);
+    runtime.memory().store32(0x08804404u, 999u);
     unsigned calls = 0;
     runtime.register_hle("Fixture", 0x12345678u,
         [&calls](psprecomp::Runtime &rt, psprecomp::AllegrexContext &) {
@@ -58,6 +66,8 @@ int main(int argc, char **argv) {
             rt.stop("fixture import reached");
         });
     runtime.run(0x08804000u, 10u);
+    if (argv[5][0] == '1' && (runtime.memory().load32(0x08804400u) != 42u ||
+        runtime.memory().load32(0x08804404u) != 0u || runtime.cpu().gpr[11] != 1u || !runtime.cpu().load_linked)) return 2;
     if (argv[4][0] == '1') {
         return calls == 0 && runtime.cpu().pc == 0x08904000u &&
             runtime.stop_reason() == "No recompiled function registered at 0x08904000" ? 0 : 1;
@@ -72,11 +82,11 @@ int main(int argc, char **argv) {
 
 
 class ImportCodegenTests(unittest.TestCase):
-    def check_import(self, span, invalid_scalar=False, tail_call=False, unknown_target=False):
+    def check_import(self, span, invalid_scalar=False, tail_call=False, unknown_target=False, linked=False):
         with tempfile.TemporaryDirectory(prefix="psprecomp-import-") as temp:
             root = Path(temp)
             elf = root / "fixture.elf"
-            elf.write_bytes(fixture(invalid_scalar, tail_call, unknown_target))
+            elf.write_bytes(fixture(invalid_scalar, tail_call, unknown_target, linked))
             output = root / "generated"
             # The regression was an unbounded code-emission loop at a JAL to an
             # import. A timeout makes that exact failure fast and deterministic.
@@ -93,9 +103,9 @@ class ImportCodegenTests(unittest.TestCase):
                             "-o", str(binary)], timeout=30,
                            capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
-            return_address = "0" if tail_call else "0x08804010" if invalid_scalar else "0x08804008"
+            return_address = "0x0880402C" if linked else "0" if tail_call else "0x08804010" if invalid_scalar else "0x08804008"
             result = subprocess.run([str(binary), str(elf), return_address,
-                                     str(int(invalid_scalar)), str(int(unknown_target))], timeout=5,
+                                     str(int(invalid_scalar)), str(int(unknown_target)), str(int(linked))], timeout=5,
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -113,6 +123,9 @@ class ImportCodegenTests(unittest.TestCase):
 
     def test_invalid_scalar_encoding_compiles(self):
         self.check_import("0x4000", invalid_scalar=True)
+
+    def test_load_linked_store_conditional(self):
+        self.check_import("0x4000", linked=True)
 
     def test_unknown_direct_call_reports_missing_code(self):
         self.check_import("0x4000", unknown_target=True)

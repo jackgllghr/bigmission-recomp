@@ -44,7 +44,7 @@ public:
         std::uint64_t samples_output{};
     };
 
-    explicit Audio(kernel::EarlyKernel &kernel) noexcept : kernel_(&kernel) {}
+    explicit Audio(kernel::EarlyKernel &kernel);
 
     // Receives each accepted block when it is queued: interleaved 16-bit
     // samples (mono or stereo) and the channel's volumes (0x8000 = unity).

@@ -27,6 +27,7 @@ SAVEDATA/
 *.elf
 *.iso
 *.cso
+*.ppst
 
 # User-owned game data and reverse-engineering workspace
 /profiles/*/game/

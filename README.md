@@ -42,7 +42,11 @@ supported features. See [PLAN.md](PLAN.md) for detailed progress and acceptance 
 
 The project is built on PSPRecomp. The upstream framework documentation follows below.
 
-PSPRecomp is a static recompilation framework for PSP software. It reads an Allegrex/MIPS executable, analyzes guest code, emits C++ translation units, and runs them through a native host runtime instead of shipping a PSP interpreter or JIT.
+PSPRecomp is a static recompilation framework for PSP software. It reads an Allegrex/MIPS executable, analyzes guest code, emits C++ translation units, and runs them through a native host runtime. An opt-in interpreter supports code outside the compiled corpus; normal gameplay uses the compiled functions.
+
+The [PPSSPP save-state foundations](profiles/sarusaru/docs/ppsspp-save-states.md)
+include inspection and repacking tools. Loading or saving a running game session
+is not implemented yet.
 
 The repository is split between the reusable framework and the game-specific
 SaruSaru profile (`profiles/sarusaru`).
@@ -64,7 +68,8 @@ Game-specific addresses, HLE behavior, native fast paths, renderer integration a
 ## Requirements
 
 - CMake 3.20 or newer and Ninja
-- A C++20 compiler (Apple clang, GCC 13, Clang 17 or Visual Studio 2022)
+- A C compiler for the profile's bundled Zstandard codec, and a C++20 compiler
+  (Apple clang, GCC 13, Clang 17 or Visual Studio 2022)
 - Python 3.10 or newer for the profile's scripts
 
 See the [profile requirements](profiles/sarusaru/README.md#requirements) for

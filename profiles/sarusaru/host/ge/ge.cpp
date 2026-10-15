@@ -19,6 +19,8 @@ constexpr std::uint32_t kSignalHandlerContinue = 0x02u;
 }
 
 Ge::Ge(kernel::EarlyKernel &kernel) : kernel_(&kernel) {
+    kernel.set_action_handler(kernel::EarlyKernel::ActionKind::GeResumeList,
+        [this](const kernel::EarlyKernel::Action &action) { resume_list(action.arguments[0]); return 0u; });
     state_.set_transfer_sink([this](const gpu::BlockTransfer &transfer) {
         if (!copy_transfer(kernel_->runtime().memory(), transfer))
             kernel_->runtime().stop("GE block transfer outside guest memory");
@@ -194,10 +196,7 @@ bool Ge::execute(std::uint32_t index) {
             // Suspend: the list waits for the handler to return.
             list.state = ListState::Paused;
             raise(callback->signal_function, callback->signal_argument, callback->gp, value, address, "GE signal",
-                  [this, index](std::uint32_t) {
-                      lists_[index].state = ListState::Drawing;
-                      run();
-                  });
+                  {kernel::EarlyKernel::ActionKind::GeResumeList, {index}});
             return false;
         }
         case kEnd:
@@ -226,12 +225,19 @@ void Ge::complete(std::uint32_t index) {
 }
 
 void Ge::raise(std::uint32_t function, std::uint32_t argument, std::uint32_t gp, std::uint32_t value,
-               std::uint32_t pc, std::string label, std::function<void(std::uint32_t)> on_return) {
+               std::uint32_t pc, std::string label, kernel::EarlyKernel::Action on_return) {
     if (function == 0u) {
-        if (on_return) on_return(0u);
+        if (on_return.kind == kernel::EarlyKernel::ActionKind::GeResumeList) resume_list(on_return.arguments[0]);
         return;
     }
     kernel_->queue_interrupt({function, {value, argument, pc, 0u}, gp, std::move(label), std::move(on_return)});
+}
+
+void Ge::resume_list(std::uint32_t index) {
+    if (index >= lists_.size() || !lists_[index].in_use || lists_[index].state != ListState::Paused)
+        throw psprecomp::Error("Invalid GE list continuation");
+    lists_[index].state = ListState::Drawing;
+    run();
 }
 
 std::optional<ListState> Ge::list_state(std::uint32_t id) const noexcept {
@@ -254,7 +260,9 @@ void Ge::list_sync(psprecomp::AllegrexContext &context, std::uint32_t id, std::u
     if (mode == 1u) { context.set_gpr(2u, static_cast<std::uint32_t>(list.state)); return; }
     if (list.state == ListState::Completed) { context.set_gpr(2u, 0u); return; }
     list.waiters.push_back(kernel_->current_uid());
-    kernel_->block_current(context, kernel_->object_wait("GE list sync", 0u));
+    auto wait = kernel_->object_wait("GE list sync", 0u);
+    wait.identity = {kernel::EarlyKernel::WaitType::GeList, id};
+    kernel_->block_current(context, std::move(wait));
 }
 
 void Ge::draw_sync(psprecomp::AllegrexContext &context, std::uint32_t mode) {
@@ -262,7 +270,9 @@ void Ge::draw_sync(psprecomp::AllegrexContext &context, std::uint32_t mode) {
     if (mode == 1u) { context.set_gpr(2u, static_cast<std::uint32_t>(queue_state())); return; }
     if (queue_.empty()) { context.set_gpr(2u, 0u); return; }
     draw_waiters_.push_back(kernel_->current_uid());
-    kernel_->block_current(context, kernel_->object_wait("GE draw sync", 0u));
+    auto wait = kernel_->object_wait("GE draw sync", 0u);
+    wait.identity = {kernel::EarlyKernel::WaitType::GeDraw};
+    kernel_->block_current(context, std::move(wait));
 }
 
 void register_ge(Ge &ge, kernel::EarlyKernel &kernel, psprecomp::Runtime &runtime) {

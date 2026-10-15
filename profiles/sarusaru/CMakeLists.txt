@@ -11,6 +11,7 @@ set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
 # FFmpeg (LGPL, dynamically linked) decodes the game's ATRAC music.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FFmpeg.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Graphics.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SaveState.cmake")
 # The launcher's texts (Japanese included) are UTF-8 source.
 add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 # Where things live on the player's machine, and the files its picker gives.

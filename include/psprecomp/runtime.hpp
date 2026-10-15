@@ -98,6 +98,17 @@ public:
     [[nodiscard]] std::filesystem::path translate_path(const std::string &psp_path) const;
 
     void run(std::uint32_t entry, std::uint64_t max_dispatches = 10'000'000u);
+    using DispatchBoundaryHook = std::function<void(Runtime &)>;
+    // Called by the outer dispatcher after native guest callers have unwound.
+    // Frame observers can queue requests; snapshot/restore occurs here.
+    void set_dispatch_boundary_hook(DispatchBoundaryHook hook) { dispatch_boundary_hook_ = std::move(hook); }
+    [[nodiscard]] bool can_snapshot() const noexcept { return isolated_depth_ == 0 && (!running_ || at_dispatch_boundary_); }
+    // Opt-in for restored/dynamically loaded guest code outside the AOT corpus.
+    // Registered functions retain priority, except for a pending delay slot.
+    void enable_interpreter(bool enabled = true) noexcept { interpreter_enabled_ = enabled; }
+    using SyscallHandler = std::function<void(Runtime &, AllegrexContext &, std::uint32_t)>;
+    void set_syscall_handler(SyscallHandler handler) { syscall_handler_ = std::move(handler); }
+    void invoke_syscall(AllegrexContext &context, std::uint32_t code);
     void stop(std::string reason);
     [[nodiscard]] bool stopped() const noexcept;
     [[nodiscard]] const std::string &stop_reason() const noexcept;
@@ -276,6 +287,8 @@ private:
 
     static std::string hle_key(std::string_view library, std::uint32_t nid);
     [[nodiscard]] RecompiledFunction lookup_function(std::uint32_t address) const noexcept;
+    [[nodiscard]] RecompiledFunction dispatch_function(std::uint32_t address) const noexcept;
+    void run_dispatch_boundary();
     // Dense unit lookup for the production outer dispatcher.  Unlike
     // lookup_function(), this touches a 512-entry table rather than the
     // multi-megabyte per-PC table when the PC belongs to a clean generated
@@ -338,6 +351,12 @@ private:
     // cache line on every native chained call during normal gameplay.
     bool track_dispatch_counters_{};
     std::unordered_map<std::string, std::uint64_t> hle_histogram_;
+    bool interpreter_enabled_{};
+    std::uint32_t isolated_depth_{};
+    SyscallHandler syscall_handler_;
+    DispatchBoundaryHook dispatch_boundary_hook_;
+    bool running_{};
+    bool at_dispatch_boundary_{};
 };
 
 // Identifies the PSP execution context that entered a host import wrapper.

@@ -98,7 +98,8 @@ private:
     bool execute(std::uint32_t index);
     void complete(std::uint32_t index);
     void raise(std::uint32_t function, std::uint32_t argument, std::uint32_t gp, std::uint32_t value,
-               std::uint32_t pc, std::string label, std::function<void(std::uint32_t)> on_return = nullptr);
+               std::uint32_t pc, std::string label, kernel::EarlyKernel::Action on_return = {});
+    void resume_list(std::uint32_t index);
     [[nodiscard]] std::uint32_t target(std::uint32_t data, std::uint32_t offset) const noexcept;
 };
 
