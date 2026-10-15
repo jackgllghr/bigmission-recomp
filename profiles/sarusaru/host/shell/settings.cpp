@@ -39,10 +39,22 @@ float number(std::string_view text, float minimum, float maximum) {
     return value;
 }
 std::string decimal(float value) {
-    char buffer[64];
-    const auto [end, error] = std::to_chars(buffer, buffer + sizeof buffer, value);
-    if (error != std::errc{}) throw std::runtime_error("Cannot serialize settings number");
-    return {buffer, end};
+    // Shortest round-tripping form; floating-point std::to_chars needs macOS 13.3+.
+    if (!std::isfinite(value)) throw std::runtime_error("Cannot serialize settings number");
+    std::string text;
+    for (int precision = 0; precision <= 50; ++precision) {
+        std::ostringstream out;
+        out.imbue(std::locale::classic());
+        out << std::fixed;
+        out.precision(precision);
+        out << value;
+        text = out.str();
+        std::istringstream in{text};
+        in.imbue(std::locale::classic());
+        float parsed{};
+        if (in >> parsed && parsed == value) break;
+    }
+    return text;
 }
 std::size_t action_index(std::string_view key) {
     for (std::size_t i = 0; i < kActionCount; ++i) if (kActionNames[i] == key) return i;
