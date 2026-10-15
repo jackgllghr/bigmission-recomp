@@ -26,6 +26,12 @@
 #include "ui/ui_script.hpp"
 
 #include <SDL3/SDL.h>
+#if defined(__ANDROID__)
+// SDLActivity starts the port by calling SDL_main in libmain.so.
+#include <SDL3/SDL_main.h>
+#include <android/log.h>
+#include <unistd.h>
+#endif
 
 #include <cstdint>
 #include <charconv>
@@ -65,6 +71,36 @@ constexpr const char *kUsage =
 constexpr std::uint64_t kMaxLagNs = 100'000'000u;
 
 #include "window_icon.inc"
+
+#if defined(__ANDROID__)
+// An app has no terminal: what the port writes to stdout and stderr goes to
+// the system log instead, a line at a time (adb logcat -s sarusaru).
+void redirect_output_to_log() {
+    static bool redirected = false;
+    int ends[2];
+    if (redirected || pipe(ends) != 0) return;
+    redirected = true;
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    std::setvbuf(stderr, nullptr, _IONBF, 0);
+    dup2(ends[1], STDOUT_FILENO);
+    dup2(ends[1], STDERR_FILENO);
+    close(ends[1]);
+    std::thread([source = ends[0]] {
+        std::string line;
+        char buffer[512];
+        for (ssize_t length; (length = read(source, buffer, sizeof buffer)) > 0;) {
+            for (ssize_t i = 0; i < length; ++i) {
+                if (buffer[i] != '\n') {
+                    line += buffer[i];
+                    continue;
+                }
+                __android_log_write(ANDROID_LOG_INFO, "sarusaru", line.c_str());
+                line.clear();
+            }
+        }
+    }).detach();
+}
+#endif
 
 // Gives the window the logo, which the task bar or Dock shows. A failure only
 // leaves the default icon.
@@ -495,6 +531,9 @@ int install_from_command_line(const std::filesystem::path &iso) {
 } // namespace
 
 int main(int argc, char **argv) {
+#if defined(__ANDROID__)
+    redirect_output_to_log();
+#endif
     GameOverrides overrides;
     std::filesystem::path texture_dump_directory;
     std::filesystem::path settings_path;

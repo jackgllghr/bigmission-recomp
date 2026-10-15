@@ -18,6 +18,13 @@ target_link_libraries(sarusaru_disc PUBLIC psprecomp_runtime)
 # Where things live on the player's machine.
 add_library(sarusaru_platform STATIC host/platform/paths.cpp)
 target_include_directories(sarusaru_platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
+if(ANDROID)
+    if(NOT SARUSARU_HAS_RENDERER)
+        message(FATAL_ERROR "sarusaru: Android builds need the host shell (SARUSARU_RENDERER)")
+    endif()
+    # The app's storage is SDL's to report (SDL_GetAndroidInternalStoragePath).
+    target_link_libraries(sarusaru_platform PUBLIC SDL3::SDL3)
+endif()
 
 if(SARUSARU_HAS_RENDERER)
     add_library(sarusaru_controls STATIC host/shell/settings.cpp host/shell/input.cpp)
@@ -435,9 +442,36 @@ if(SARUSARU_HAS_RENDERER)
         set_source_files_properties(resources/sarusaru.rc PROPERTIES
             OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/sarusaru.ico")
     endif()
-    add_executable(sarusaru host/shell/main.cpp host/shell/ge_renderer.cpp
+    set(_sarusaru_shell_sources host/shell/main.cpp host/shell/ge_renderer.cpp
         host/shell/audio_output.cpp "${_sarusaru_shaders}" "${_sarusaru_icon}"
         ${_sarusaru_resources})
+    if(ANDROID)
+        # On Android the shell is libmain.so, whose SDL_main SDLActivity calls
+        # (packaging/android).
+        add_library(sarusaru SHARED ${_sarusaru_shell_sources})
+        set_target_properties(sarusaru PROPERTIES OUTPUT_NAME main LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/lib")
+        target_link_libraries(sarusaru PRIVATE log)
+        # The shipped resources (fonts, licences, the title) become the APK's
+        # assets; the Gradle build names the directory for each build type.
+        set(SARUSARU_ANDROID_ASSETS "" CACHE PATH "Where to put the APK's assets (set by the Gradle build)")
+        if(NOT SARUSARU_ANDROID_ASSETS STREQUAL "")
+            # FFmpeg's notices sit beside its libraries elsewhere; an APK's lib/ holds only libraries.
+            set(_sarusaru_android_notices "")
+            if(SARUSARU_HAS_FFMPEG)
+                list(APPEND _sarusaru_android_notices COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${CMAKE_BINARY_DIR}/bin/lib/FFmpeg-COPYING.LGPLv2.1.txt" "${CMAKE_BINARY_DIR}/bin/lib/FFmpeg-SOURCE.txt"
+                    "${SARUSARU_ANDROID_ASSETS}/resources/")
+            endif()
+            add_custom_target(sarusaru_android_assets
+                COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different "${CMAKE_BINARY_DIR}/bin/resources"
+                    "${SARUSARU_ANDROID_ASSETS}/resources"
+                ${_sarusaru_android_notices}
+                COMMENT "Copying the shipped resources to the APK's assets")
+            add_dependencies(sarusaru sarusaru_android_assets)
+        endif()
+    else()
+        add_executable(sarusaru ${_sarusaru_shell_sources})
+    endif()
     if(WIN32)
         target_include_directories(sarusaru PRIVATE
             "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/resources>")
@@ -456,7 +490,7 @@ if(SARUSARU_HAS_RENDERER)
     endif()
     set_target_properties(sarusaru PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
-    if(PSPRECOMP_BUILD_PROFILE_TESTS)
+    if(PSPRECOMP_BUILD_PROFILE_TESTS AND NOT ANDROID)
         add_test(NAME sarusaru_shell_help COMMAND sarusaru --help)
     endif()
 endif()

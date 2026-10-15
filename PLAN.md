@@ -278,9 +278,14 @@ code, unless that changes.
       cross units) before adopting it on any platform.
 - [ ] Desktop builder: base `compile_jobs` on the measured ~0.5 GiB per unit
       (with headroom) rather than 1.5 GiB.
-- [ ] Gradle project and NDK CMake preset building `libmain.so` for arm64-v8a;
-      an `SDLActivity` subclass taking arguments from intent extras; game-mode
-      configuration.
+- [x] Gradle project (`profiles/sarusaru/packaging/android`) building
+      `libmain.so` for arm64-v8a from the root CMake project (NDK r29, API 29,
+      `c++_shared`, 16 KiB pages); an `SDLActivity` subclass taking arguments
+      from intent extras and copying the shipped resources out of the assets;
+      game-mode configuration. Builds a debug APK; not yet run on a device.
+- [ ] Run the launcher on a device: Vulkan, touch, the back button, the
+      lifecycle (pause and resume while the launcher and the game run).
+- [ ] Android in CI: build the APK on every push.
 - [ ] Disc access through the system document picker (no
       `MANAGE_EXTERNAL_STORAGE`): `DiscImage` reads from a file descriptor.
 - [ ] A `DocumentsProvider` exposing saves and settings to the Files app.
@@ -467,8 +472,9 @@ In priority order:
   verified, and the release workflow has never run.
 - Distribution: macOS signing and notarisation, a Windows build without a
   console window, and the public release policy.
-- Android: nothing built yet. Measurements show phones have the memory to
-  compile the game; next are the unit-span choice and the app shell.
+- Android: a debug APK of the launcher builds (`packaging/android`) but has
+  not run on a device, and cannot install the game yet. Next are a device
+  run, the unit-span choice and the in-process compiler.
 - Interpolation and FOV are unverified in cutscenes, dialogs and other stage
   types; higher simulation rates remain uncompensated.
 - Launcher: save management, on-screen keyboard; removal of

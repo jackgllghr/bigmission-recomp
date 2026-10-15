@@ -63,6 +63,9 @@ port's packages never contain it.
     A Vulkan driver is needed to play.
   - **Windows x86-64**: Visual Studio 2022 with the C++ workload, run from its
     _x64 Native Tools Command Prompt_ (which provides `cl`, `cmake` and `ninja`).
+  - **Android arm64** (built from macOS or Linux): the Android SDK and NDK; see
+    [`packaging/android/README.md`](packaging/android/README.md). The APK has
+    the launcher only and cannot install the game yet.
 - Your own legally obtained compatible ISO. Its name does not matter.
 
 No commercial game files or generated game code are included. The profile uses

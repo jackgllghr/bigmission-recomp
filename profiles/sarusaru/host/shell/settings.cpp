@@ -11,6 +11,10 @@
 #include <sstream>
 #include <stdexcept>
 
+#if defined(__ANDROID__)
+#include <SDL3/SDL_system.h>
+#endif
+
 namespace sarusaru::shell {
 namespace {
 std::string_view trim(std::string_view text) {
@@ -303,6 +307,9 @@ std::filesystem::path default_settings_path() {
 #if defined(_WIN32)
     if (const char *base = std::getenv("APPDATA"); base && *base)
         return std::filesystem::path(base) / "SaruSaruRecomp" / "settings.ini";
+#elif defined(__ANDROID__)
+    if (const char *base = SDL_GetAndroidInternalStoragePath(); base && *base)
+        return std::filesystem::path(base) / "settings.ini";
 #elif defined(__APPLE__)
     if (const char *base = std::getenv("HOME"); base && *base)
         return std::filesystem::path(base) / "Library" / "Application Support" / "SaruSaruRecomp" / "settings.ini";
