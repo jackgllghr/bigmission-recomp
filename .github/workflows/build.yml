@@ -74,8 +74,9 @@ jobs:
           rm -f "$package"/*_tests "$package"/*_tests.exe
           # Never publish game-derived code, even if a build here produced it.
           rm -f "$package"/sarusaru "$package"/sarusaru.exe "$package"/sarusaru_bootstrap "$package"/sarusaru_bootstrap.exe
+          # The framework's tools (psp_analyze, psp_recomp, dump_function) are in bin/ too.
           for tool in psp_analyze psp_recomp dump_function; do
-            cp "$build/$tool"* "$package/"
+            ls "$package/$tool"* >/dev/null
           done
           cp LICENSE "$package/LICENSE.txt"
           cp profiles/sarusaru/THIRD_PARTY.md "$package/"
