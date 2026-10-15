@@ -172,6 +172,38 @@ class MenuCatalogTests(unittest.TestCase):
         plain = render_ui_label('Jungle', 24, 288, 64)
         self.assertFalse(any(p[3] > 200 and min(p[:3]) > 235 for p in plain.get_flattened_data()))
 
+    @unittest.skipUnless(catalog('english-menu.json').is_file(), 'English catalog is not checked out')
+    def test_footer_text_keeps_diagonal_button_pairs_and_clears_original_ink(self):
+        from PIL import Image
+        authored = json.loads(catalog('english-menu.json').read_text())
+        authored['labels'] = [l for l in authored['labels'] if l['asset'] == 'e_but_1.lzs']
+        self.assertEqual(len(authored['labels']), 9)
+        # Observed Japanese text bounds and protected controller artwork. The
+        # square at x=88 was previously erased by the Cancel text rectangle.
+        ink = [(45, 83), (18, 84), (28, 80), (29, 104), (27, 93),
+               (28, 80), (29, 67), (29, 67), (28, 68)]
+        for scale in (1, 8):
+            images = {'e_but_1.lzs': Image.new('RGBA', (128 * scale, 240 * scale))}
+            regions = render_labels(authored, images, require_title=False, output_scale=scale)
+            for label in authored['labels']:
+                x, y, w, h = label['rect']
+                row = y // 24
+                first, last = ink[row]
+                self.assertLessEqual(x, first)
+                self.assertGreater(x + w, last)
+                protected = (88, row * 24, 24, 24) if row in (0, 1) else (0, row * 24, 26, 24)
+                bx, by, bw, bh = protected
+                for rx, ry, rw, rh in regions['e_but_1.lzs']:
+                    self.assertFalse(rx < bx + bw and bx < rx + rw and ry < by + bh and by < ry + rh,
+                                     f'{label["id"]} erases a controller button')
+                # Both bar orientations occur within this atlas, independently
+                # of whether its controller buttons sit on the left or right.
+                top = row in (0, 1, 6)
+                sample_y = y + (1 if top else h - 4)
+                pixel = images['e_but_1.lzs'].getpixel(((x + 4) * scale, sample_y * scale))
+                navy = (11, 19, 71, 255) if top else (0, 12, 100, 255)
+                self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, navy)), 2)
+
     def test_rejects_missing_labels_overlap_overflow_and_uncovered_glyphs(self):
         variants = []
         missing = copy.deepcopy(self.catalog); missing['labels'].pop(1); variants.append(missing)

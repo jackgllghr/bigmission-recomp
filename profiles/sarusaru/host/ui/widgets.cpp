@@ -120,8 +120,9 @@ void face_button(ImDrawList *draw, ImVec2 &cursor, float u, SDL_GamepadType type
     const ImVec2 c(cursor.x + r, cursor.y);
     cursor.x += 2.0f * r + 4.0f * u;
     if (draw == nullptr) return;
+    const bool xbox = type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE;
     draw->AddCircleFilled(ImVec2(c.x, c.y + 2.0f * u), r, colors::kBlueDeep);
-    draw->AddCircleFilled(c, r, IM_COL32(36, 44, 70, 255));
+    draw->AddCircleFilled(c, r, xbox ? colors::kXboxFace : IM_COL32(36, 44, 70, 255));
     draw->AddCircle(c, r, colors::kWhite, 0, 2.0f * u);
     const float s = r * 0.48f, t = 2.4f * u;
     const auto letter = [&](const char *text, ImU32 color) {
@@ -129,7 +130,6 @@ void face_button(ImDrawList *draw, ImVec2 &cursor, float u, SDL_GamepadType type
         const ImVec2 size = text_size(font, 16.0f * u, text);
         draw->AddText(font, 16.0f * u, ImVec2(c.x - size.x * 0.5f, c.y - size.y * 0.52f), color, text);
     };
-    const bool xbox = type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE;
     switch (SDL_GetGamepadButtonLabelForType(type, button)) {
     case SDL_GAMEPAD_BUTTON_LABEL_CROSS:
         draw->AddLine(ImVec2(c.x - s, c.y - s), ImVec2(c.x + s, c.y + s), colors::kPsCross, t);
@@ -143,10 +143,10 @@ void face_button(ImDrawList *draw, ImVec2 &cursor, float u, SDL_GamepadType type
         draw->AddTriangle(ImVec2(c.x, c.y - s * 1.05f), ImVec2(c.x - s * 1.05f, c.y + s * 0.75f),
                           ImVec2(c.x + s * 1.05f, c.y + s * 0.75f), colors::kPsTriangle, t);
         break;
-    case SDL_GAMEPAD_BUTTON_LABEL_A: letter("A", xbox ? IM_COL32(110, 200, 80, 255) : colors::kWhite); break;
-    case SDL_GAMEPAD_BUTTON_LABEL_B: letter("B", xbox ? IM_COL32(240, 80, 70, 255) : colors::kWhite); break;
-    case SDL_GAMEPAD_BUTTON_LABEL_X: letter("X", xbox ? IM_COL32(80, 150, 240, 255) : colors::kWhite); break;
-    case SDL_GAMEPAD_BUTTON_LABEL_Y: letter("Y", xbox ? IM_COL32(250, 200, 40, 255) : colors::kWhite); break;
+    case SDL_GAMEPAD_BUTTON_LABEL_A: letter("A", xbox ? colors::kXboxA : colors::kWhite); break;
+    case SDL_GAMEPAD_BUTTON_LABEL_B: letter("B", xbox ? colors::kXboxB : colors::kWhite); break;
+    case SDL_GAMEPAD_BUTTON_LABEL_X: letter("X", xbox ? colors::kXboxX : colors::kWhite); break;
+    case SDL_GAMEPAD_BUTTON_LABEL_Y: letter("Y", xbox ? colors::kXboxY : colors::kWhite); break;
     default: letter("?", colors::kWhite); break;
     }
 }
