@@ -25,14 +25,28 @@ and long lines wrap.
 Tags such as `<i>` are dropped, WebVTT-style `00:00:03.200` times are
 accepted, and a file that does not parse is reported on stderr and skipped.
 
-The shell loads the first of these folders that exists:
+The shell takes them from the first of these that has them:
 
-1. `SARUSARU_SUBTITLES` (for working on them),
-2. `subtitles/` beside the English translation pack,
-3. `subtitles/` beside settings.ini.
+1. the folder `SARUSARU_SUBTITLES` names (for working on them),
+2. the English translation pack, which carries them for players,
+3. `subtitles/` beside the English translation pack,
+4. `subtitles/` beside settings.ini.
 
 Subtitles are translation, so like the pack they are never in the launcher
-package (`scripts/package.py` refuses `.srt` files).
+package (`scripts/package.py` refuses `.srt` files). They are kept in
+sarusaru-translations and bundled into the pack when it is built:
+
+```sh
+out/translation-tools/bin/python profiles/sarusaru/tools/build_menu_translation.py \
+  '/path/to/SaruSaru.iso' \
+  --gameplay-catalog ../sarusaru-translations/english-gameplay-v1.json \
+  --subtitles ../sarusaru-translations/subtitles \
+  --output out/translations/english-v1.sstp
+```
+
+Every `<movie>.en.srt` in the folder goes in (at most 64 movies, 256 KiB each
+and 2 MiB in all); a lowercase movie name and UTF-8 text are required. A file
+that does not parse is reported on stderr when the game starts and left out.
 
 ## Making them
 

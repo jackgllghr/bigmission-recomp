@@ -2,6 +2,7 @@
 #include "psprecomp/sha256.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <set>
 #include <optional>
@@ -70,10 +71,11 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) invalid("short read");
     Reader reader(bytes);
     const auto magic = reader.text(8);
-    if (magic != "SSTEXPK1" && magic != "SSTEXPK2" && magic != "SSTEXPK3" && magic != "SSTEXPK4" && magic != "SSTEXPK5") invalid("unsupported format/version");
+    if (!magic.starts_with("SSTEXPK") || magic[7] < '1' || magic[7] > '6') invalid("unsupported format/version");
+    const int version = magic[7] - '0';
     if (disc_id.size() != 9 || reader.text(9) != disc_id || reader.digest() != executable_hash) invalid("incompatible game");
     TexturePack pack;
-    pack.padded_strings_ = magic == "SSTEXPK3" || magic == "SSTEXPK4" || magic == "SSTEXPK5";
+    pack.padded_strings_ = version >= 3;
     pack.locale_ = reader.text(2);
     if (pack.locale_ != "en") invalid("unsupported locale");
     const auto source_count = reader.integer(4);
@@ -103,7 +105,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             entry.width > entry.ge_width || entry.height > entry.ge_height || entry.buffer_width < entry.width || entry.buffer_width > 512)
             invalid("invalid texture dimensions");
         entry.source_hash = reader.digest();
-        if (magic != "SSTEXPK1") {
+        if (version >= 2) {
             const auto regions = reader.integer(2);
             if (regions == 0 || regions > 64) invalid("invalid replacement region count");
             for (std::uint32_t r = 0; r < regions; ++r) {
@@ -130,7 +132,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
         entry.rgba.assign(rgba.begin(), rgba.end());
         pack.entries_.push_back(std::move(entry));
     }
-    if (magic != "SSTEXPK1") {
+    if (version >= 2) {
         const auto string_count = reader.integer(4);
         if (string_count > 1024) invalid("too many string replacements");
         std::vector<std::pair<std::uint32_t, std::uint32_t>> ranges;
@@ -176,7 +178,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             pack.runs_.push_back(std::move(run));
         }
     }
-    if (magic == "SSTEXPK4" || magic == "SSTEXPK5") {
+    if (version >= 4) {
         const auto count = reader.integer(2);
         if (count > 512) invalid("too many compact messages");
         std::set<std::uint32_t> pointers;
@@ -200,7 +202,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             pack.dialogue_.push_back(std::move(entry));
         }
     }
-    if (magic == "SSTEXPK5") {
+    if (version >= 5) {
         const auto count = reader.integer(2);
         if (count > pack.entries_.size()) invalid("too many HD layers");
         for (std::uint32_t i = 0; i < count; ++i) {
@@ -224,6 +226,22 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             if (total != expected) invalid("short HD image");
             entry->hd_scale = static_cast<std::uint16_t>(scale);
             entry->hd_runs.assign(runs.begin(), runs.end());
+        }
+    }
+    // V6 adds the movies' subtitles: SubRip text, parsed by the shell.
+    if (version >= 6) {
+        const auto count = reader.integer(2);
+        if (count > 64) invalid("too many subtitled movies");
+        std::size_t total = 0;
+        for (std::uint32_t i = 0; i < count; ++i) {
+            auto key = reader.name(32);
+            if (std::ranges::any_of(key, [](unsigned char c) { return !std::islower(c) && !std::isdigit(c) && c != '_' && c != '-'; }))
+                invalid("invalid subtitle movie name");
+            const auto size = reader.integer(4);
+            if (size == 0 || size > 256u * 1024u || (total += size) > 2u * 1024u * 1024u) invalid("oversized subtitles");
+            auto srt = reader.text(size);
+            if (srt.find('\0') != srt.npos) invalid("subtitles must be text");
+            if (!pack.subtitles_.emplace(std::move(key), std::move(srt)).second) invalid("duplicate subtitled movie");
         }
     }
     if (!reader.empty()) invalid("trailing data");

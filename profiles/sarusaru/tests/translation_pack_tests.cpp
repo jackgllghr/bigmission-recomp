@@ -164,6 +164,25 @@ int main() {
     bad_hd = hd_fixture(); bad_hd[bad_hd.size() - 6] = 2; rejects(bad_hd);
     bad_hd = hd_fixture(); bad_hd.pop_back(); rejects(bad_hd);
 
+    // V6 carries the movies' subtitles as SubRip text, by movie name.
+    auto subtitle_fixture = [&](std::vector<std::pair<std::string, std::string>> movies) {
+        auto result = hd_fixture(); result[7] = '6';
+        integer(result, movies.size(), 2);
+        for (const auto &[key, srt] : movies) { name(result, key); integer(result, srt.size(), 4); text(result, srt); }
+        return result;
+    };
+    const std::string srt = "1\n00:00:01,000 --> 00:00:02,000\nHello\n";
+    const auto subtitled = load(subtitle_fixture({{"m01", srt}, {"opening", srt}}));
+    require(subtitled.subtitles().size() == 2 && subtitled.subtitles().at("m01") == srt, "pack subtitles not read");
+    require(subtitled.size() == 1 && load(subtitle_fixture({})).subtitles().empty(), "subtitle section disturbed the pack");
+    require(load(hd_fixture()).subtitles().empty(), "V5 pack gained subtitles");
+    rejects(subtitle_fixture({{"m01", srt}, {"m01", srt}}));
+    rejects(subtitle_fixture({{"M01", srt}})); rejects(subtitle_fixture({{"m/01", srt}}));
+    rejects(subtitle_fixture({{"m01", ""}})); rejects(subtitle_fixture({{"m01", std::string("a\0b", 3)}}));
+    rejects(subtitle_fixture({{"m01", std::string(256u * 1024u + 1u, 'a')}}));
+    auto short_subtitles = subtitle_fixture({{"m01", srt}}); short_subtitles.pop_back(); rejects(short_subtitles);
+    auto future = hd_fixture(); future[7] = '7'; rejects(future);
+
     Bytes first; text(first, "Value %s is ready."); first.push_back(0);
     Bytes second; text(second, "Second original string."); second.push_back(0);
     auto elf = string_elf(first, second);

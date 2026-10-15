@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
@@ -49,6 +50,9 @@ public:
     [[nodiscard]] std::span<const std::uint8_t> host_rgba(std::uint32_t address) const;
     [[nodiscard]] std::size_t size() const noexcept { return entries_.size(); }
     [[nodiscard]] const std::string &locale() const noexcept { return locale_; }
+    // The movies' English subtitles as SubRip text, by movie name
+    // (movie::subtitle_key); empty before version 6.
+    [[nodiscard]] const std::map<std::string, std::string> &subtitles() const noexcept { return subtitles_; }
 
 private:
     struct Region { std::uint16_t x{}, y{}, width{}, height{}; };
@@ -84,6 +88,7 @@ private:
     std::vector<gpu::DrawCall> pending_;
     std::string pending_font_;
     std::unordered_map<std::string, std::string> fonts_;
+    std::map<std::string, std::string> subtitles_;
 };
 
 } // namespace sarusaru::translation

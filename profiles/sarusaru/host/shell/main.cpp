@@ -215,12 +215,23 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                       << " compact messages); untranslated screens retain Japanese\n";
         }
         // The movies' English subtitles: from SARUSARU_SUBTITLES, else the
-        // subtitles folder beside the translation pack or the settings file.
+        // translation pack's own, else the subtitles folder beside the pack
+        // or the settings file.
         sarusaru::movie::SubtitleLibrary subtitles;
-        {
+        const char *subtitle_override = std::getenv("SARUSARU_SUBTITLES");
+        const bool overridden = subtitle_override != nullptr && *subtitle_override != '\0';
+        if (!overridden && translation_pack && !translation_pack->subtitles().empty()) {
+            for (const auto &[key, srt] : translation_pack->subtitles()) {
+                try {
+                    subtitles.add(key, sarusaru::movie::parse_srt(srt));
+                } catch (const std::exception &failure) {
+                    std::cerr << "sarusaru: subtitles " << key << " in the translation pack: " << failure.what() << '\n';
+                }
+            }
+            std::cout << "Subtitles: " << subtitles.size() << " movies from the translation pack\n";
+        } else {
             std::vector<std::filesystem::path> folders;
-            if (const char *folder = std::getenv("SARUSARU_SUBTITLES"); folder != nullptr && *folder != '\0')
-                folders.emplace_back(folder);
+            if (overridden) folders.emplace_back(subtitle_override);
             if (!current.translation_pack.empty()) folders.push_back(current.translation_pack.parent_path() / "subtitles");
             folders.push_back(settings_path.parent_path() / "subtitles");
             for (const auto &folder : folders) {

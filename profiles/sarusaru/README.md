@@ -229,9 +229,12 @@ the pack this build was configured with. The pack is kept only if its SHA-256
 matches, in `<user data>/translations/english-<hash>.sstp`, and `[translation]`
 in `settings.ini` then points at it; switching back and forth needs no second
 download. A pack already set in `settings.ini` (one built locally) is used as
-it is.
+it is. The pack also carries the movies' English subtitles
+([docs/movie-subtitles.md](docs/movie-subtitles.md)).
 
-A build offers the pack only when configured with it:
+Builds offer the pack pinned in `profiles/sarusaru/CMakeLists.txt`
+(`SARUSARU_ENGLISH_PACK_URL`, `_SHA256` and `_SIZE`); publishing a new pack
+means updating those three defaults. A build can point at another pack:
 
 ```sh
 cmake -S . -B out/macos-arm64 \
@@ -239,7 +242,9 @@ cmake -S . -B out/macos-arm64 \
   -DSARUSARU_ENGLISH_PACK_SHA256=<sha256> -DSARUSARU_ENGLISH_PACK_SIZE=<bytes>
 ```
 
-Without them the launcher says English is not offered by this build. The pack
+With `-DSARUSARU_ENGLISH_PACK_URL=` (empty) the launcher says English is not
+offered by this build. An existing build directory keeps the values in its
+CMake cache, so it needs reconfiguring with the new ones (or a fresh directory). The pack
 is built from the catalogs and the maintainer's own disc (see the
 [`sarusaru-translations`](https://github.com/jackgllghr/sarusaru-translations) README) and published there, apart from the port.
 

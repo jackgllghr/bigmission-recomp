@@ -248,7 +248,30 @@ def load_textures(iso):
     return sources, textures, font
 
 
-def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dialogue_catalog=None):
+def subtitle_records(directory):
+    """The movies' subtitles: every <movie>.en.srt in `directory`, by movie name."""
+    files = sorted(directory.glob('*.en.srt'))
+    if not files:
+        raise ValueError(f'No <movie>.en.srt subtitles in {directory}')
+    if len(files) > 64:
+        raise ValueError('Too many subtitled movies')
+    result, total = struct.pack('<H', len(files)), 0
+    for path in files:
+        key = path.name[:-len('.en.srt')]
+        if not 0 < len(key) <= 32 or any(not (c.islower() or c.isdigit() or c in '_-') or not c.isascii() for c in key):
+            raise ValueError(f'Subtitle file name must be a lowercase movie name: {path.name}')
+        data = path.read_bytes()
+        data.decode('utf-8')
+        if not data or len(data) > 256 * 1024 or b'\0' in data or b'-->' not in data:
+            raise ValueError(f'Not a SubRip file of at most 256 KiB: {path.name}')
+        total += len(data)
+        result += name(key) + struct.pack('<I', len(data)) + data
+    if total > 2 * 1024 * 1024:
+        raise ValueError('Subtitles exceed 2 MiB')
+    return result, len(files)
+
+
+def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dialogue_catalog=None, subtitles=None):
     inputs = {iso_path.resolve(), logo_path.resolve(), catalog_path.resolve()}
     if gameplay_catalog is not None:
         inputs.add(gameplay_catalog.resolve())
@@ -259,6 +282,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     if output.resolve() in inputs:
         raise ValueError('Pack output must not replace an input file')
     from PIL import Image, ImageOps
+    subtitle_bytes, subtitle_count = subtitle_records(subtitles) if subtitles is not None else (struct.pack('<H', 0), 0)
     supported = json.loads((PROFILE / 'config/supported_game.json').read_text(encoding='utf-8'))
     catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
     with iso_path.open('rb') as stream:
@@ -300,7 +324,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
     regions = render_labels(catalog, images)
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
-    result = bytearray(b'SSTEXPK5')
+    result = bytearray(b'SSTEXPK6')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', len(sources))
     for source_path, source in sources.items():
@@ -381,6 +405,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         render_labels(labels, {asset: hd}, require_title=False, output_scale=8)
         pixel_runs = encode_pixel_runs(hd.tobytes())
         result += name(key) + struct.pack('<HI', 8, len(pixel_runs)) + pixel_runs
+    result += subtitle_bytes
     # Atomic replacement of this explicit output file; no ISO writes or asset extraction.
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix='.translation-', delete=False) as temporary:
@@ -395,7 +420,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     if dialogue_catalog is not None:
         from extract_translation_labels import atomic_write
         atomic_write(output.with_suffix('.dialogue-layout.json'), json.dumps(dialogue_layout, indent=2) + '\n')
-    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines, {dialogue_count} dialogue messages, {name_count} compact names, {ui_count} UI captions; {len(result)} bytes')
+    print(f'Built {output}: {len(selected)} textures, {len(strings)} strings, {len(runs)} help lines, {dialogue_count} dialogue messages, {name_count} compact names, {ui_count} UI captions, {subtitle_count} subtitled movies; {len(result)} bytes')
 
 
 def main():
@@ -405,11 +430,12 @@ def main():
     parser.add_argument('--catalog', type=Path, default=catalog('english-menu.json'))
     parser.add_argument('--gameplay-catalog', type=Path, help='Include contextual English gameplay label drafts')
     parser.add_argument('--dialogue-catalog', type=Path, help='Include compact English dialogue drafts')
+    parser.add_argument('--subtitles', type=Path, help="Include the movies' English subtitles: a folder of <movie>.en.srt")
     parser.add_argument('--output', type=Path, default=ROOT / 'out/translations/english-menu.sstp')
     args = parser.parse_args()
     try:
-        build(args.iso, args.logo, args.catalog, args.output, args.gameplay_catalog, args.dialogue_catalog)
-    except (ValueError, OSError, KeyError, ImportError, struct.error) as exc:
+        build(args.iso, args.logo, args.catalog, args.output, args.gameplay_catalog, args.dialogue_catalog, args.subtitles)
+    except (ValueError, UnicodeDecodeError, OSError, KeyError, ImportError, struct.error) as exc:
         parser.exit(1, f'build_menu_translation: {exc}\n')
 
 

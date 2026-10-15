@@ -3,12 +3,14 @@ import copy
 import json
 import importlib.util
 from pathlib import Path
+import struct
 import sys
+import tempfile
 import unittest
 
 PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
-from build_menu_translation import ASSETS, build, render_labels, merge_regions, render_ui_label
+from build_menu_translation import ASSETS, build, render_labels, merge_regions, render_ui_label, subtitle_records
 from translation_catalogs import catalog
 
 
@@ -42,6 +44,31 @@ class OutputSafetyTests(unittest.TestCase):
         for output in [Path('synthetic.iso'), Path('logo.png'), Path('catalog.json')]:
             with self.assertRaises(ValueError):
                 build(Path('synthetic.iso'), Path('logo.png'), Path('catalog.json'), output)
+
+
+class SubtitleRecordTests(unittest.TestCase):
+    SRT = b'1\n00:00:01,000 --> 00:00:02,000\nHello\n'
+
+    def records(self, files):
+        with tempfile.TemporaryDirectory() as directory:
+            for file, data in files.items():
+                (Path(directory) / file).write_bytes(data)
+            return subtitle_records(Path(directory))
+
+    def test_bundles_each_movie_by_name_and_ignores_other_languages(self):
+        data, count = self.records({'opening.en.srt': self.SRT, 'm01.en.srt': self.SRT, 'm01.ja.srt': self.SRT})
+        self.assertEqual(count, 2)
+        record = struct.pack('<H', 3) + b'm01' + struct.pack('<I', len(self.SRT)) + self.SRT
+        self.assertEqual(data[:2], struct.pack('<H', 2))
+        self.assertEqual(data[2:2 + len(record)], record)
+
+    def test_rejects_what_the_runtime_would(self):
+        for files in [{}, {'M01.en.srt': self.SRT}, {'m01.en.srt': b''}, {'m01.en.srt': b'no timing'},
+                      {'m01.en.srt': self.SRT + b'\0'}, {'m01.en.srt': self.SRT + b'a' * 256 * 1024}]:
+            with self.assertRaises(ValueError, msg=files):
+                self.records(files)
+        with self.assertRaises(UnicodeDecodeError):
+            self.records({'m01.en.srt': self.SRT + b'\xff'})
 
 
 @unittest.skipUnless(importlib.util.find_spec('PIL'), 'Pillow is required for translation authoring tests')
