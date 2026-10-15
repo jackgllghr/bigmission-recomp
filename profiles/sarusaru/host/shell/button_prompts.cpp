@@ -55,6 +55,7 @@ void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, uns
     const auto glyph = bindings.empty() ? ui::Glyph{ui::Glyph::Kind::Key, "-"} : ui::glyph(bindings.front(), type_);
     std::string label = glyph.label;
     const bool face = glyph.kind == ui::Glyph::Kind::Face;
+    const bool xbox = face && (type_ == SDL_GAMEPAD_TYPE_XBOX360 || type_ == SDL_GAMEPAD_TYPE_XBOXONE);
     const bool ps = type_ == SDL_GAMEPAD_TYPE_PS3 || type_ == SDL_GAMEPAD_TYPE_PS4 || type_ == SDL_GAMEPAD_TYPE_PS5;
     const bool nintendo = type_ >= SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO && type_ <= SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR;
     if (face && !ps) {
@@ -66,6 +67,13 @@ void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, uns
         default: break;
         }
     }
+    std::uint32_t ink = ui::colors::kWhite;
+    if (xbox) {
+        if (label == "A") ink = ui::colors::kXboxA;
+        else if (label == "B") ink = ui::colors::kXboxB;
+        else if (label == "X") ink = ui::colors::kXboxX;
+        else if (label == "Y") ink = ui::colors::kXboxY;
+    }
     x *= scale; y *= scale; w *= scale; h *= scale;
     const auto put = [&](int px, int py, std::uint32_t color) {
         if (px >= 0 && px < static_cast<int>(width) && py >= 0 &&
@@ -76,7 +84,7 @@ void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, uns
         const float dx = px + .5f - cx, dy = py + .5f - cy;
         const bool inside = face ? dx * dx + dy * dy < r * r :
             std::abs(dx) < w * .48f && std::abs(dy) < h * .43f;
-        put(px, py, inside ? 0xff30251cu : 0);
+        if (inside) put(px, py, xbox ? ui::colors::kXboxFace : 0xff30251cu);
         if (inside && (face ? dx * dx + dy * dy > (r - scale) * (r - scale) :
             std::abs(dx) > w * .48f - scale || std::abs(dy) > h * .43f - scale)) put(px, py, 0xffc7d6e6u);
     }
@@ -121,7 +129,8 @@ void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, uns
                 std::uint32_t blended = 0xff000000u;
                 for (unsigned shift = 0; shift < 24; shift += 8) {
                     const unsigned channel = (background >> shift) & 255u;
-                    blended |= ((channel * (255u - alpha) + 255u * alpha) / 255u) << shift;
+                    const unsigned foreground = (ink >> shift) & 255u;
+                    blended |= ((channel * (255u - alpha) + foreground * alpha) / 255u) << shift;
                 }
                 put(px, py, blended);
             }
@@ -141,6 +150,7 @@ void ButtonPrompts::apply(unsigned atlas, std::vector<std::uint32_t> &pixels, un
     };
     const auto button = [&](int x, int y, int w, int h, Action a) { draw(pixels, width, scale, x,y,w,h,a); };
     if (atlas == 1) {
+        clear(0, 0, 96, 24);
         constexpr Action actions[] = {Action::Square, Action::Triangle, Action::Circle, Action::Cross};
         for (int i = 0; i < 4; ++i) button(i*24, 0, 24, 24, actions[i]);
     } else if (atlas == 2) {
@@ -151,18 +161,18 @@ void ButtonPrompts::apply(unsigned atlas, std::vector<std::uint32_t> &pixels, un
     } else if (atlas == 3) {
         // The PSP artwork extends around and between the replacement glyphs.
         // Remove its entire region, after translation/HD art, not just the
-        // smaller rectangles occupied by our buttons. Captions start at x=32.
+        // smaller rectangles occupied by our buttons.
         for (unsigned row = 0; row < 9; ++row)
             clear(row < 2 ? 88 : 0, row * 24, row < 2 ? 40 : 32, 24);
         // Paired icons are alternatives, not a chord. Each retains its own binding.
         for (int row : {0,1,4}) {
             const int x = row < 2 ? 88 : 0;
-            button(x, row*24+5, 12, 16, Action::Square);
-            button(x+12, row*24+5, 12, 16, Action::Triangle);
+            button(x, row*24+8, 14, 16, Action::Square);
+            button(x+8, row*24, 14, 16, Action::Triangle);
         }
         for (int row : {2,3,7,8}) {
-            button(0, row*24+5, 12, 16, Action::Cross);
-            button(12, row*24+5, 12, 16, Action::Circle);
+            button(0, row*24+8, 14, 16, Action::Cross);
+            button(8, row*24, 14, 16, Action::Circle);
         }
         button(10, 5*24+5, 14, 16, Action::Circle);
         button(10, 6*24+5, 14, 16, Action::Cross);

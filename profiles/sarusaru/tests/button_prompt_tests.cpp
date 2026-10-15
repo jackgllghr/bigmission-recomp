@@ -1,4 +1,5 @@
 #include "shell/button_prompts.hpp"
+#include "ui/theme.hpp"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdlib>
@@ -22,6 +23,58 @@ int main() {
     const auto nintendo = render(ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO);
     const auto ps = render(ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_PS5);
     require(keyboard != xbox && xbox != nintendo && ps != xbox, "device glyphs did not change");
+    // Colors follow the bound Xbox letter, across both Xbox generations and
+    // rendering scales; the face stays black instead of a colored disc.
+    constexpr std::uint32_t inks[] = {ui::colors::kXboxX, ui::colors::kXboxY,
+                                      ui::colors::kXboxB, ui::colors::kXboxA};
+    for (auto type : {SDL_GAMEPAD_TYPE_XBOX360, SDL_GAMEPAD_TYPE_XBOXONE})
+        for (unsigned scale : {1u, 4u}) {
+            prompts.configure(controls, ui::BindingDevice::Gamepad, type);
+            std::vector<std::uint32_t> colored(128 * 32 * scale * scale);
+            prompts.apply(1, colored, 128 * scale, scale);
+            for (unsigned button = 0; button < 4; ++button) {
+                unsigned letters = 0, black = 0;
+                for (unsigned y = 0; y < 24 * scale; ++y)
+                    for (unsigned x = button * 24 * scale; x < (button + 1) * 24 * scale; ++x) {
+                        const auto pixel = colored[y * 128 * scale + x];
+                        if (pixel == inks[button]) ++letters;
+                        if (pixel == ui::colors::kXboxFace) ++black;
+                    }
+                require(letters > 0 && black > letters, "Xbox prompt lost its colored letter or black face");
+            }
+            std::vector<std::uint32_t> hints(128 * 256 * scale * scale);
+            prompts.apply(3, hints, 128 * scale, scale);
+            const auto center = [&](unsigned row, std::uint32_t ink) {
+                unsigned count = 0; double xsum = 0, ysum = 0;
+                const auto has_ink = [&](std::uint32_t pixel) {
+                    // Small letters may consist entirely of antialiased ink
+                    // over black. Compare hue independently of coverage.
+                    unsigned peak = 0, target_peak = 0;
+                    for (unsigned shift = 0; shift < 24; shift += 8) {
+                        peak = std::max(peak, (pixel >> shift) & 255u);
+                        target_peak = std::max(target_peak, (ink >> shift) & 255u);
+                    }
+                    if (peak < target_peak / 3) return false;
+                    for (unsigned shift = 0; shift < 24; shift += 8)
+                        if (std::abs(int(((pixel >> shift) & 255u) * target_peak) -
+                                     int(((ink >> shift) & 255u) * peak)) > int(target_peak * 8)) return false;
+                    return true;
+                };
+                for (unsigned y = row * 24 * scale; y < (row + 1) * 24 * scale; ++y)
+                    for (unsigned x = 0; x < 128 * scale; ++x)
+                        if (has_ink(hints[y * 128 * scale + x])) { ++count; xsum += x; ysum += y; }
+                require(count > 0, "hint pair lost a button letter");
+                return std::pair{xsum / count, ysum / count};
+            };
+            for (unsigned row : {0u, 1u, 4u, 2u, 3u, 7u, 8u}) {
+                const bool cancel = row == 0 || row == 1 || row == 4;
+                const auto lower = center(row, cancel ? ui::colors::kXboxX : ui::colors::kXboxA);
+                const auto upper = center(row, cancel ? ui::colors::kXboxY : ui::colors::kXboxB);
+                require(upper.first > lower.first && upper.second < lower.second,
+                        "hint buttons lost their northeast offset");
+            }
+        }
+    prompts.configure(controls, ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_PS5);
     for (unsigned y = 0; y < 128; ++y) for (unsigned x = 0; x < 512; ++x)
         if (x >= 384 || y >= 96) require(xbox[y*512+x] == 0x12345678, "patch escaped its atlas region");
     const shell::Binding chord{shell::Binding::Kind::Button, SDL_GAMEPAD_BUTTON_SOUTH, 1, SDL_GAMEPAD_BUTTON_EAST};

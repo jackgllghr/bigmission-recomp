@@ -34,6 +34,11 @@ inline constexpr ImU32 kPsCircle = IM_COL32(236, 66, 72, 255);
 inline constexpr ImU32 kPsCross = IM_COL32(96, 148, 236, 255);
 inline constexpr ImU32 kPsTriangle = IM_COL32(40, 190, 150, 255);
 inline constexpr ImU32 kPsSquare = IM_COL32(230, 110, 190, 255);
+inline constexpr ImU32 kXboxFace = IM_COL32(0, 0, 0, 255);
+inline constexpr ImU32 kXboxA = IM_COL32(110, 200, 80, 255);
+inline constexpr ImU32 kXboxB = IM_COL32(240, 80, 70, 255);
+inline constexpr ImU32 kXboxX = IM_COL32(80, 150, 240, 255);
+inline constexpr ImU32 kXboxY = IM_COL32(250, 200, 40, 255);
 } // namespace colors
 
 // The faces, loaded once. Sizes are chosen per draw (Dear ImGui 1.92 renders

@@ -5,18 +5,18 @@ results, collection and Gachi King UI reported on 2026-10-15. Translations live
 in the separate `sarusaru-translations` checkout. They still need terminology
 and gameplay review.
 
-| Reported screen | Added replacements |
-| --- | --- |
-| Load game | All 22 small stage/mission titles; saved player names remain as entered |
-| Laboratory / warp device | Four signs from `o_kizai_0.tm2`, including Warp Device and Collection |
-| Warp tunnel | Stage-cleared, perfect-clear, start and goal banners |
-| Stage selection and introduction | 22 large titles across three atlases, best-time label, clear stamps and boss names |
-| Stage results | Goal, Stage Clear, Game Over, record banners, monkey/time summaries and class labels |
-| Gachi King | Solo/versus/trial cartridge labels, headings, shop/tutorial labels and help strings |
-| Collection | Monkey Book/album/gallery/music/movie headings, icon captions and help strings |
-| Capsule Shop | Five prize descriptions and prices: Warborg photos, artwork, music, movies and batteries |
-| In-game pause | Resume/Options/Leave Stage/Retry buttons, remaining-monkey counter and six help/confirmation captions |
-| Captured monkeys | 207 CP932 record names and 201 compact capture/collection name lookups |
+| Reported screen                  | Added replacements                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Load game                        | All 22 small stage/mission titles; saved player names remain as entered                               |
+| Laboratory / warp device         | Four signs from `o_kizai_0.tm2`, including Warp Device and Collection                                 |
+| Warp tunnel                      | Stage-cleared, perfect-clear, start and goal banners                                                  |
+| Stage selection and introduction | 22 large titles across three atlases, best-time label, clear stamps and boss names                    |
+| Stage results                    | Goal, Stage Clear, Game Over, record banners, monkey/time summaries and class labels                  |
+| Gachi King                       | Solo/versus/trial cartridge labels, headings, shop/tutorial labels and help strings                   |
+| Collection                       | Monkey Book/album/gallery/music/movie headings, icon captions and help strings                        |
+| Capsule Shop                     | Five prize descriptions and prices: Warborg photos, artwork, music, movies and batteries              |
+| In-game pause                    | Resume/Options/Leave Stage/Retry buttons, remaining-monkey counter and six help/confirmation captions |
+| Captured monkeys                 | 207 CP932 record names and 201 compact capture/collection name lookups                                |
 
 The catalog contains 242 image labels across 38 textures, including the existing
 menu and control translations. Menu/UI text supplies 67 string records, and the
@@ -94,7 +94,6 @@ Warp Device sign in the laboratory, and preserve the existing saved player name.
 results, Gachi King states and every monkey-name placement still need gameplay
 visual review. Checks use disposable copies of the save, never the original.
 
-
 ## Capsule and pause follow-up
 
 Capsule descriptions are CP932 records at `0x21fdd8`, `0x21fe20`, `0x21fe50`,
@@ -118,7 +117,6 @@ actual guest texture identities match the translated pause atlases, and the
 font draws contain English `Resume game.` in the help panel. Capsule strings
 are source/byte/layout checked and applied by the native pack check; their
 live shop rendering still needs visual review.
-
 
 ## Clear badges and lettering
 
@@ -146,7 +144,8 @@ The gameplay controls atlas (`common00/action_name.tm2`) uses a centered
 border instead: gold ink, an orange inner edge, then a red outer edge, with no
 shadow offset. The bottom menu hints (`e_but_0.lzs`, `e_but_1.lzs`) share this
 style. Navy bars follow their original placement: below controls/shortcuts
-and above dialog hints, joining the preserved bar ends and controller icons.
+and most dialog hints, above the top-bar Back/Cancel variants, joining the
+preserved bar ends and controller icons.
 Large stage titles (`tenso/e_s_title_*.tm2`) and warp introduction banners
 (`common/e_nabi_a2.tm2`, `common/e_nabi_a4.tm2`) have a separate centered style
 with an additional four-pixel white outer stroke. One long title uses a
@@ -158,7 +157,6 @@ GE triangle transforms and checks that the visible ink remains inside the
 screen. It failed before the layout correction. Lettering tests also verify
 increased gold weight, a wider red edge, its down/right offset, and invalid
 inner-rectangle rejection.
-
 
 A Vulkan capture of stage selection confirms that the Clear stamp stays inside
 the screen and shows only its own tile; the previous extra Perfect fragment is
@@ -197,10 +195,29 @@ inside a single guest texel, preserve surrounding pixels, and reject malformed
 HD layers. Authoring tests cover navy backgrounds, white borders and genuine
 high-resolution glyph detail.
 
-Verification passes all 40 native tests and 37 translation/dialogue authoring
+Verification passes all 40 native tests and 38 translation/dialogue authoring
 tests. A native run applies 467 strings and 278 compact records and verifies
 37 atlas replacements against authored pixels. Vulkan captures at 1920x1088
 (4x) confirm sharp stage headers, white warp-banner outlines, preserved clear
 badges, joined footer bars and navy gameplay-control bars. Ignored evidence:
 `progress/translation-ui/hd-stage-select.png`, `hd-stage-intro.png` and
 `hd-controls.png`. Verification uses a disposable save copy.
+
+The nine dialog hint text regions stop before the controller artwork. Top-bar
+Back/Cancel labels clear x=16..87, preserving the square/triangle pair starting
+at x=88. Other labels clear x=26..111, preserving the left-side cross/circle
+pair and single-button variants. This restores the native diagonal layout:
+triangle northeast of square, circle northeast of cross. The larger text
+clearance also removes Japanese fragments that were left beside the icons.
+Native and 8x authoring tests protect both icon areas and verify coverage of
+the original text bounds. A 4x Vulkan capture confirms both complete diagonal
+pairs and the corrected navy-bar placement; ignored evidence is
+`progress/translation-ui/diagonal-hints-stage-select.png` and
+`diagonal-hints-detail.png`.
+
+Host-drawn prompts use the same diagonal arrangement: north is eight logical
+pixels above and right of west, and east is eight above and right of south.
+Xbox 360/One faces share the launcher's palette: black faces with green A,
+red B, blue X and yellow Y letters. Letter coverage is blended into that face
+at the active render scale. Prompt tests check both Xbox types at 1x/4x,
+including the colored letters in the small diagonal pairs.
