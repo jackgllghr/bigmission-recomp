@@ -179,6 +179,13 @@ decoded sizes that differ from the image dimensions. File size is capped at
 64 MiB; the combined English pack is about 19.8 MB. Existing V1-V4 packs load
 as before, and the original disc/save files remain untouched.
 
+`SSTEXPK6` appends the movies' subtitles (`build_menu_translation.py
+--subtitles`): a `u16` movie count, then per movie its name (as `m01`, lowercase
+letters, digits, `_` and `-`), a `u32` length and that many bytes of SubRip
+text. The loader rejects duplicate or malformed names, empty or NUL-bearing
+text, files over 256 KiB, more than 64 movies or 2 MiB in all, and truncation.
+The shell parses the text (docs/movie-subtitles.md); V1-V5 packs carry none.
+
 Lettering is rasterized from the font at 8x, including outlines, spacing and
 navy bars. The Vulkan renderer selects a 2x, 4x or 8x mip according to internal
 render resolution, using alpha-weighted box filtering for smaller mips.

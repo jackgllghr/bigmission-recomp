@@ -229,7 +229,8 @@ the pack this build was configured with. The pack is kept only if its SHA-256
 matches, in `<user data>/translations/english-<hash>.sstp`, and `[translation]`
 in `settings.ini` then points at it; switching back and forth needs no second
 download. A pack already set in `settings.ini` (one built locally) is used as
-it is.
+it is. The pack also carries the movies' English subtitles
+([docs/movie-subtitles.md](docs/movie-subtitles.md)).
 
 Builds offer the pack pinned in `profiles/sarusaru/CMakeLists.txt`
 (`SARUSARU_ENGLISH_PACK_URL`, `_SHA256` and `_SIZE`); publishing a new pack
