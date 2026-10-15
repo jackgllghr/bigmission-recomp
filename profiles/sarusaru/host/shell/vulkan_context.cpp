@@ -30,6 +30,7 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
         error = std::string("cannot create a Vulkan surface: ") + SDL_GetError();
         return false;
     }
+    SDL_AddEventWatch(watch_lifecycle, this);
 
     // The first device with a queue that both draws and presents.
     std::uint32_t devices = 0;
@@ -103,7 +104,27 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     return create_swapchain(error);
 }
 
+bool SDLCALL VulkanContext::watch_lifecycle(void *context, SDL_Event *event) {
+    if (event->type == SDL_EVENT_DID_ENTER_FOREGROUND) static_cast<VulkanContext *>(context)->surface_lost_ = true;
+    return true;
+}
+
+void VulkanContext::recreate_surface() {
+    vkDeviceWaitIdle(device);
+    destroy_swapchain();
+    if (surface != VK_NULL_HANDLE) vk.vkDestroySurfaceKHR(vk.instance, surface, nullptr);
+    surface = VK_NULL_HANDLE;
+    if (!SDL_Vulkan_CreateSurface(window_, vk.instance, nullptr, &surface)) {
+        // No native window yet: frames go unpresented until the next try.
+        surface = VK_NULL_HANDLE;
+        surface_lost_ = true;
+        return;
+    }
+    swapchain_stale_ = true;
+}
+
 bool VulkanContext::create_swapchain(std::string &error) {
+    if (surface == VK_NULL_HANDLE) return true;  // lost; recreate_surface retries
     VkSurfaceCapabilitiesKHR capabilities{};
     vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &capabilities);
     std::uint32_t format_count = 0;
@@ -176,6 +197,7 @@ void VulkanContext::destroy_swapchain() {
 }
 
 void VulkanContext::destroy() {
+    if (window_ != nullptr) SDL_RemoveEventWatch(watch_lifecycle, this);
     if (device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
         destroy_swapchain();
@@ -220,6 +242,7 @@ VkCommandBuffer VulkanContext::flush() {
 
 void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, std::uint32_t source_height, bool present) {
     std::string error;
+    if (surface_lost_.exchange(false)) recreate_surface();
     if (swapchain_stale_ || swapchain_ == VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
         destroy_swapchain();
@@ -229,7 +252,10 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
     present = present && swapchain_ != VK_NULL_HANDLE;
     if (present) {
         const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, acquired_, VK_NULL_HANDLE, &index);
-        if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
+        if (acquired == VK_ERROR_SURFACE_LOST_KHR) {
+            surface_lost_ = true;
+            present = false;
+        } else if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
             swapchain_stale_ = true;
             present = false;
         } else if (acquired == VK_SUBOPTIMAL_KHR) {
@@ -283,7 +309,8 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
         info.pSwapchains = &swapchain_;
         info.pImageIndices = &index;
         const VkResult result = vkQueuePresentKHR(queue, &info);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) swapchain_stale_ = true;
+        if (result == VK_ERROR_SURFACE_LOST_KHR) surface_lost_ = true;
+        else if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) swapchain_stale_ = true;
     }
 }
 

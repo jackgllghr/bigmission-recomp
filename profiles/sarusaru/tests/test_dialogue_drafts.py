@@ -71,12 +71,12 @@ class DialogueDraftTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root)
             (path / 'catalog.json').write_text(json.dumps({'pages': snapshot}))
-            (path / 'dialogue.csv').write_text(csv_text(rows))
+            (path / 'dialogue.csv').write_text(csv_text(rows), encoding='utf-8', newline='')
             imported = import_dialogue(path, drafts)
             self.assertEqual(imported['pages'][0]['origin'], 'human_translation')
             self.assertEqual(imported['pages'][0]['text'], 'Use {BUTTON_TRIANGLE}.')
             rows[0].update(translation_en='', review_status='untranslated')
-            (path / 'dialogue.csv').write_text(csv_text(rows))
+            (path / 'dialogue.csv').write_text(csv_text(rows), encoding='utf-8', newline='')
             omitted = import_dialogue(path, drafts)
             self.assertTrue(all('message_001' not in e['id'] for e in omitted['pages']))
 

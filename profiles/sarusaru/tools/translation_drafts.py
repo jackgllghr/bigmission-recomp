@@ -46,7 +46,7 @@ def seed_drafts(rows, catalog):
 
 def merge_gameplay_catalog(boot, menu, drafts, metadata=None):
     if metadata is None:
-        metadata = json.loads((PROFILE / 'resources/translations/extraction-context.json').read_text())
+        metadata = json.loads((PROFILE / 'resources/translations/extraction-context.json').read_text(encoding='utf-8'))
     rows, _ = extract(boot, metadata, menu)
     padded = {}
     for name in ('entity_names', 'facility_names', 'level_names', 'mission_names'):

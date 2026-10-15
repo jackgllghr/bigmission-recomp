@@ -126,11 +126,11 @@ def export(elf_path, output):
     if elf_path.stat().st_size > 32 * 1024 * 1024:
         raise ValueError('Executable exceeds size limit')
     elf = elf_path.read_bytes()
-    supported = json.loads((PROFILE / 'config/supported_game.json').read_text())
+    supported = json.loads((PROFILE / 'config/supported_game.json').read_text(encoding='utf-8'))
     if sha(elf) != supported['executable_sha256']:
         raise ValueError('Unsupported executable; dialogue locators are version specific')
-    metadata = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text())
-    labels = json.loads((PROFILE / 'resources/translations/extraction-context.json').read_text())
+    metadata = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text(encoding='utf-8'))
+    labels = json.loads((PROFILE / 'resources/translations/extraction-context.json').read_text(encoding='utf-8'))
     names = {}
     table = labels['entity_names']
     for record, key in labels['characters'].items():
@@ -156,7 +156,7 @@ def export(elf_path, output):
     output.mkdir(parents=True, exist_ok=True)
     for name, text in [('catalog.json', json.dumps(bundle, ensure_ascii=False, indent=2) + '\n'),
                        ('dialogue.csv', csv_text(rows)),
-                       ('README.md', (PROFILE / 'docs/dialogue-translation-handoff.md').read_text())]:
+                       ('README.md', (PROFILE / 'docs/dialogue-translation-handoff.md').read_text(encoding='utf-8'))]:
         path = output / name
         if path.resolve() == elf_path.resolve():
             raise ValueError('Output must not replace input')

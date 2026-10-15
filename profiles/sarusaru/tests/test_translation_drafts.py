@@ -89,7 +89,7 @@ class TranslationDraftTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root)
             (path / 'catalog.json').write_text(json.dumps({'labels': snapshot}))
-            (path / 'labels.csv').write_text(csv_text(self.rows))
+            (path / 'labels.csv').write_text(csv_text(self.rows), encoding='utf-8', newline='')
             imported = import_handoff(path, self.drafts)
         changed = next(e for e in imported['strings'] if e['id'] == area['id'])
         self.assertEqual(changed['text'], 'Human room')

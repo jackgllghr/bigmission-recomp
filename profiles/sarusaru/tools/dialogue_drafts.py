@@ -58,7 +58,7 @@ def wrap_page(text, columns=20, lines=3):
 
 def dialogue_records(boot, catalog, metadata=None):
     if metadata is None:
-        metadata = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text())
+        metadata = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text(encoding='utf-8'))
     messages, rows, _ = extract(boot, metadata)
     entries = validated_pages(catalog, rows)
     glyphs = GlyphMap(boot[int(metadata['kanji_table'], 0):int(metadata['kanji_table'], 0) + metadata['kanji_bytes']])

@@ -79,10 +79,12 @@ int main() {
         again.record(texture(8, 4, 8), full, texels);
         require(again.written() == 0, "dump rewrote a known texture");
     }
-    std::ifstream index(dump_directory / textures::TextureDump::kIndexName);
-    std::string header;
-    std::getline(index, header);
-    require(header == textures::TextureDump::kIndexHeader, "dump index header");
+    {
+        std::ifstream index(dump_directory / textures::TextureDump::kIndexName);
+        std::string header;
+        std::getline(index, header);
+        require(header == textures::TextureDump::kIndexHeader, "dump index header");
+    }
 
     // Pack: a 2x image for `narrow`, made by doubling the dumped one, and a
     // wrongly sized one for `full`.

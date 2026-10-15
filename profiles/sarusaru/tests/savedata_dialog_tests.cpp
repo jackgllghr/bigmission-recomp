@@ -83,8 +83,11 @@ int run_tests() {
     for (std::uint32_t i = 0; i < kDataSize; ++i) memory.store8(kData + i, static_cast<std::uint8_t>(i * 13u));
     require(run(runtime, 1u, true) == savedata_result::kOk, "AUTOSAVE");
     const auto folder = stick / "PSP" / "SAVEDATA" / "UCJS10060MAIN";
-    std::ifstream in(folder / "PARAM.SFO", std::ios::binary);
-    const std::vector<std::uint8_t> sfo_bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<std::uint8_t> sfo_bytes;
+    {
+        std::ifstream in(folder / "PARAM.SFO", std::ios::binary);
+        sfo_bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
     const auto sfo = sarusaru::savedata::ParamSfo::parse(sfo_bytes);
     const auto *params = sfo ? sfo->binary("SAVEDATA_PARAMS") : nullptr;
     require(params != nullptr && params->at(0) == 0x21u && sfo->string("TITLE") == "Title" &&

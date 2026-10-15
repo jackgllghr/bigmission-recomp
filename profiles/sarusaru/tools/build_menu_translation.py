@@ -130,7 +130,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     if output.resolve() in inputs:
         raise ValueError('Pack output must not replace an input file')
     from PIL import Image, ImageOps
-    supported = json.loads((PROFILE / 'config/supported_game.json').read_text())
+    supported = json.loads((PROFILE / 'config/supported_game.json').read_text(encoding='utf-8'))
     catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
     with iso_path.open('rb') as stream:
         iso = IsoImage(stream)

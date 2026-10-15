@@ -95,16 +95,16 @@ class TranslationLabelExtractionTests(unittest.TestCase):
         edited[0].update(translation_en='Test, "quoted"\nname', review_status='draft', translator_note='Check scene')
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / 'labels.csv'
-            path.write_text(csv_text(edited), encoding='utf-8')
+            path.write_text(csv_text(edited), encoding='utf-8', newline='')
             self.assertEqual(read_edits(path, labels), edited)
             edited[0]['level_id'] = 'stage_99'
-            path.write_text(csv_text(edited), encoding='utf-8')
+            path.write_text(csv_text(edited), encoding='utf-8', newline='')
             with self.assertRaisesRegex(ValueError, 'source/context changed'):
                 read_edits(path, labels)
-            path.write_text(csv_text(labels[:-1]), encoding='utf-8')
+            path.write_text(csv_text(labels[:-1]), encoding='utf-8', newline='')
             with self.assertRaisesRegex(ValueError, 'missing rows'):
                 read_edits(path, labels)
-            path.write_text(csv_text(labels + [labels[0]]), encoding='utf-8')
+            path.write_text(csv_text(labels + [labels[0]]), encoding='utf-8', newline='')
             with self.assertRaisesRegex(ValueError, 'unknown/duplicate'):
                 read_edits(path, labels)
 
@@ -120,7 +120,7 @@ class TranslationLabelExtractionTests(unittest.TestCase):
                 edited = [dict(row) for row in labels]
                 row = next(row for row in edited if row['key'] == 'save.test')
                 row.update(translation_en=text, review_status=status)
-                path.write_text(csv_text(edited), encoding='utf-8')
+                path.write_text(csv_text(edited), encoding='utf-8', newline='')
                 with self.assertRaises(ValueError):
                     read_edits(path, labels)
 

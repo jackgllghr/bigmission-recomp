@@ -97,21 +97,21 @@ class DialogueExtractionTests(unittest.TestCase):
                          review_status='draft', translator_note='Speaker needs capture')
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / 'dialogue.csv'
-            path.write_text(csv_text(edited), encoding='utf-8')
+            path.write_text(csv_text(edited), encoding='utf-8', newline='')
             self.assertEqual(read_edits(path, originals, DIALOGUE_FIELDS, protected_tokens), edited)
             for text in ['Lost button', '{BUTTON_CIRCLE}', '{BUTTON_TRIANGLE} {BUTTON_TRIANGLE}',
                          '{BUTTON_TRIANGLE} {BOGUS}', '{BUTTON_TRIANGLE']:
                 bad = copy.deepcopy(edited)
                 bad[0]['translation_en'] = text
-                path.write_text(csv_text(bad), encoding='utf-8')
+                path.write_text(csv_text(bad), encoding='utf-8', newline='')
                 with self.assertRaises(ValueError):
                     read_edits(path, originals, DIALOGUE_FIELDS, protected_tokens)
             bad = copy.deepcopy(edited)
             bad[0]['speaker_id'] = 'guessed_speaker'
-            path.write_text(csv_text(bad), encoding='utf-8')
+            path.write_text(csv_text(bad), encoding='utf-8', newline='')
             with self.assertRaisesRegex(ValueError, 'source/context changed'):
                 read_edits(path, originals, DIALOGUE_FIELDS, protected_tokens)
-            path.write_text(csv_text(edited[:-1]), encoding='utf-8')
+            path.write_text(csv_text(edited[:-1]), encoding='utf-8', newline='')
             with self.assertRaisesRegex(ValueError, 'missing rows'):
                 read_edits(path, originals, DIALOGUE_FIELDS, protected_tokens)
 

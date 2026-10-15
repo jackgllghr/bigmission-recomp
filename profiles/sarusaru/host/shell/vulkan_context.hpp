@@ -8,6 +8,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -113,9 +114,17 @@ private:
     std::vector<VkSemaphore> rendered_;  // one per swapchain image
     bool recording_{};
     bool swapchain_stale_{};
+    // Set when the window's surface is gone: on Android the system destroys
+    // it whenever the app leaves the screen (another app, the file picker),
+    // and SDL gives the window a new one when it comes back. Set from the
+    // thread that reports the event, read on the frame's.
+    std::atomic<bool> surface_lost_{};
 
+    static bool SDLCALL watch_lifecycle(void *context, SDL_Event *event);
     bool create_swapchain(std::string &error);
     void destroy_swapchain();
+    // A new surface (and so swapchain) for the window's current native window.
+    void recreate_surface();
 };
 
 } // namespace sarusaru::shell

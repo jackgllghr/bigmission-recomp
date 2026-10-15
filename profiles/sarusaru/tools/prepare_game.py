@@ -225,7 +225,7 @@ def main():
     parser.add_argument("iso", type=Path)
     parser.add_argument("--output", type=Path, default=PROFILE / "game")
     args = parser.parse_args()
-    supported = json.loads((PROFILE / "config/supported_game.json").read_text())
+    supported = json.loads((PROFILE / "config/supported_game.json").read_text(encoding='utf-8'))
     try:
         with args.iso.open("rb") as stream:
             image = IsoImage(stream)

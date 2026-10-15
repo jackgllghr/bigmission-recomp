@@ -605,6 +605,12 @@ int main(int argc, char **argv) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SaruSaru Recomp", error.what(), nullptr);
         return 2;
     }
+#if defined(__ANDROID__)
+    // SDL picks the activity's orientation from the window: a resizable one
+    // may turn to portrait, whatever the manifest says. The PSP's screen is
+    // landscape, either way up.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         std::cerr << "sarusaru: SDL_Init failed: " << SDL_GetError() << '\n';
         return 1;

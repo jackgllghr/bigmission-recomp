@@ -41,7 +41,7 @@ public:
         if (!path && value.find('/') != value.npos) invalid("invalid entry ID");
         if (path) {
             const std::filesystem::path parsed(value);
-            if (parsed.is_absolute()) invalid("absolute source path");
+            if (parsed.has_root_path()) invalid("absolute source path");
             for (const auto &part : parsed) if (part == "." || part == ".." || part.empty()) invalid("unsafe source path");
             if (value.find("//") != value.npos || value.back() == '/') invalid("unsafe source path");
         }

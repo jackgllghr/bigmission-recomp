@@ -26,7 +26,7 @@ class PlayerFilesTests(unittest.TestCase):
             path.write_bytes(b"invented")
 
     def packaged(self):
-        return sorted(str(relative) for _, relative in package.player_files(self.bin, windows=False))
+        return sorted(relative.as_posix() for _, relative in package.player_files(self.bin, windows=False))
 
     def test_takes_only_the_player_files(self):
         self.assertEqual(self.packaged(), sorted([
@@ -82,6 +82,7 @@ class PlayerFilesTests(unittest.TestCase):
             self.packaged()
 
 
+@unittest.skipIf(sys.platform == "win32", "the Linux install layout is built on Linux")
 class LinuxInstallTests(unittest.TestCase):
     def test_installs_the_launcher_and_its_desktop_files_under_the_prefix(self):
         with tempfile.TemporaryDirectory() as directory:

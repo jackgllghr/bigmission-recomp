@@ -249,11 +249,11 @@ def export(elf_path, output):
     if elf_path.stat().st_size > 32 * 1024 * 1024:
         raise ValueError('Executable exceeds size limit')
     elf = elf_path.read_bytes()
-    identity = json.loads((PROFILE / 'config/supported_game.json').read_text())
+    identity = json.loads((PROFILE / 'config/supported_game.json').read_text(encoding='utf-8'))
     if sha(elf) != identity['executable_sha256']:
         raise ValueError('Executable does not match supported game; context offsets are version specific')
-    metadata = json.loads((PROFILE / 'resources/translations/extraction-context.json').read_text())
-    menu = json.loads(required('english-menu.json').read_text())
+    metadata = json.loads((PROFILE / 'resources/translations/extraction-context.json').read_text(encoding='utf-8'))
+    menu = json.loads(required('english-menu.json').read_text(encoding='utf-8'))
     labels, candidates = extract(elf, metadata, menu)
     # Validate every existing file before replacing any, preserving external work.
     for name, rows in [('labels.csv', labels), ('candidates.csv', candidates)]:
@@ -270,7 +270,7 @@ def export(elf_path, output):
     output.mkdir(parents=True, exist_ok=True)
     for name, content in [('catalog.json', json.dumps(bundle, ensure_ascii=False, indent=2) + '\n'),
                           ('labels.csv', csv_text(labels)), ('candidates.csv', csv_text(candidates)),
-                          ('README.md', (PROFILE / 'docs/translation-handoff.md').read_text())]:
+                          ('README.md', (PROFILE / 'docs/translation-handoff.md').read_text(encoding='utf-8'))]:
         target = output / name
         if target.resolve() == elf_path.resolve():
             raise ValueError('Output would overwrite input')
