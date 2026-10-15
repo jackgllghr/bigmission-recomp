@@ -145,17 +145,7 @@ jobs:
       - name: Check contents
         run: |
           apk=app/build/outputs/apk/debug/app-debug.apk
-          unzip -Z1 "$apk" | sort > "$RUNNER_TEMP/contents.txt"
-          libs=$(grep -E '^lib/' "$RUNNER_TEMP/contents.txt" || true)
-          expected=$(printf 'lib/arm64-v8a/%s\n' libSDL3.so libavcodec.so libavutil.so \
-            libc++_shared.so libmain.so libpsprecomp_runtime.so | sort)
-          if [ "$libs" != "$expected" ]; then
-            echo "Unexpected native libraries:"; diff <(echo "$expected") <(echo "$libs") || true
-            exit 1
-          fi
-          if grep -E '^assets/' "$RUNNER_TEMP/contents.txt" | grep -v -E '^assets/resources/(fonts/[^/]+\.(ttf|txt)|[^/]+-(LICENSE|COPYING|SOURCE)[^/]*\.txt|title\.png)$'; then
-            echo "Unexpected assets above"; exit 1
-          fi
+          python3 ../../scripts/check_android_apk.py "$apk" --allow-missing-compiler
           mkdir -p ../../../../out/package
           cp "$apk" ../../../../out/package/sarusaru-android-arm64-debug.apk
 
