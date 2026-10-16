@@ -7,13 +7,30 @@ with the aim of making the game available on Windows, macOS, Linux, and Android
 with improved performance and configurability, and providing a foundation for
 translating the game.
 
-**Status: early, not yet verified playable end to end.** On macOS arm64 the
-game boots, renders and plays sound in a window through the title screen, the
-attract demo, the save menu and the stage hub, with 60 FPS frame interpolation,
-an adjustable FOV and a launcher in English and Japanese. Linux arm64 installs
-and runs the game; Windows x64 and Linux x64 build in CI but have not yet been
-played. See the [project plan](PLAN.md) and the
+See the [project plan](PLAN.md) and the
 [profile instructions](profiles/sarusaru/README.md).
+
+## What's working
+
+| Feature                                                                               | Status          |
+| ------------------------------------------------------------------------------------- | --------------- |
+| Windows(x86), macOS(arm64), Linux(x86, arm64) and Android                             | ✅ Working      |
+| Resolution scaling                                                                    | ✅ Working      |
+| FOV adjustment                                                                        | ✅ Working      |
+| Translation-ready UI: most menus, dialogue, stage and character names, control hints  | ✅ Working      |
+| Subtitles for FMVs                                                                    | ✅ Working      |
+| Right analog stick camera controls                                                    | ✅ Working      |
+| Controller-specific prompts (Switch, Xbox, PlayStation, keyboard)                     | ✅ Working      |
+| Intro and cutscene skip                                                               | ✅ Working      |
+| PSP save compatibility                                                                | ✅ Working      |
+| 60 FPS (interpolated)                                                                 | 🧪 Experimental |
+| Texture packs ([HD texture pack](https://github.com/jackgllghr/sarusaru-hd-textures)) | 🧪 Experimental |
+| Save states                                                                           | 🧪 Experimental |
+| English machine translation of most menus and dialogue                                | 🧪 Experimental |
+
+> [!TIP]
+> Open the launcher in game with **L3 + R3** on a controller, **Esc** on a
+> keyboard, or **Back** on Android.
 
 Releases contain only the launcher: the first time you press **Play**, it
 builds the game on your machine from your own disc. No game files or game code
@@ -23,20 +40,25 @@ is an optional download from the launcher's settings, published separately in
 
 ## Roadmap
 
-The following milestones describe the project's goals, rather than currently
-supported features. See [PLAN.md](PLAN.md) for detailed progress and acceptance criteria.
+What's still to come. See [PLAN.md](PLAN.md) for detailed progress and
+acceptance criteria.
 
-- Complete faithful gameplay: rendering, audio, movies and PSP services, verified
-  through a representative level, saving, restarting and reloading.
-- Verify PSP-compatible saves, with safe writes, backups, import and export.
-- Improve graphics and controls with adjustable resolution, verified FOV and
-  framerate options, fully rebindable controls and analog camera support.
-- Build a shared launcher and in-game settings UI for ISO installation,
-  configuration and save management, including Android setup and touch support.
-- Provide translation infrastructure for text, fonts and texture replacements,
-  with translation-pack support and Japanese fallback.
-- Deliver tested, reproducible builds for Windows, macOS, Linux and Android,
-  once platform verification and release requirements are met.
+- **Gameplay accuracy:** a full play-through check (new game, a level, save,
+  restart and reload), plus the missing GPU features, utility dialogs and audio
+  effects.
+- **Saves:** saves checked against PPSSPP and real PSP hardware, plus import,
+  export and backups in the launcher.
+- **60 FPS:** check the interpolation (and FOV) in every kind of stage,
+  cutscene and dialog.
+- **HD textures:** extend the HD pack to cover a full play-through.
+- **Translation:** publish the first English pack in
+  [sarusaru-translations](https://github.com/jackgllghr/sarusaru-translations)
+  and extend it beyond the most common menus and dialogue.
+- **Android:** touch controls, lifecycle handling and support for phones that
+  can't build the game themselves.
+- **Releases:** macOS signing and notarisation, a Windows build without a
+  console window, and installs from release packages checked on Windows and
+  Linux x64.
 
 ## PSPRecomp framework
 
