@@ -42,6 +42,32 @@ int main() {
             "orbit changed the target or distance");
     camera.set_input({}); const auto moved = eye(m); update(camera, 66734);
     require(eye(m) == moved, "released stick lost the orbit or accumulated it twice");
+
+    // Native follow turns are cancelled shortly after manual input, then the
+    // native camera regains control and the manual offset turns with it.
+    const auto follow = [&](Camera &c, float angle, unsigned time) {
+        pose(m); store(m, 0x70u, 10.0f * std::sin(angle)); store(m, 0x78u, 10.0f * std::cos(angle));
+        c.on_call(Camera::kBuildView, m, ctx, time);
+    };
+    {
+        Camera held; held.set_input({1, 0, false});
+        follow(held, 0, 0); follow(held, 0, 33367); held.set_input({});
+        const float chosen = std::atan2(load(m, 0x70u), load(m, 0x78u));
+        unsigned time = 33367; float native = 0;
+        for (unsigned i = 0; i < 30; ++i) follow(held, native += 0.02f, time += 33367);
+        require(std::abs(std::atan2(load(m, 0x70u), load(m, 0x78u)) - chosen) < 1e-4f,
+                "follow camera turned the view during the manual hold");
+        for (unsigned i = 0; i < 60; ++i) follow(held, native, time += 33367);
+        const float settled = std::atan2(load(m, 0x70u), load(m, 0x78u));
+        follow(held, native += 0.02f, time += 33367);
+        require(std::abs(std::atan2(load(m, 0x70u), load(m, 0x78u)) - settled - 0.02f) < 1e-4f,
+                "follow camera did not resume after the hold");
+        held.set_input({0.001f, 0, false}); follow(held, native, time += 33367); held.set_input({});
+        const float before = std::atan2(load(m, 0x70u), load(m, 0x78u));
+        follow(held, native += 1.0f, time += 33367);
+        require(std::abs(std::atan2(load(m, 0x70u), load(m, 0x78u)) - before - 1.0f) < 1e-4f,
+                "native cut was cancelled as a follow turn");
+    }
     camera.set_input({0, 0, true}); update(camera, 100101);
     require(eye(m) == original, "reset did not restore native camera");
 
