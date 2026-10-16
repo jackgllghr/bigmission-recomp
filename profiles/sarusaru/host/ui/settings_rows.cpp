@@ -60,12 +60,22 @@ std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direc
     return kOrder[(index + (direction > 0 ? 1 : 2)) % 3];
 }
 
+namespace {
+bool offers_english = true, offers_hd = true;
+} // namespace
+
+void set_offered_downloads(bool english, bool hd_textures) {
+    offers_english = english;
+    offers_hd = hd_textures;
+}
+
 Preset preset_of(const shell::Settings &settings) {
     const bool english = settings.translation_language == "en";
     if (settings.internal_resolution == 1u && settings.texture_pack.empty() && !english &&
         settings.draw_distance == 1.0f && !settings.skip_intro_logos)
         return Preset::Native;
-    if (settings.internal_resolution == kModernResolution && texture_scale(settings) == 4u && english &&
+    if (settings.internal_resolution == kModernResolution &&
+        (offers_hd ? texture_scale(settings) == 4u : settings.texture_pack.empty()) && (english || !offers_english) &&
         settings.draw_distance == kModernDrawDistance && settings.skip_intro_logos)
         return Preset::Modern;
     return Preset::Custom;

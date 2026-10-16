@@ -149,7 +149,9 @@ void rows() {
     step(SettingRow::Fov, settings, 1);
     require(settings.fov_degrees == 30.0f, "FOV after native is not 30");
 
-    require(describe(SettingRow::DrawDistance, settings).value == "Native", "draw distance must start native");
+    require(describe(SettingRow::DrawDistance, settings).value == "8\u00D7", "draw distance must start at 8x (Modern)");
+    settings.draw_distance = 1.0f;
+    require(describe(SettingRow::DrawDistance, settings).value == "Native", "native draw distance not named");
     step(SettingRow::DrawDistance, settings, 1);
     require(settings.draw_distance == 1.5f && describe(SettingRow::DrawDistance, settings).value == "1.5\u00D7",
             "draw distance after native is not 1.5x");
@@ -248,7 +250,8 @@ void rows() {
                 !restart_only(SettingRow::FrameRate) && !restart_only(SettingRow::Fov) &&
                 !restart_only(SettingRow::DrawDistance),
             "rows applied live or at the next start changed");
-    require(describe(SettingRow::SkipIntroLogos, settings).value == "Off", "logo skip must start off");
+    settings.skip_intro_logos = false;
+    require(describe(SettingRow::SkipIntroLogos, settings).value == "Off", "logo skip off not named");
     step(SettingRow::SkipIntroLogos, settings, 1);
     require(settings.skip_intro_logos && describe(SettingRow::SkipIntroLogos, settings).value == "On",
             "logo skip did not turn on");
@@ -273,7 +276,17 @@ void presets() {
     using namespace sarusaru::ui;
     using sarusaru::shell::Settings;
     Settings settings = sarusaru::shell::default_settings();
-    require(preset_of(settings) == Preset::Custom, "the defaults (2x) are not Native");
+    // The defaults are Modern without its downloads: Modern once a build offers neither.
+    require(preset_of(settings) == Preset::Custom, "the defaults are Modern before its downloads");
+    set_offered_downloads(false, false);
+    require(preset_of(settings) == Preset::Modern, "the defaults are not Modern when nothing is offered to download");
+    set_offered_downloads(true, false);
+    settings.translation_language = "en";
+    require(preset_of(settings) == Preset::Modern, "Modern without an HD offer still asks for HD textures");
+    settings.texture_pack = "/data/textures/4x-0123456789abcdef";
+    require(preset_of(settings) == Preset::Custom, "an HD pack the build does not offer reads as Modern");
+    set_offered_downloads(true, true);
+    settings = sarusaru::shell::default_settings();
     require(next_preset(Preset::Custom, 1) == Preset::Native && next_preset(Preset::Custom, -1) == Preset::Modern &&
                 next_preset(Preset::Native, 1) == Preset::Modern && next_preset(Preset::Modern, 1) == Preset::Native &&
                 next_preset(Preset::Native, -1) == Preset::Modern,

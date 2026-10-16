@@ -68,6 +68,10 @@ void step(SettingRow row, shell::Settings &settings, int direction);
 //   Native     1x (480x272)  original  Japanese   native         shown
 //   Modern     4x (1080p)    HD (4x)   English    8x (most)      skipped
 enum class Preset { Native, Modern, Custom };
+// Which of Modern's downloads this build offers (both, until the launcher
+// says otherwise). Modern asks only for those: a build without an HD pack or
+// recipe is Modern with the original textures.
+void set_offered_downloads(bool english, bool hd_textures);
 [[nodiscard]] Preset preset_of(const shell::Settings &settings);
 // The next of Native and Modern in `direction` (Custom is never chosen; it is
 // what is left when the rows are set one by one).

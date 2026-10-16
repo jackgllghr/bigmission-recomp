@@ -145,6 +145,10 @@ private:
     std::vector<SettingRow> preset_pending_;
     // A preset is being applied: its screens come back to the Preset row.
     bool preset_active_{};
+    // The first Play's downloads are under way: the game starts after them.
+    bool play_after_preset_{};
+    // Whether the build offers HD textures: a prebuilt pack, or a recipe and an upscaler.
+    [[nodiscard]] static bool hd_offered();
     void continue_preset();
     // The Textures screen when HD is the prebuilt pack's download.
     void prebuilt_textures();

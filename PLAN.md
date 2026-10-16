@@ -128,7 +128,8 @@ chunk).
 - [x] Presets: Native (1×, original textures, Japanese, native draw distance,
       intro logos) and Modern (4× for 1080p, HD textures, English, 8× draw
       distance, logos skipped), read from those rows (Custom otherwise);
-      Modern chains the English and HD downloads.
+      Modern chains the English and HD downloads. Modern is the default: new
+      settings files start with its rows, and the first Play offers its downloads.
 - [ ] Verify interpolation in stages, cutscenes and dialogs; higher simulation
       rates remain uncompensated; the presentation cap does not change simulation speed.
 - [x] Expose settings and binding capture in the launcher's in-game screen.

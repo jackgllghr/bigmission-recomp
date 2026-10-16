@@ -87,6 +87,7 @@ void status_dot(ImDrawList *draw, ImVec2 center, float radius, ImU32 color) {
 Launcher::Launcher(Layer &layer, shell::Settings &settings, std::filesystem::path settings_path, DiscIdentity identity,
                    Mode mode)
     : layer_(layer), mode_(mode), settings_(settings), settings_path_(std::move(settings_path)), identity_(identity) {
+    set_offered_downloads(install::english_pack_source().has_value(), hd_offered());
     if (in_game()) return;
     if (!settings_.game_disc.empty()) disc_check_ = check_disc(settings_.game_disc, identity_);
     load_title_art();
@@ -175,7 +176,30 @@ void Launcher::go(Screen screen, std::string_view focus) {
     focus_control(focus);
 }
 
+bool Launcher::hd_offered() {
+    return install::prebuilt_pack_source() || (install::texture_recipe_source() && install::upscaler_source());
+}
+
 void Launcher::play() {
+    // A new player's first Play: the Modern preset's downloads the build
+    // offers, each on its own screen (Back skips it), then the game.
+    if (settings_.modern_downloads_pending) {
+        settings_.modern_downloads_pending = false;
+        save();
+        if (settings_.internal_resolution == kModernResolution && settings_.draw_distance == kModernDrawDistance &&
+            settings_.skip_intro_logos) {
+            preset_pending_.clear();
+            if (install::english_pack_source()) preset_pending_.push_back(SettingRow::GameText);
+            if (hd_offered()) preset_pending_.push_back(SettingRow::Textures);
+            pack_return_screen_ = Screen::Home;
+            preset_active_ = true;
+            play_after_preset_ = true;
+            const Screen before = screen_;
+            continue_preset();
+            if (screen_ != before || outcome_) return;
+            play_after_preset_ = false;
+        }
+    }
     if (find_game_module()) {
         outcome_ = Outcome::Play;
         return;
@@ -755,9 +779,9 @@ std::string url_host(std::string_view url) {
 } // namespace
 
 void Launcher::return_from_pack(SettingRow row) {
-    go(pack_return_screen_, pack_return_screen_ == Screen::Install
-                                ? (row == SettingRow::Textures ? "install_textures" : "install_game_text")
-                                : row_id(preset_active_ ? SettingRow::Preset : row));
+    go(pack_return_screen_, pack_return_screen_ == Screen::Install ? (row == SettingRow::Textures ? "install_textures" : "install_game_text")
+                            : pack_return_screen_ == Screen::Home ? "play"
+                                                                   : row_id(preset_active_ ? SettingRow::Preset : row));
     continue_preset();
 }
 
@@ -780,11 +804,16 @@ void Launcher::continue_preset() {
         const SettingRow row = preset_pending_.front();
         preset_pending_.erase(preset_pending_.begin());
         const Screen before = screen_;
-        if (row == SettingRow::GameText && settings_.translation_language != "en") choose_game_text(1);
-        if (row == SettingRow::Textures && texture_scale(settings_) != 4u) select_textures(4u);
+        if (row == SettingRow::GameText && settings_.translation_language != "en" && install::english_pack_source())
+            choose_game_text(1);
+        if (row == SettingRow::Textures && texture_scale(settings_) != 4u && hd_offered()) select_textures(4u);
         if (screen_ != before) return;
     }
     preset_active_ = false;
+    if (play_after_preset_) {
+        play_after_preset_ = false;
+        play();
+    }
 }
 
 void Launcher::choose_game_text(int direction) {

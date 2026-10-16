@@ -291,10 +291,17 @@ cmake -S . -B out/macos-arm64 -DSARUSARU_HD_PACK_URL=https://github.com/<owner>/
 | Native | 1× (480×272) | Original | Japanese | Native | Shown |
 | Modern | 4× (1920×1088) | HD (4×) | English | 8× | Skipped |
 
-Choosing Modern opens the English and HD texture download screens in turn
-when they are not downloaded yet. The preset is read from those rows, not
-stored: changing any of them (or cancelling one of Modern's downloads) shows
-**Custom**. Other rows, such as frame rate and FOV, are left alone.
+Modern is the default. A new `settings.ini` starts with its resolution, draw
+distance and logo skip, and the first **Play** opens the English and HD
+texture download screens in turn (Back skips one) before the game starts;
+`[game] modern_downloads` records that this has happened. Settings files from
+earlier versions keep their values and are not offered the downloads.
+
+Choosing Modern later opens the same screens for whatever is not downloaded
+yet. The preset is read from those rows, not stored: changing any of them (or
+skipping one of Modern's downloads) shows **Custom**. A download the build
+does not offer (no HD pack or recipe, say) is left out of Modern. Other rows,
+such as frame rate and FOV, are left alone.
 
 `SARUSARU_UI_SCRIPT` drives the launcher (and, once the game runs, its pause
 menu: `pad guide` or `padchord leftstick rightstick` opens it) without a person, for checks with
