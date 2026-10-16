@@ -270,7 +270,7 @@ def render_labels(catalog, images, require_title=True, *, output_scale=1):
                                         'common/e_nabi_a4.tm2', 'common/e_nabi_a2.tm2')),
                                     top_hint_bar=asset == 'e_but_1.lzs' and y // 24 in (0, 1, 6),
                                     output_scale=output_scale,
-                                    hint_origin=(x + tx, (y + ty) % 24) if asset == 'e_but_1.lzs' else None)
+                                    hint_origin=(x + tx, (y + ty) % 24) if asset == 'e_but_1.lzs' else None))
         except ValueError as exc:
             raise ValueError(f'{key}: {exc}') from exc
         image.alpha_composite(layer, ((x + tx) * output_scale, (y + ty) * output_scale))
