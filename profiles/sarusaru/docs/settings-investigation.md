@@ -277,6 +277,48 @@ distant robots start moving sooner. Untested: other stages, the hub, sound
 volume or panning tied to the eye, and actors whose position is not the
 world matrix at +80 (those see the real eye).
 
+### Orbit camera collision
+
+Neither native camera tests the eye against geometry. The stage follow camera
+(0x08888FA4) only tests the player against its camera-zone boxes
+(0x089DA96C, a point-in-box test), and the hub camera puts the eye at a fixed
+offset from the player. The stage designs keep native eyes clear; a manually
+orbited eye is not.
+
+Actors move through a shared collision query. Every collision object on the
+list at `*0x08A805F8` (next at +96) has a layer number at +4, and a query
+takes a mask of layers. Two entries were traced in stage 1-1:
+
+- 0x088623B8(mask, start, unit direction, result, f12 = length) casts a ray.
+  Ground probes pass (0, ±1, 0). It returns nonzero with the hit point at
+  result+32, its distance at result+100 and an unnormalized face normal at
+  result+48. It reports a hit even beyond the length.
+- 0x088623F0(mask, start, delta, result, f12 = radius) sweeps a sphere. The
+  player passes its velocity, radius 2.4 and mask 0x07FF5380. It returns zero
+  when the sphere travels the whole delta. Otherwise the fraction of the delta
+  travelled is at result+100, the contact at result+32 and the unit normal at
+  result+48.
+
+Both write only their result, the stack and per-query scratch at
+0x08A80580-0x08A80620 and 0x08AA5700-0x08AA5A00. A RAM diff around a sweep from
+the hook found nothing else changed. They call no imports, so the host can run
+them through `Runtime::invoke_isolated_aot` at the view build, on a borrowed
+stack, continuing at each return address that a generated unit hands back.
+
+Implemented (`game/guest_collision.*`, `game/orbit_camera.*`): once the view
+has been orbited by hand, the eye is a radius-2 sphere swept from the camera
+target with the player's mask. A blocked eye moves in to the contact at once,
+then eases back out at 1.5 times the orbit distance a second once clear. The
+borrowed stack and the scratch are restored afterwards. Native views are not
+swept.
+
+Verification, stage 1-1 at the deck chairs, orbiting 250 degrees: without the
+sweep, the eye passed behind a chair and its frame filled the view. With the
+sweep, the eye stopped in front of it (fraction 0.72). Tilting to the lowest
+angle kept the eye above the sand. Untested: the hub, other stages, and
+collision layers the player collides with but the camera should ignore (such
+as invisible walls).
+
 ## Verification
 
 - Native macOS arm64 shell and settings test executable build successfully.

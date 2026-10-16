@@ -193,11 +193,13 @@ GameSession::~GameSession() {
 void GameSession::observe_call(psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx,
                                std::uint32_t pc, std::uint32_t) {
     if (auto *session = observed_session_) {
+        // The camera's collision query runs guest code; leave its calls alone.
+        if (session->camera_collision.active()) return;
         g_dbg.call(pc, rt.memory(), ctx, session->kernel.now_us());
         dbg_pull(pc, rt.memory(), ctx);
         session->intro_logos.on_call(pc, rt.memory(), ctx, session->controller, session->kernel.now_us());
         if (session->camera_control_) {
-            session->orbit_camera.on_call(pc, rt.memory(), ctx, session->kernel.now_us());
+            session->orbit_camera.on_call(pc, rt.memory(), ctx, session->kernel.now_us(), &session->camera_collision);
             session->camera_fov.on_call(pc, rt.memory(), ctx);
             session->draw_distance.on_call(pc, rt.memory(), ctx);
         }
