@@ -10,7 +10,8 @@ namespace sarusaru::gpu {
 
 // Depth-writing 3D surfaces support outlines, including characters,
 // static scenery and the game’s standard alpha-over blend.
-// Cutouts, additive effects and screen-space draws do not.
+// Cutouts, additive effects, screen-space draws and draws that only mark the
+// stencil (every colour channel masked) do not.
 [[nodiscard]] inline bool geometry_outline(const DrawCall &call) noexcept {
     const bool triangles = call.primitive == PrimitiveType::Triangles ||
         call.primitive == PrimitiveType::TriangleStrip || call.primitive == PrimitiveType::TriangleFan;
@@ -18,7 +19,8 @@ namespace sarusaru::gpu {
         call.blend.destination_factor == 3u && call.blend.equation == 0u;
     return triangles && !call.through && !call.clear_mode &&
         call.depth.test_enabled && call.depth.write_enabled && (!call.blend.enabled || alpha_over) &&
-        (!call.alpha_test.enabled || call.alpha_test.function == 1u);
+        (!call.alpha_test.enabled || call.alpha_test.function == 1u) &&
+        (call.stencil.color_write_mask & 0xFFFFFFu) != 0xFFFFFFu;
 }
 
 // Boundary, silhouette and sharp crease edges of an expanded triangle list.

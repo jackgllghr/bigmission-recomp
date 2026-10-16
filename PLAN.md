@@ -407,22 +407,33 @@ networking (`sceNet*`, 21 in total).
         cached textures, render-to-texture and presentation of the displayed
         framebuffer (uploaded from guest memory when the CPU drew it). Still
         to come: writing GPU results back to guest memory for games that read
-        them, and registers GeState does not model yet (stencil, dithering,
-        morph weights, some texture-mapping modes; Bezier/spline patches).
+        them, and registers GeState does not model yet (dithering, morph
+        weights, some texture-mapping modes; Bezier/spline patches). The
+        stencil test and write masks are modeled, but only clears and
+        stencil-tested draws update the stencil, not other alpha writes.
 12. [~] Audio: `sceAudio` output channels are modeled headless on the
         virtual clock (blocking output paces the audio thread; samples are
         counted, not played). `sceSasCore` synthesizes VAG voices with
         envelopes and mixes grains (reverb recorded, not applied).
         `sceAtrac3plus` decodes streamed or in-memory ATRAC3/ATRAC3plus
         tracks with FFmpeg (LGPL, dynamically linked, built from a pinned
-        source). Output plays through SDL. Still to come: SAS reverb.
+        source). Output plays through SDL. SAS reverb runs the PlayStation
+        SPU reverb (psx-spx formula and presets) at 22050 Hz on the voices'
+        effect sends, for all nine PSP types; echo and delay follow
+        `sceSasRevParam`. The game selects Hall with the wet output on at
+        half volume. Not yet compared by ear or sample against a PSP.
 13. [x] Movies: `scePsmfPlayer` plays PSMF movies from the disc (Yakumo's
         demuxer, H.264 and ATRAC3plus on FFmpeg), timed on the virtual clock,
         into the game's buffers in its configured pixel format.
 14. [~] Utility dialogs: savedata is modeled (load/save/list/delete/sizes on
         a per-user PSP-layout memory stick, PSP save encryption with the
-        public keys, mode 3 for this game). No dialog UI is drawn yet. Still
-        to come: message dialog, OSK, and checking saves against a PSP.
+        public keys, mode 3 for this game). No dialog UI is drawn yet. A save
+        made outside the recomp (`UCJS10060MAIN`, mode 5, apparently from
+        PPSSPP) loads: its data file decrypts, its file-list hash matches
+        and its PARAM.SFO hashes are reproduced exactly. Still to come:
+        message dialog, OSK, a save made by a PSP, and whether this game's
+        saves should be mode 3 (what the recomp writes) or mode 5 (what the
+        sample uses).
 15. [ ] Ad-hoc networking: report "unavailable" faithfully so single-player
         paths proceed; real multiplayer is out of scope for now.
 16. [ ] Acceptance run: title screen, new game, representative level,
@@ -493,12 +504,14 @@ In priority order:
 
 - Milestone 2 acceptance run (title, new game, a level, save, restart and
   reload) with real input; not yet done.
-- GE: GPU results are not written back to guest memory; stencil, dithering,
-  morph weights, some texture modes and Bezier/spline patches are missing.
+- GE: GPU results are not written back to guest memory; dithering, morph
+  weights, some texture modes and Bezier/spline patches are missing, and draws
+  without the stencil test do not update the stencil.
 - Utility dialogs: no message dialog or OSK; no dialog UI is drawn. Saves are
   unchecked against PPSSPP and a PSP.
 - Unreached services: `ms0:` file paths, `umd0:` raw access, remaining
-  startup libraries, ad-hoc networking reported as unavailable; SAS reverb.
+  startup libraries, ad-hoc networking reported as unavailable.
+- Audio: SAS reverb is not yet compared against a PSP.
 - Windows and Linux x64: install and play from a release package has not been
   verified, and the release workflow has never run.
 - Distribution: macOS signing and notarisation, a Windows build without a

@@ -25,6 +25,149 @@ std::int64_t exponent_rate(std::uint32_t n) noexcept {
     const std::int64_t rate = (static_cast<std::int64_t>(7u - (n & 3u)) << 24u) >> (n >> 2u);
     return rate == 0 ? 1 : rate;
 }
+
+struct ReverbPreset {
+    std::uint32_t bytes;  // Work buffer size.
+    Reverb::Registers registers;
+};
+
+// psx-spx "SPU Reverb Examples", indexed by PSP type: space is the PS1's
+// Space Echo, echo its Chaos Echo, pipe its Half Echo. The trailing vLIN/vRIN
+// (8000h) are not used: the voices' effect sends are the input.
+constexpr ReverbPreset kReverbPresets[Reverb::kMaxType + 1] = {
+    {0x26C0u, {0x007D, 0x005B, 0x6D80, 0x54B8, 0xBED0, 0x0000, 0x0000, 0xBA80,
+               0x5800, 0x5300, 0x04D6, 0x0333, 0x03F0, 0x0227, 0x0374, 0x01EF,
+               0x0334, 0x01B5, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+               0x0000, 0x0000, 0x01B4, 0x0136, 0x00B8, 0x005C, 0x8000, 0x8000}},
+    {0x1F40u, {0x0033, 0x0025, 0x70F0, 0x4FA8, 0xBCE0, 0x4410, 0xC0F0, 0x9C00,
+               0x5280, 0x4EC0, 0x03E4, 0x031B, 0x03A4, 0x02AF, 0x0372, 0x0266,
+               0x031C, 0x025D, 0x025C, 0x018E, 0x022F, 0x0135, 0x01D2, 0x00B7,
+               0x018F, 0x00B5, 0x00B4, 0x0080, 0x004C, 0x0026, 0x8000, 0x8000}},
+    {0x4840u, {0x00B1, 0x007F, 0x70F0, 0x4FA8, 0xBCE0, 0x4510, 0xBEF0, 0xB4C0,
+               0x5280, 0x4EC0, 0x0904, 0x076B, 0x0824, 0x065F, 0x07A2, 0x0616,
+               0x076C, 0x05ED, 0x05EC, 0x042E, 0x050F, 0x0305, 0x0462, 0x02B7,
+               0x042F, 0x0265, 0x0264, 0x01B2, 0x0100, 0x0080, 0x8000, 0x8000}},
+    {0x6FE0u, {0x00E3, 0x00A9, 0x6F60, 0x4FA8, 0xBCE0, 0x4510, 0xBEF0, 0xA680,
+               0x5680, 0x52C0, 0x0DFB, 0x0B58, 0x0D09, 0x0A3C, 0x0BD9, 0x0973,
+               0x0B59, 0x08DA, 0x08D9, 0x05E9, 0x07EC, 0x04B0, 0x06EF, 0x03D2,
+               0x05EA, 0x031D, 0x031C, 0x0238, 0x0154, 0x00AA, 0x8000, 0x8000}},
+    {0xADE0u, {0x01A5, 0x0139, 0x6000, 0x5000, 0x4C00, 0xB800, 0xBC00, 0xC000,
+               0x6000, 0x5C00, 0x15BA, 0x11BB, 0x14C2, 0x10BD, 0x11BC, 0x0DC1,
+               0x11C0, 0x0DC3, 0x0DC0, 0x09C1, 0x0BC4, 0x07C1, 0x0A00, 0x06CD,
+               0x09C2, 0x05C1, 0x05C0, 0x041A, 0x0274, 0x013A, 0x8000, 0x8000}},
+    {0xF6C0u, {0x033D, 0x0231, 0x7E00, 0x5000, 0xB400, 0xB000, 0x4C00, 0xB000,
+               0x6000, 0x5400, 0x1ED6, 0x1A31, 0x1D14, 0x183B, 0x1BC2, 0x16B2,
+               0x1A32, 0x15EF, 0x15EE, 0x1055, 0x1334, 0x0F2D, 0x11F6, 0x0C5D,
+               0x1056, 0x0AE1, 0x0AE0, 0x07A2, 0x0464, 0x0232, 0x8000, 0x8000}},
+    {0x18040u, {0x0001, 0x0001, 0x7FFF, 0x7FFF, 0x0000, 0x0000, 0x0000, 0x8100,
+                0x0000, 0x0000, 0x1FFF, 0x0FFF, 0x1005, 0x0005, 0x0000, 0x0000,
+                0x1005, 0x0005, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+                0x0000, 0x0000, 0x1004, 0x1002, 0x0004, 0x0002, 0x8000, 0x8000}},
+    {0x18040u, {0x0001, 0x0001, 0x7FFF, 0x7FFF, 0x0000, 0x0000, 0x0000, 0x0000,
+                0x0000, 0x0000, 0x1FFF, 0x0FFF, 0x1005, 0x0005, 0x0000, 0x0000,
+                0x1005, 0x0005, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+                0x0000, 0x0000, 0x1004, 0x1002, 0x0004, 0x0002, 0x8000, 0x8000}},
+    {0x3C00u, {0x0017, 0x0013, 0x70F0, 0x4FA8, 0xBCE0, 0x4510, 0xBEF0, 0x8500,
+               0x5F80, 0x54C0, 0x0371, 0x02AF, 0x02E5, 0x01DF, 0x02B0, 0x01D7,
+               0x0358, 0x026A, 0x01D6, 0x011E, 0x012D, 0x00B1, 0x011F, 0x0059,
+               0x01A0, 0x00E3, 0x0058, 0x0040, 0x0028, 0x0014, 0x8000, 0x8000}},
+};
+
+std::int32_t volume(std::uint16_t reg) noexcept { return static_cast<std::int16_t>(reg); }
+std::int32_t offset(std::uint16_t reg) noexcept { return static_cast<std::int32_t>(reg) * 4; }  // In samples.
+std::int64_t scale(std::int64_t value, std::int32_t volume) noexcept { return (value * volume) >> 15; }
+}
+
+void Reverb::set_type(std::int32_t type) {
+    type_ = type;
+    position_ = 0u;
+    previous_left_ = previous_right_ = 0;
+    if (type == kOff) buffer_.clear();
+    else buffer_.assign(kReverbPresets[type].bytes / 2u, 0);
+    load_registers();
+}
+
+void Reverb::set_parameters(std::int32_t delay, std::int32_t feedback) {
+    delay_ = delay;
+    feedback_ = feedback;
+    load_registers();
+}
+
+void Reverb::load_registers() {
+    if (type_ == kOff) return;
+    registers_ = kReverbPresets[type_].registers;
+    if (type_ != kEcho && type_ != kDelay) return;
+    // Echo and delay are computed: with D = 16 * (delay + 1), the echo's taps
+    // move D units apart and vWALL carries the feedback. At delay 255 this
+    // reproduces the PS1 table exactly; sceSasRevParam caps delay at 127.
+    auto &r = registers_;
+    const auto d = static_cast<std::uint16_t>((delay_ + 1) * 16);
+    r.mLSAME = static_cast<std::uint16_t>(d * 2 - r.dAPF1);
+    r.mRSAME = static_cast<std::uint16_t>(d - r.dAPF2);
+    r.mLCOMB1 = static_cast<std::uint16_t>(r.mRCOMB1 + d);
+    r.dLSAME = static_cast<std::uint16_t>(r.dRSAME + d);
+    r.mLAPF1 = static_cast<std::uint16_t>(r.mLAPF2 + d);
+    r.mRAPF1 = static_cast<std::uint16_t>(d + r.mLAPF2 / 2);
+    r.vWALL = static_cast<std::uint16_t>(-(feedback_ << 8));
+}
+
+std::int16_t &Reverb::at(std::int32_t samples) noexcept {
+    const auto size = static_cast<std::int64_t>(buffer_.size());
+    std::int64_t index = (static_cast<std::int64_t>(position_) + samples) % size;
+    if (index < 0) index += size;
+    return buffer_[static_cast<std::size_t>(index)];
+}
+
+// One 22050 Hz step of the psx-spx formula. The "-2" byte taps are the
+// previous sample of the same line.
+void Reverb::step(std::int32_t in_left, std::int32_t in_right, std::int32_t &out_left, std::int32_t &out_right) noexcept {
+    const Registers &r = registers_;
+    const std::int32_t wall = volume(r.vWALL), iir = volume(r.vIIR);
+    const auto reflect = [&](std::int32_t input, std::uint16_t write, std::uint16_t read) {
+        const std::int64_t previous = at(offset(write) - 1);
+        const std::int64_t reflected = scale(at(offset(read)), wall);
+        at(offset(write)) = clamp16(scale(input + reflected - previous, iir) + previous);
+    };
+    reflect(in_left, r.mLSAME, r.dLSAME);
+    reflect(in_right, r.mRSAME, r.dRSAME);
+    reflect(in_left, r.mLDIFF, r.dRDIFF);
+    reflect(in_right, r.mRDIFF, r.dLDIFF);
+    std::int64_t left = scale(at(offset(r.mLCOMB1)), volume(r.vCOMB1)) + scale(at(offset(r.mLCOMB2)), volume(r.vCOMB2)) +
+        scale(at(offset(r.mLCOMB3)), volume(r.vCOMB3)) + scale(at(offset(r.mLCOMB4)), volume(r.vCOMB4));
+    std::int64_t right = scale(at(offset(r.mRCOMB1)), volume(r.vCOMB1)) + scale(at(offset(r.mRCOMB2)), volume(r.vCOMB2)) +
+        scale(at(offset(r.mRCOMB3)), volume(r.vCOMB3)) + scale(at(offset(r.mRCOMB4)), volume(r.vCOMB4));
+    const auto all_pass = [&](std::int64_t value, std::uint16_t write, std::uint16_t distance, std::uint16_t gain) {
+        const std::int64_t delayed = at(offset(write) - offset(distance));
+        value -= scale(delayed, volume(gain));
+        at(offset(write)) = clamp16(value);
+        return scale(value, volume(gain)) + delayed;
+    };
+    left = all_pass(all_pass(left, r.mLAPF1, r.dAPF1, r.vAPF1), r.mLAPF2, r.dAPF2, r.vAPF2);
+    right = all_pass(all_pass(right, r.mRAPF1, r.dAPF1, r.vAPF1), r.mRAPF2, r.dAPF2, r.vAPF2);
+    out_left = clamp16(left);
+    out_right = clamp16(right);
+    position_ = (position_ + 1u) % buffer_.size();
+}
+
+void Reverb::process(std::span<std::int64_t> left, std::span<std::int64_t> right, std::int32_t volume_left,
+                     std::int32_t volume_right) {
+    if (type_ == kOff) {
+        std::fill(left.begin(), left.end(), 0);
+        std::fill(right.begin(), right.end(), 0);
+        return;
+    }
+    // Halve the rate by averaging pairs; double it again by interpolating
+    // from the previous output. Volumes go from 0x1000 to 1.15 unity.
+    for (std::size_t i = 0; i + 1u < left.size(); i += 2u) {
+        std::int32_t out_left = 0, out_right = 0;
+        step(clamp16((left[i] + left[i + 1u]) / 2), clamp16((right[i] + right[i + 1u]) / 2), out_left, out_right);
+        left[i] = scale((previous_left_ + out_left) / 2, volume_left * 8);
+        right[i] = scale((previous_right_ + out_right) / 2, volume_right * 8);
+        left[i + 1u] = scale(out_left, volume_left * 8);
+        right[i + 1u] = scale(out_right, volume_right * 8);
+        previous_left_ = out_left;
+        previous_right_ = out_right;
+    }
 }
 
 void VagDecoder::start(std::uint32_t address, std::uint32_t size, bool loop) noexcept {
@@ -171,6 +314,10 @@ std::int32_t SasCore::init(std::uint32_t core, std::uint32_t grain, std::uint32_
     max_voices_ = voices;
     output_mode_ = output_mode;
     voices_ = {};
+    reverb_ = {};
+    reverb_left_ = reverb_right_ = 0;
+    dry_on_ = 1;
+    wet_on_ = 0;
     return 0;
 }
 
@@ -328,16 +475,15 @@ std::int32_t SasCore::set_output_mode(std::uint32_t mode) {
 }
 
 std::int32_t SasCore::set_reverb_type(std::int32_t type) {
-    if (type < -1 || type > 7) return static_cast<std::int32_t>(kInvalidReverbType);
-    reverb_type_ = type;
+    if (type < Reverb::kOff || type > Reverb::kMaxType) return static_cast<std::int32_t>(kInvalidReverbType);
+    reverb_.set_type(type);
     return 0;
 }
 
 std::int32_t SasCore::set_reverb_parameters(std::int32_t delay, std::int32_t feedback) {
     if (delay < 0 || delay > 127) return static_cast<std::int32_t>(kInvalidReverbDelay);
     if (feedback < 0 || feedback > 127) return static_cast<std::int32_t>(kInvalidReverbFeedback);
-    reverb_delay_ = delay;
-    reverb_feedback_ = feedback;
+    reverb_.set_parameters(delay, feedback);
     return 0;
 }
 
@@ -375,7 +521,7 @@ std::int32_t SasCore::render(psprecomp::GuestMemory &memory, std::uint32_t outpu
     if (!initialized()) return static_cast<std::int32_t>(kNotInitialized);
     if (output_mode_ != 0u) return static_cast<std::int32_t>(kInvalidOutputMode);
     if ((output & 1u) != 0u || !memory.contains(output, grain_ * 4u)) return static_cast<std::int32_t>(kBadAddress);
-    std::vector<std::int64_t> left(grain_, 0), right(grain_, 0);
+    std::vector<std::int64_t> left(grain_, 0), right(grain_, 0), send_left(grain_, 0), send_right(grain_, 0);
     for (std::uint32_t index = 0; index < max_voices_; ++index) {
         Voice &voice = voices_[index];
         if (!voice.on || voice.paused) continue;
@@ -397,8 +543,17 @@ std::int32_t SasCore::render(psprecomp::GuestMemory &memory, std::uint32_t outpu
             const std::int64_t shaped = (sample * voice.envelope.height()) >> 30;
             left[i] += (shaped * voice.left) >> 12;
             right[i] += (shaped * voice.right) >> 12;
+            send_left[i] += (shaped * voice.effect_left) >> 12;
+            send_right[i] += (shaped * voice.effect_right) >> 12;
             if (voice.envelope.phase() == Envelope::Phase::Off) voice.on = false;
         }
+    }
+    // The reverb runs whenever a type is set, so its tail stays continuous
+    // while the wet output is switched off.
+    reverb_.process(send_left, send_right, reverb_left_, reverb_right_);
+    for (std::uint32_t i = 0; i < grain_; ++i) {
+        left[i] = (dry_on_ != 0 ? left[i] : 0) + (wet_on_ != 0 ? send_left[i] : 0);
+        right[i] = (dry_on_ != 0 ? right[i] : 0) + (wet_on_ != 0 ? send_right[i] : 0);
     }
     for (std::uint32_t i = 0; i < grain_; ++i) {
         const std::uint32_t address = output + i * 4u;

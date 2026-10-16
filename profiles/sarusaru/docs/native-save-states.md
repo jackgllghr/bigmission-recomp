@@ -47,7 +47,7 @@ callback and interrupt state; GE queues/registers/matrices; display and input;
 file descriptors and positions; modules, RTC, SAS voices/envelopes, audio,
 ATRAC tracks, movie demuxers, and decoder input histories. Host bindings stay
 attached to the destination session. Decoder histories are replayed into fresh
-decoders before committing a load. Vulkan color and depth targets are restored
+decoders before committing a load. Vulkan color, depth, and stencil targets are restored
 into a new renderer before replacing the live renderer. Audio queues,
 interpolation, input settling, and presentation pacing reset after loading.
 
@@ -63,8 +63,9 @@ track loops/seeks, or movie restarts.
 
 On macOS arm64, the optional native-session fixture test restores into a fresh
 session after destroying the source. It checks guest registers and memory,
-open-file position, controller/audio state, and rejection of corrupt or
-incompatible files. With bundled FFmpeg, it also compares the next H.264
+open-file position, controller/audio state, GE stencil settings, and rejection
+of corrupt or incompatible files. SAS reverb work buffers, moving position,
+and interpolation history preserve the next grain of wet PCM byte for byte. With bundled FFmpeg, it also compares the next H.264
 picture, movie audio, and ATRAC track PCM byte for byte after restoration.
 
 The macOS Release launcher suite passed all 50 tests, with the optional native

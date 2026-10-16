@@ -95,9 +95,13 @@ private:
     };
     std::unordered_map<std::uint32_t, Texture> host_textures_;
     struct PipelineKey {
-        std::uint32_t topology{}, blend{}, depth{}, raster{};
+        // stencil: bit 0 the test, 1-3 its compare op, 4-6 the fail op, 7-9
+        // the pass op, 10-12 the depth-fail op, 13-20 the compare mask, 21-28
+        // the write mask (the reference is dynamic).
+        std::uint32_t topology{}, blend{}, depth{}, raster{}, stencil{};
         bool operator<(const PipelineKey &other) const noexcept {
-            return std::tie(topology, blend, depth, raster) < std::tie(other.topology, other.blend, other.depth, other.raster);
+            return std::tie(topology, blend, depth, raster, stencil) <
+                   std::tie(other.topology, other.blend, other.depth, other.raster, other.stencil);
         }
     };
     // A texture as resolved when an in-between draw was queued: a cached
