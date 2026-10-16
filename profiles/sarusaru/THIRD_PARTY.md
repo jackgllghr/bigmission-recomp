@@ -106,10 +106,10 @@ read as a reference for its device handling (see `YAKUMO_REUSE.md`), not copied.
 
 ## In-game replacement label font (SIL OFL 1.1)
 
-`tools/fonts/MPLUSRounded1c-ExtraBold-ASCII.ttf` is a printable-ASCII subset of
-the same pinned M PLUS Rounded 1c ExtraBold font used by the launcher.
-The subset is checked in for reproducible offline translation-pack authoring.
-Its license and regeneration instructions are in `tools/fonts/OFL.txt` and
+`tools/fonts/MPLUSRounded1c-{Bold,ExtraBold}-ASCII.ttf` are printable-ASCII
+subsets of the same pinned M PLUS Rounded 1c fonts used by the launcher.
+The subsets are checked in for reproducible offline translation-pack authoring.
+Their license and regeneration instructions are in `tools/fonts/OFL.txt` and
 `tools/fonts/README.md`. Generated label images do not embed the font file.
 
 ## llvm-mingw (Windows; downloaded, not in the repository)

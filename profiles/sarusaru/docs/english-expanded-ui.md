@@ -230,8 +230,8 @@ at the active render scale. Prompt tests check both Xbox types at 1x/4x,
 including the colored letters in the small diagonal pairs.
 
 Replacement image labels use M PLUS Rounded 1c ExtraBold with a solid
-`#f9ce00` face. The authoring tool uses the bundled printable-ASCII font
-subset in `tools/fonts/`. Their outlines transition
+`#f9ce00` face. Control hints use the slightly lighter Bold weight.
+The authoring tool uses the bundled printable-ASCII font subsets in `tools/fonts/`. Their outlines transition
 from `#b33716` at the outside to `#ff9403` beside the face.
 The outer stroke is three logical pixels wide, increased from two, with
 concentric strokes interpolating between red and orange. Native and HD

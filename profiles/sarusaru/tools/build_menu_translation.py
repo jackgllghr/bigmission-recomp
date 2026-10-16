@@ -96,10 +96,11 @@ def encode_pixel_runs(rgba):
 
 
 @lru_cache(maxsize=128)
-def label_font(size):
+def label_font(size, *, controls=False):
     """The bundled rounded face keeps offline pack builds reproducible."""
     from PIL import ImageFont
-    return ImageFont.truetype(str(PROFILE / 'tools/fonts/MPLUSRounded1c-ExtraBold-ASCII.ttf'), size=size)
+    weight = 'Bold' if controls else 'ExtraBold'
+    return ImageFont.truetype(str(PROFILE / f'tools/fonts/MPLUSRounded1c-{weight}-ASCII.ttf'), size=size)
 
 
 def render_ui_label(text, size, width, height, alignment='center', *, controls=False,
@@ -109,7 +110,7 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     if alignment not in ('left', 'center'):
         raise ValueError('Label alignment must be left or center')
     scale = max(4, output_scale)
-    font = label_font(size * scale)
+    font = label_font(size * scale, controls=controls)
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
     body, outline, offset = scale / 2, 3 * scale, 3 * scale / 4
