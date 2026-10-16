@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "kernel/early_kernel.hpp"
 #include "psprecomp/runtime.hpp"
@@ -19,6 +20,7 @@ inline constexpr std::uint32_t kModuleNotStarted = 0x80020134u;
 // this profile provides by HLE, so "loading" one only creates a module ID.
 // Any other module stops execution, naming its path.
 class ModuleManager {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     explicit ModuleManager(kernel::EarlyKernel &kernel);
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "ctrl/controller.hpp"
 
@@ -7,6 +8,7 @@ namespace sarusaru::game {
 // The opening logo task in the verified UCJS10060 executable. Its update is
 // dispatched virtually, so both chained and outer runtime calls observe it.
 class IntroLogos {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     static constexpr std::uint32_t kUpdate = 0x08905FC8u;
     explicit IntroLogos(bool automatic = false) : requested_(automatic) {}

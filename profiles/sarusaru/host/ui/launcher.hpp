@@ -35,7 +35,7 @@ class UiScript;
 
 class Launcher {
 public:
-    enum class Outcome { Play, Quit, Resume };
+    enum class Outcome { Play, Quit, Resume, SaveState, LoadState };
     enum class Mode { Launcher, InGame };
 
     // `settings` is edited in place and saved to `settings_path` as it changes.

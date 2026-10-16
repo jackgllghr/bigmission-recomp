@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "psprecomp/runtime.hpp"
 #include <cstdint>
@@ -8,6 +9,7 @@ namespace sarusaru::game {
 // The supported executable's native frame interval. This changes game update
 // cadence; fixed-step game logic is not compensated, so overrides are experimental.
 class FrameRateOverride {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     explicit FrameRateOverride(std::uint32_t fps = 0);
     [[nodiscard]] bool enabled() const noexcept { return interval_ != 0; }

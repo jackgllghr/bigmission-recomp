@@ -13,6 +13,11 @@ X(StatusChoose, "Locate your disc image of {0} to play", "あそぶには {0} �
 X(LocateDisc, "Locate game disc", "ゲームディスクを探す")
 // The pause menu over the game
 X(PausedTitle, "Paused", "ポーズ")
+X(SaveState, "Save state", "ステートを保存")
+X(LoadState, "Load state", "ステートを読み込む")
+X(StateSaved, "State saved", "ステートを保存しました")
+X(StateLoaded, "State loaded", "ステートを読み込みました")
+X(StateFailed, "Save state error: {0}", "ステートエラー：{0}")
 X(Resume, "Resume", "つづける")
 X(QuitGame, "Quit game", "ゲームをやめる")
 X(HintResume, "Resume", "つづける")
@@ -159,7 +164,7 @@ X(DescReset, "Puts every binding for this device back as it was; the other devic
 X(AlsoUsedFor, "Also used for: {0}", "ほかの操作にも使われています：{0}")
 X(NotBound, "Not bound: this does nothing until something is set.", "割り当てなし：設定するまで使えません。")
 X(CaptureKey, "Press a key for {0}", "{0} に使うキーを押してください")
-X(CapturePad, "Press a button or move a stick for {0}", "{0} に使うボタンを押すか、スティックを倒してください")
+X(CapturePad, "Press a button, hold two together, or move a stick for {0}", "{0} に使うボタンを1つ、または2つ同時に押すか、スティックを倒してください")
 X(CaptureAdding, "It will be added to the others.", "今の割り当てに追加されます。")
 X(CaptureReplacing, "It will replace the current input.", "今の割り当てと置き換わります。")
 X(CaptureKeyCancel, "Esc cancels. (Esc itself can be set in settings.ini.)",

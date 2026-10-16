@@ -6,9 +6,10 @@ including execution outside the compiled game corpus through an interpreter.
 
 ## Implementation status
 
-**Full GameSession save/load is not implemented.** This branch currently
-provides the format and execution prerequisites below. It does not expose
-save/load slots in the launcher or import a snapshot into a running session.
+**PPSSPP-to-GameSession interchange is not implemented.** The codecs below
+provide format and execution foundations. The launcher separately supports
+[native quick save/load](native-save-states.md), including persistent files and
+remappable shortcuts; those files are not PPSSPP-compatible.
 
 - `host/save_state/ppst.*`: revision 4/5 containers, uncompressed, raw Snappy,
   and Zstandard payloads, bounded input/output, explicit little-endian fields,
@@ -132,14 +133,12 @@ ctest --test-dir out/save-states --output-on-failure
    HLE dispatch. Reconcile loaded PSP modules, exports/imports, and guest code
    with native module replacements. Extend interpreter instruction coverage
    as required by those modules.
-4. Wire GameSession save/load requests to the implemented outer dispatch hook.
-   Validate a detached complete session first, then apply it after AOT frames
-   unwind. The frame observer itself may have live native callers and is not
-   a safe restoration point.
-5. Flush/reset host rendering, interpolation, texture caches, audio output,
-   decoder state, and presentation pacing after load. Add slots, hotkeys, and
-   user-visible errors only when the complete session restore works.
-6. Verify both PPSSPP → recompilation and recompilation → PPSSPP at the title,
+4. Integrate the PPSSPP adapters with the native session restore transaction.
+   Native quick states already use the outer dispatch hook and replace renderer,
+   decoder, audio, interpolation, and pacing state after detached preparation.
+   The frame observer itself may have live native callers and is not a safe
+   restoration point.
+5. Verify both PPSSPP → recompilation and recompilation → PPSSPP at the title,
    hub, gameplay, and movie/dialog boundaries, then advance several frames and
    exercise file I/O, audio, callbacks, and object waits after each transfer.
 

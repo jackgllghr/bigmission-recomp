@@ -309,6 +309,19 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_sarusaru_abi_i
 string(SHA256 SARUSARU_GAME_ABI "${_sarusaru_abi}")
 string(SUBSTRING "${SARUSARU_GAME_ABI}" 0 16 SARUSARU_GAME_ABI)
 configure_file(host/game_abi.hpp.in game_abi.hpp @ONLY)
+# Native states include host-private state and decoder histories. Reject files
+# from another host implementation rather than applying an incompatible schema.
+file(GLOB_RECURSE _sarusaru_state_inputs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/host/*.hpp" "${CMAKE_CURRENT_SOURCE_DIR}/host/*.cpp")
+list(SORT _sarusaru_state_inputs)
+set(_sarusaru_state_abi "${SARUSARU_GAME_ABI} ${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} ${SARUSARU_HAS_FFMPEG}")
+foreach(input IN LISTS _sarusaru_state_inputs)
+    file(SHA256 "${input}" hash)
+    string(APPEND _sarusaru_state_abi " ${hash}")
+endforeach()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_sarusaru_state_inputs})
+string(SHA256 SARUSARU_NATIVE_STATE_ABI "${_sarusaru_state_abi}")
+configure_file(host/save_state/native_abi.hpp.in native_state_abi.hpp @ONLY)
+
 
 # Generated code is optimised: at -O0 each unit's stack frame is so large
 # that chained guest calls (up to 48 deep) overflow the native stack.
@@ -432,16 +445,31 @@ function(sarusaru_game_stack target)
 endfunction()
 
 # Everything one running game needs, shared by the bootstrap and the shell.
-add_library(sarusaru_session STATIC host/session.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
+add_library(sarusaru_session STATIC host/save_state/native_state.cpp host/session.cpp host/startup_hle.cpp host/kernel/early_kernel.cpp
     host/kernel/sync.cpp host/kernel/interrupts.cpp host/umd/umd_drive.cpp host/ctrl/controller.cpp
     host/display/display.cpp host/ge/ge.cpp host/io/io_manager.cpp
     host/rtc/rtc.cpp host/modules/utility_modules.cpp host/modules/module_manager.cpp host/audio/audio.cpp
     host/sas/sas.cpp)
 target_include_directories(sarusaru_session PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/host")
-target_link_libraries(sarusaru_session PUBLIC sarusaru_game_module sarusaru_disc sarusaru_savedata sarusaru_atrac sarusaru_gpu
+target_link_libraries(sarusaru_session PUBLIC sarusaru_ppst sarusaru_game_module sarusaru_disc sarusaru_savedata sarusaru_atrac sarusaru_gpu
     sarusaru_text sarusaru_frame_rate)
 if(SARUSARU_HAS_FFMPEG)
     target_compile_definitions(sarusaru_session PRIVATE SARUSARU_HAS_FFMPEG=1)
+endif()
+if(PSPRECOMP_BUILD_PROFILE_TESTS)
+    add_library(sarusaru_native_state_test_module MODULE tests/native_state_module.cpp host/game_module_entry.cpp)
+    set_target_properties(sarusaru_native_state_test_module PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-modules" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-modules")
+    target_include_directories(sarusaru_native_state_test_module PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    target_link_libraries(sarusaru_native_state_test_module PRIVATE psprecomp_runtime)
+    add_executable(sarusaru_native_state_tests tests/native_state_tests.cpp)
+    target_link_libraries(sarusaru_native_state_tests PRIVATE sarusaru_session)
+    add_dependencies(sarusaru_native_state_tests sarusaru_native_state_test_module)
+    set(SARUSARU_NATIVE_STATE_TEST_ISO "" CACHE FILEPATH "User-owned disc for native session save/load verification")
+    if(SARUSARU_NATIVE_STATE_TEST_ISO)
+        add_test(NAME sarusaru_native_state_tests COMMAND sarusaru_native_state_tests
+            "${SARUSARU_NATIVE_STATE_TEST_ISO}" "$<TARGET_FILE:sarusaru_native_state_test_module>")
+    endif()
 endif()
 add_executable(sarusaru_bootstrap host/bootstrap.cpp)
 target_link_libraries(sarusaru_bootstrap PRIVATE sarusaru_session)

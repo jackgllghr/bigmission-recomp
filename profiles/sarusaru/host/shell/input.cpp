@@ -84,6 +84,8 @@ InputState map_input(const ControlSettings &settings, std::span<const bool> keys
     result.camera_reset = value(Action::CameraReset) > 0.5f;
     result.fast_forward = value(Action::FastForward) > 0.5f;
     result.menu = value(Action::Menu) > 0.5f;
+    result.save_state = value(Action::SaveState) > 0.5f;
+    result.load_state = value(Action::LoadState) > 0.5f;
     return result;
 }
 InputState Input::sample() const {

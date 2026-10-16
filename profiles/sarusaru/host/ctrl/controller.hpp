@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "kernel/early_kernel.hpp"
 #include "psprecomp/runtime.hpp"
@@ -23,6 +24,7 @@ inline constexpr std::uint32_t kSampleSize = 16u;
 // there are none. Until host input exists the pad is neutral, or follows a
 // script of timed pad states (see parse_input_script).
 class Controller {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     struct Pad {
         std::uint32_t buttons{};

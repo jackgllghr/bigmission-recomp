@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "psprecomp/runtime.hpp"
 
@@ -42,6 +43,7 @@ enum class Curve : std::uint32_t {
 // start, bit 0 the end of the data, bit 1 with it (3) an end that jumps back
 // to the loop start when the voice loops, and 7 an unconditional end.
 class VagDecoder {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     void start(std::uint32_t address, std::uint32_t size, bool loop) noexcept;
     // Next sample, or nullopt once the data has ended.
@@ -59,6 +61,7 @@ private:
 
 // ADSR envelope with height 0..0x40000000, stepped once per output sample.
 class Envelope {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     enum class Phase { Off, Attack, Decay, Sustain, Release };
     struct Stage { Curve curve{Curve::LinearIncrease}; std::int64_t rate{}; };
@@ -87,6 +90,7 @@ private:
 // into stereo 16-bit output. Reverb settings are recorded but not applied:
 // effect sends are dropped.
 class SasCore {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     struct Voice {
         bool configured{}, on{}, paused{}, noise{}, primed{};

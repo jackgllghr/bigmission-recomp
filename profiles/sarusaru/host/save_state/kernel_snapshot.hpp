@@ -20,6 +20,7 @@ public:
     // Validates the entire detached state before changing any destination data.
     void restore(kernel::EarlyKernel &kernel, kernel::SyncObjects &sync, kernel::InterruptManager &interrupts) &&;
 
+    void validate(const kernel::EarlyKernel &kernel) const;
     ~KernelSnapshot();
     KernelSnapshot(KernelSnapshot &&) noexcept;
     KernelSnapshot &operator=(KernelSnapshot &&) noexcept;
@@ -29,7 +30,7 @@ public:
 private:
     struct Data;
     explicit KernelSnapshot(std::unique_ptr<Data> data);
-    void validate(const kernel::EarlyKernel &kernel) const;
+
     std::unique_ptr<Data> data_;
 };
 } // namespace sarusaru::save_state

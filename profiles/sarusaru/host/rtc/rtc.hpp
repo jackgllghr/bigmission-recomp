@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "kernel/early_kernel.hpp"
 #include "psprecomp/runtime.hpp"
@@ -20,6 +21,7 @@ struct DateTime {
 // Guest wall clock: the boot time plus the kernel's virtual elapsed time, so
 // it advances exactly with guest time.
 class Rtc {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     // `boot_local_unix_us` is local wall time at boot, expressed as Unix microseconds.
     Rtc(kernel::EarlyKernel &kernel, std::int64_t boot_local_unix_us) noexcept

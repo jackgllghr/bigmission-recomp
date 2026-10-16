@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "psprecomp/runtime.hpp"
 
@@ -15,6 +16,7 @@ inline constexpr std::uint32_t kModuleNotLoaded = 0x80111103u;
 // provided by HLE at their import interface, so loading only records state;
 // a library's functions still stop execution until each is modeled.
 class UtilityModules {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     [[nodiscard]] static bool known(std::uint32_t id) noexcept;
     [[nodiscard]] std::int32_t load(std::uint32_t id);

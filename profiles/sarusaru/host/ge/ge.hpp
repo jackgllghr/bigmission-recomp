@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "gpu/ge_state.hpp"
 #include "kernel/early_kernel.hpp"
@@ -35,6 +36,7 @@ enum class ListState : std::uint32_t { Completed = 0, Queued = 1, Drawing = 2, S
 // state for a future renderer. Nothing is rasterised. Bounding-box tests are
 // treated as visible, so BJUMP never branches.
 class Ge {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     struct Stats {
         std::uint64_t commands{};

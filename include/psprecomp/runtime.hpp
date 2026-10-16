@@ -98,6 +98,11 @@ public:
     [[nodiscard]] std::filesystem::path translate_path(const std::string &psp_path) const;
 
     void run(std::uint32_t entry, std::uint64_t max_dispatches = 10'000'000u);
+    // Ask active direct chains to unwind without changing guest ownership.
+    void request_dispatch_boundary() noexcept { chain_context_invalidated_ = true; }
+    struct DispatchState { std::uint64_t since_import{}, work{}; };
+    [[nodiscard]] DispatchState dispatch_state() const noexcept { return {dispatches_since_import_, dispatch_work_count_}; }
+    void restore_dispatch_state(DispatchState state) noexcept { dispatches_since_import_=state.since_import; dispatch_work_count_=state.work; }
     using DispatchBoundaryHook = std::function<void(Runtime &)>;
     // Called by the outer dispatcher after native guest callers have unwound.
     // Frame observers can queue requests; snapshot/restore occurs here.

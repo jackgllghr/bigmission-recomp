@@ -45,8 +45,10 @@ The project is built on PSPRecomp. The upstream framework documentation follows 
 PSPRecomp is a static recompilation framework for PSP software. It reads an Allegrex/MIPS executable, analyzes guest code, emits C++ translation units, and runs them through a native host runtime. An opt-in interpreter supports code outside the compiled corpus; normal gameplay uses the compiled functions.
 
 The [PPSSPP save-state foundations](profiles/sarusaru/docs/ppsspp-save-states.md)
-include inspection and repacking tools. Loading or saving a running game session
-is not implemented yet.
+include inspection and repacking tools. Native quick states can be saved from
+the pause menu and loaded there or from the launcher. Select + R1 saves and
+Select + L1 loads; keyboard defaults are F5 and F8. PPSSPP gameplay-state
+interchange remains unfinished.
 
 The repository is split between the reusable framework and the game-specific
 SaruSaru profile (`profiles/sarusaru`).

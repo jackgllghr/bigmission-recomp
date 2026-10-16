@@ -194,7 +194,7 @@ bool Runtime::run_starvation_boundary(AllegrexContext &ctx) {
     g_starvation_hook(*this, ctx);
     const bool same_context = runtime_execution_context_matches(before);
     if (!same_context) chain_context_invalidated_ = true;
-    return same_context;
+    return same_context && !chain_context_invalidated_;
 }
 
 bool Runtime::account_dispatch_work(AllegrexContext &ctx, bool allow_preemption) {
@@ -282,7 +282,7 @@ bool Runtime::invoke_chained_call(AllegrexContext &ctx, GuestMemory::AotFastView
     // ownership without passing through run_starvation_boundary(). Keep the
     // generation guard here even in production; compile-time direct chains use
     // chain_context_invalidated_ and retain their cheaper hot path.
-    if (caller_generation != g_runtime_thread_switch_generation_fast) {
+    if (chain_context_invalidated_ || caller_generation != g_runtime_thread_switch_generation_fast) {
         (void)account_dispatch_work(ctx, false);
         return false;
     }
@@ -324,7 +324,7 @@ bool Runtime::invoke_chained_unit(AllegrexContext &ctx, std::uint32_t unit_index
 
     // A descendant scheduler boundary may have switched the PSP context while
     // this frame was active. Never let a stale native caller resume it.
-    if (caller_generation != g_runtime_thread_switch_generation_fast) {
+    if (chain_context_invalidated_ || caller_generation != g_runtime_thread_switch_generation_fast) {
         (void)account_dispatch_work(ctx, false);
         return false;
     }

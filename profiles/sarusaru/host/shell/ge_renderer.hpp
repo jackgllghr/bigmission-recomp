@@ -65,6 +65,12 @@ public:
     const Image *presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,
                              std::uint32_t &width, std::uint32_t &height, bool interpolated = false);
 
+    // Lossless native render-target snapshot, including depth. Calls require
+    // an active command buffer and no guest frames running.
+    void finish_commands() { flush(); }
+    [[nodiscard]] std::vector<std::uint8_t> save_state();
+    void load_state(std::span<const std::uint8_t> bytes);
+
     [[nodiscard]] std::uint64_t draws() const noexcept { return draws_; }
     // Prints every draw of the next `frames` vblanks to stderr (SARUSARU_TRACE_DRAWS).
     void trace_frames(std::uint32_t frames) noexcept { trace_ = frames; }

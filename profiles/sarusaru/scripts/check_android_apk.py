@@ -19,7 +19,7 @@ def check(apk, allow_missing_compiler=False):
             raise ValueError('APK must contain exactly the arm64 launcher libraries and on-device compiler/code generator')
         for name in files:
             path = PurePosixPath(name)
-            if path.is_absolute() or '..' in path.parts or path.name.startswith(('sarusaru_game', 'generated_')) or path.name.lower().endswith(('.elf', '.iso', '.sstp')):
+            if path.is_absolute() or '..' in path.parts or path.name.startswith(('sarusaru_game', 'generated_')) or path.name.lower().endswith(('.elf', '.iso', '.sstp', '.bmstate', '.ppst')):
                 raise ValueError('unexpected/game-derived APK file: ' + name)
             if name.startswith('assets/') and not (name == 'assets/sdk.zip' or re.fullmatch(
                     r'assets/resources/(fonts/[^/]+\.(ttf|txt)|[^/]+-(LICENSE|COPYING|SOURCE)[^/]*\.txt|title\.png)', name)):
@@ -36,7 +36,7 @@ def check(apk, allow_missing_compiler=False):
                 raise ValueError('missing compiler sysroot')
             for name in names:
                 path = PurePosixPath(name)
-                if path.is_absolute() or '..' in path.parts or 'generated' in path.parts or path.name.startswith(('sarusaru_game', 'generated_')) or path.suffix.lower() in ('.elf', '.iso', '.sstp'):
+                if path.is_absolute() or '..' in path.parts or 'generated' in path.parts or path.name.startswith(('sarusaru_game', 'generated_')) or path.suffix.lower() in ('.elf', '.iso', '.sstp', '.bmstate', '.ppst'):
                     raise ValueError('unexpected/game-derived SDK file: ' + name)
 
 

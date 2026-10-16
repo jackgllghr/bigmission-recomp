@@ -1,3 +1,4 @@
+#include "save_state/native_state.hpp"
 #include "ui/launcher.hpp"
 
 #include "game_module.hpp"
@@ -240,7 +241,7 @@ void Launcher::home() {
     const float gap = 12.0f * u, status_height = 30.0f * u, bottom = 88.0f * u;
     const auto update = update_check_ ? update_check_->result() : install::UpdateResult{};
     const bool has_update = update_check_ && update.state == install::UpdateResult::State::Available;
-    const float buttons_height = (has_update ? 4.0f : 3.0f) * button.y + (has_update ? 3.0f : 2.0f) * gap;
+    const float buttons_height = (has_update ? 5.0f : 4.0f) * button.y + (has_update ? 4.0f : 3.0f) * gap;
     float art_height = 0.0f, art_width = 0.0f;
     if (title_art_ != ImTextureID{}) {
         const float aspect = title_size_.x / title_size_.y;
@@ -291,10 +292,13 @@ void Launcher::home() {
     place(1);
     if (menu_button(layer_, "settings", tr(Text::Settings), button)) go(Screen::Settings, "row0");
     place(2);
+    if (menu_button(layer_, "load_state", tr(Text::LoadState), button, false, ready && find_game_module().has_value() && std::filesystem::is_regular_file(save_state::quick_state_path(settings_path_))))
+        outcome_ = Outcome::LoadState;
+    place(3);
     if (menu_button(layer_, "quit", tr(Text::Quit), button)) outcome_ = Outcome::Quit;
 
     if (has_update) {
-        place(3);
+        place(4);
         if (menu_button(layer_, "update_notice", format(Text::UpdateAvailable, {update.version}), button)) {
             tab_ = static_cast<int>(settings_tabs().size()) - 1;
             go(Screen::Settings, "row0");
@@ -323,13 +327,17 @@ void Launcher::paused() {
     const ImVec2 button(300.0f * u, 48.0f * u);
     const float gap = 12.0f * u;
     const float x = (size.x - button.x) * 0.5f;
-    const float y = std::max(top + 10.0f * u, (size.y - 88.0f * u - 3.0f * button.y - 2.0f * gap) * 0.5f);
+    const float y = std::max(top + 10.0f * u, (size.y - 88.0f * u - 5.0f * button.y - 4.0f * gap) * 0.5f);
     const auto place = [&](int index) { ImGui::SetCursorScreenPos(ImVec2(x, y + static_cast<float>(index) * (button.y + gap))); };
     place(0);
     if (menu_button(layer_, "resume", tr(Text::Resume), button, true)) outcome_ = Outcome::Resume;
     place(1);
     if (menu_button(layer_, "settings", tr(Text::Settings), button)) go(Screen::Settings, "row0");
     place(2);
+    if (menu_button(layer_, "save_state", tr(Text::SaveState), button)) outcome_ = Outcome::SaveState;
+    place(3);
+    if (menu_button(layer_, "load_state", tr(Text::LoadState), button, false, std::filesystem::is_regular_file(save_state::quick_state_path(settings_path_)))) outcome_ = Outcome::LoadState;
+    place(4);
     if (menu_button(layer_, "quit", tr(Text::QuitGame), button)) outcome_ = Outcome::Quit;
     if (layer_.back()) outcome_ = Outcome::Resume;
     hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Back, tr(Text::HintResume)}});

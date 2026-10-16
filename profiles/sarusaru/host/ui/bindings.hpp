@@ -50,7 +50,8 @@ struct Glyph {
 //
 // Keyboard: the next key pressed (key repeats ignored); Esc cancels, so Esc
 // itself is bound only in settings.ini.
-// Gamepad: the next button binds when it is released, so every button can
+// Gamepad: hold two buttons together to capture a chord; it binds when either
+// is released. A single button binds when it is released, so every button can
 // be bound, including the one that backs out of menus; holding that one
 // for kHoldToCancel cancels instead. A stick or trigger binds in the
 // direction pushed past kPress, once it returns below kRest; an axis already
@@ -94,6 +95,7 @@ private:
     SDL_GamepadButton back_{SDL_GAMEPAD_BUTTON_EAST};
     double started_{};
     SDL_GamepadButton pending_button_{SDL_GAMEPAD_BUTTON_INVALID};
+    SDL_GamepadButton chord_button_{SDL_GAMEPAD_BUTTON_INVALID};
     double pressed_at_{};
     std::optional<shell::Binding> pending_axis_;
     bool armed_[SDL_GAMEPAD_AXIS_COUNT]{};
