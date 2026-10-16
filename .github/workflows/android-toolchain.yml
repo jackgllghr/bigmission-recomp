@@ -1,0 +1,45 @@
+# Builds the compiler the Android APK ships (build_toolchain.py) on main and
+# caches it, so release tags restore it instead of spending most of an hour
+# building it: a tag's run can restore the default branch's caches, but never
+# another tag's. The weekly run restores the cache, which keeps GitHub from
+# evicting it (after a week unused) between releases.
+#
+# The key must match the release workflow's "Cache staged Android compiler".
+name: Android toolchain
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - profiles/sarusaru/packaging/android/toolchain/build_toolchain.py
+      - .github/workflows/android-toolchain.yml
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler:
+    name: android-arm64 on-device compiler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache staged Android compiler
+        id: compiler
+        uses: actions/cache@v4
+        with:
+          path: out/android-toolchain/stage
+          key: android-compiler-${{ hashFiles('profiles/sarusaru/packaging/android/toolchain/build_toolchain.py') }}
+      - name: Install build dependencies
+        if: steps.compiler.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build make patch
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "ndk;29.0.14206865"
+      - name: Build the on-device compiler
+        if: steps.compiler.outputs.cache-hit != 'true'
+        run: python3 profiles/sarusaru/packaging/android/toolchain/build_toolchain.py --jobs 4

@@ -187,6 +187,8 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
             "platforms;android-36" "ndk;29.0.14206865" "cmake;4.1.2" "build-tools;36.0.0"
+      # Built on main by android-toolchain.yml: a tag's run can restore the
+      # default branch's caches, never another tag's.
       - name: Cache staged Android compiler
         id: compiler
         uses: actions/cache@v4
@@ -195,7 +197,7 @@ jobs:
           key: android-compiler-${{ hashFiles('profiles/sarusaru/packaging/android/toolchain/build_toolchain.py') }}
       - name: Build the on-device compiler
         if: steps.compiler.outputs.cache-hit != 'true'
-        run: python3 profiles/sarusaru/packaging/android/toolchain/build_toolchain.py --jobs 2
+        run: python3 profiles/sarusaru/packaging/android/toolchain/build_toolchain.py --jobs 4
       - name: Build signed APK
         working-directory: profiles/sarusaru/packaging/android
         run: ./gradlew assembleRelease -PreleaseVersion=${{ needs.version.outputs.version }}
