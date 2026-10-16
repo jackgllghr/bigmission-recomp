@@ -258,3 +258,9 @@ bar colors, rounded caps and HD coverage without retaining the original PSP
 icons. Button rims and letters composite with straight alpha over those bars
 and overlapping buttons. Pixel regressions cover shortcut and dialog bars at
 1x, 4x and 8x with keyboard, Xbox, Nintendo and PlayStation prompts.
+
+Dialog hint replacements continue the native two-tone navy bar through their
+text rectangles, using atlas coordinates for its height and rounded end.
+The text layer is resampled separately, then alpha-composited over the bar;
+antialiased letter fringes retain an opaque background wherever the bar
+continues. Cancel regressions cover top and footer layouts at 1x, 4x and 8x.

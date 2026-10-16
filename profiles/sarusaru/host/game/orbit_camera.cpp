@@ -11,6 +11,11 @@ namespace {
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float radians(float degrees) { return degrees * kPi / 180.0f; }
 constexpr std::uint32_t kSystemPointer = 0x08A82B24u;
+// After the stick is released, hold the manual view against the native
+// follow camera, then hand control back over a short blend.
+constexpr float kFollowDelay = 1.5f, kFollowBlend = 1.0f;
+// A larger per-update native turn is a cut, not follow motion.
+constexpr float kMaxFollowStep = radians(30.0f);
 float load(const psprecomp::GuestMemory &memory, std::uint32_t address) {
     return std::bit_cast<float>(memory.load32(address));
 }
@@ -56,23 +61,40 @@ void OrbitCamera::on_call(std::uint32_t pc, psprecomp::GuestMemory &memory,
     const bool continuing = seen_ && object_ == object && source_ == source &&
         now_us >= last_update_us_ && now_us - last_update_us_ <= 100'000u;
     const float seconds = continuing ? static_cast<float>(now_us - last_update_us_) * 1e-6f : 0.0f;
-    if (!continuing || input_.reset) yaw_ = pitch_ = 0.0f;
+    if (!continuing || input_.reset) {
+        yaw_ = pitch_ = 0.0f;
+        idle_ = kFollowDelay + kFollowBlend;
+    }
     seen_ = true;
     object_ = object;
     source_ = source;
     last_update_us_ = now_us;
-    if (!input_.reset) {
-        yaw_ = std::remainder(yaw_ + input_.x * radians(100.0f) * seconds, 2.0f * kPi);
-        pitch_ -= input_.y * radians(70.0f) * seconds;
-    }
     const float distance = std::sqrt(length_squared);
     // This game's world Y points down. Keep the eye away from the vertical
     // singularity; retaining the native target and radius keeps it centred.
+    const float native_azimuth = std::atan2(delta[0], delta[2]);
     const float native_pitch = std::asin(std::clamp(-delta[1] / distance, -1.0f, 1.0f));
+    // Shortly after manual input, cancel the native camera's follow turn so
+    // it does not immediately swing the chosen view back behind the player.
+    const float hold = std::clamp((kFollowDelay + kFollowBlend - idle_) / kFollowBlend, 0.0f, 1.0f);
+    const float turn = std::remainder(native_azimuth - native_azimuth_, 2.0f * kPi);
+    const float tilt = native_pitch - native_pitch_;
+    if (continuing && hold > 0.0f && (yaw_ != 0.0f || pitch_ != 0.0f) &&
+        std::abs(turn) <= kMaxFollowStep && std::abs(tilt) <= kMaxFollowStep) {
+        yaw_ = std::remainder(yaw_ - turn * hold, 2.0f * kPi);
+        pitch_ -= tilt * hold;
+    }
+    native_azimuth_ = native_azimuth;
+    native_pitch_ = native_pitch;
+    if (!input_.reset) {
+        yaw_ = std::remainder(yaw_ + input_.x * radians(100.0f) * seconds, 2.0f * kPi);
+        pitch_ -= input_.y * radians(70.0f) * seconds;
+        idle_ = input_.x != 0.0f || input_.y != 0.0f ? 0.0f : std::min(idle_ + seconds, kFollowDelay + kFollowBlend);
+    }
     const float elevation = std::clamp(native_pitch + pitch_, radians(-10.0f), radians(70.0f));
     if (pitch_ != 0.0f) pitch_ = elevation - native_pitch;
     if (yaw_ == 0.0f && pitch_ == 0.0f) return;
-    const float azimuth = std::atan2(delta[0], delta[2]) + yaw_;
+    const float azimuth = native_azimuth + yaw_;
     const float horizontal = distance * std::cos(elevation);
     const std::array<float, 3> rotated = {target[0] + horizontal * std::sin(azimuth),
         target[1] - distance * std::sin(elevation), target[2] + horizontal * std::cos(azimuth)};
