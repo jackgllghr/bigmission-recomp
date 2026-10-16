@@ -135,7 +135,10 @@ void GameSession::observe_call(psprecomp::Runtime &rt, psprecomp::AllegrexContex
                                std::uint32_t pc, std::uint32_t) {
     if (auto *session = observed_session_) {
         session->intro_logos.on_call(pc, rt.memory(), ctx, session->controller, session->kernel.now_us());
-        if (session->camera_control_) session->orbit_camera.on_call(pc, rt.memory(), ctx, session->kernel.now_us());
+        if (session->camera_control_) {
+            session->orbit_camera.on_call(pc, rt.memory(), ctx, session->kernel.now_us());
+            session->camera_fov.on_call(pc, rt.memory(), ctx);
+        }
         if (session->track_gameplay_camera_) {
             session->gameplay_camera.on_call(pc);
         } else if (!session->camera_control_ && session->intro_logos.finished()) {

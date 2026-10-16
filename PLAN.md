@@ -115,7 +115,8 @@ chunk).
 - [x] Frame interpolation: 60 FPS motion at native game speed from blended GE
       draws between native game frames; real frames are unchanged, one vblank later.
 - [x] FOV: gameplay cameras only (stage follow camera, hub, and a pause entered from them);
-      title, other 3D menus and cutscenes stay native. Guest culling keeps the native view; other stage types are unverified.
+      title, other 3D menus and cutscenes stay native. The game's own camera frustum widens,
+      so its culling matches the view; other stage types are unverified.
 - [x] Window size at startup and fullscreen (Alt+Enter/F11 toggle).
 - [ ] Verify interpolation in stages, cutscenes and dialogs; higher simulation
       rates remain uncompensated; the presentation cap does not change simulation speed.
