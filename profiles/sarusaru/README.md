@@ -551,8 +551,8 @@ package anything game-derived, any translation pack or catalog (English is a
 separate download) or any binary that names the build directory.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds, tests
 and packages every host (Linux on Ubuntu 22.04 for older glibc, macOS for 13.0
-and later) and attaches the packages and `SHA256SUMS.txt` to a **draft**
-release to review and publish by hand.
+and later) and publishes the packages and `SHA256SUMS.txt` as a **pre-release**.
+Launchers ignore it until it is edited into a full release by hand.
 
 ## Local files (ignored by Git)
 

@@ -1,8 +1,9 @@
 # Builds the launcher for every desktop host, tests it, packages it
 # (profiles/sarusaru/scripts/package.py; on Linux also as an AppImage, and as a
 # Flatpak with profiles/sarusaru/packaging/linux/build_flatpak.sh) and, for a
-# version tag, attaches the packages to a draft GitHub release to review and
-# publish by hand.
+# version tag, publishes them as a GitHub pre-release, which can be promoted to
+# a full release by hand. Pre-releases are not "latest", so launchers only
+# update to it once it is promoted.
 #
 # The packages contain no game code: the launcher builds the game on each
 # player's machine from their own disc. Windows is built with the same pinned
@@ -223,7 +224,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Draft release
+    name: Pre-release
     if: github.ref_type == 'tag'
     needs: [version, package, flatpak, android]
     runs-on: ubuntu-24.04
@@ -236,7 +237,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create the draft release
+      - name: Create the pre-release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -254,6 +255,6 @@ jobs:
           time you play, it builds the game for your computer from that disc.
           See README.txt in each package for what that needs.
           EOF
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --prerelease \
             --title "SaruSaru Recomp $GITHUB_REF_NAME" --notes-file notes.md \
             ./*.zip ./*.tar.gz ./*.AppImage ./*.flatpak ./*.apk update-info.txt SHA256SUMS.txt
