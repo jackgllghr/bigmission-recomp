@@ -191,7 +191,7 @@ validation; it does not expand packed area strings into neighboring data.
 
 V5 appends optional HD image layers; see [expanded UI](english-expanded-ui.md#resolution-aware-image-lettering).
 Limits include 128 MiB per pack/source, 16 source files, 64 images, 64 regions per
-image, 1024 strings, 64 glyph lines, GE extents up to 512, IDs up to 128 bytes and
+image, 1024 strings, 256 glyph lines, GE extents up to 512, IDs up to 128 bytes and
 paths up to 255 bytes. Unsafe paths, duplicate identities, overlapping regions,
 malformed data, incompatible hashes and trailing bytes are rejected. A single
 pack has no external replacement paths or asset extraction.

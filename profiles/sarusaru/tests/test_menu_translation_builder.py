@@ -12,7 +12,7 @@ PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
 from build_menu_translation import (ASSETS, build, render_labels, merge_regions, render_ui_label,
                                     label_font, subtitle_records, render_numeric_atlases, pause_help_runs, render_line,
-                                    ascii_ui_runs)
+                                    ascii_ui_runs, compact_monkey_name_runs)
 from translation_catalogs import catalog
 
 
@@ -84,11 +84,13 @@ class MenuCatalogTests(unittest.TestCase):
         from PIL import Image
         for scale in (1, 8):
             images = {asset: Image.new('RGBA', (size[0] * scale, size[1] * scale))
-                      for asset, (_, size, _) in ASSETS.items() if asset.startswith('common/c_num_')}
+                      for asset, (_, size, _) in ASSETS.items() if 'c_num_' in asset}
             regions = render_numeric_atlases(images, output_scale=scale)
             for asset, image in images.items():
-                cell, height, columns = (16, 16, 18) if 's0' in asset else (48, 48, 10)
-                glyph_indices = list(range(11)) + ([14, 15, 16, 17] if cell == 16 else [11, 12, 13])
+                cell, height, columns = ((16, 16, 18) if 's0' in asset else
+                                        (16, 32, 20) if 'm0' in asset else
+                                        (32, 48, 16) if 'ml.lzs' in asset else (48, 48, 10))
+                glyph_indices = list(range(11)) + ([14, 15, 16, columns - 1] if cell == 16 else [11, 12, 13])
                 for index in glyph_indices:
                     x, y = (index % columns) * cell, (index // columns) * height
                     self.assertIsNotNone(image.crop((x * scale, y * scale,
@@ -138,6 +140,25 @@ class MenuCatalogTests(unittest.TestCase):
             ('save.help.save', 'Return.\nNeed %s KB.'), ('unrelated.label', 'Unrelated.'))]
         runs = ascii_ui_runs({'strings': entries})
         self.assertEqual([run['text'] for run in runs], ['Return.', 'Choose data to load.'])
+
+    def test_capture_names_use_the_exact_compact_lookup_payload(self):
+        import hashlib
+        context = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text())
+        boot = bytes(int(context['kanji_table'], 0)) + b'\x81\x40' * (context['kanji_bytes'] // 2)
+        records = struct.pack('<H', 2)
+        entries = []
+        for key in ['monkey.first', 'monkey.second']:
+            entries.append({'id': key, 'text': 'Unused', 'runtime_text': 'A B'})
+            encoded = (key + '.compact').encode('ascii')
+            payload = b'\x9f\x01\xa0\0'  # A, undrawn space, B, terminator
+            records += (struct.pack('<H', len(encoded)) + encoded + struct.pack('<III', 0, 0, 1) +
+                        b'0' * 64 + struct.pack('<I', len(payload)) + payload)
+        runs = compact_monkey_name_runs(records, {'strings': entries}, boot)
+        self.assertEqual(len(runs), 1)  # Shared translated names use one host image.
+        self.assertEqual(runs[0]['text'], 'A B')
+        self.assertEqual(runs[0]['width'], 48)
+        self.assertEqual(runs[0]['align'], 'center')
+        self.assertEqual(runs[0]['signature'], hashlib.sha256(struct.pack('<6H', 0, 480, 64, 32, 496, 64)).hexdigest())
 
     @unittest.skipUnless(catalog('english-menu.json').is_file(), 'English catalog is not checked out')
     def test_copyright_footer_renders_with_real_copyright_symbol_and_hd_detail(self):

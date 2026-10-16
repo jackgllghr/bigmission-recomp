@@ -44,10 +44,13 @@ ASSETS = {
     'b_com_s0.lzs': ('save.labels', (96, 272), (128, 512, 96)),
     'b_ent_a0.lzs': ('name.tabs', (64, 96), (64, 128, 64)),
     'common00/action_name.tm2': ('gameplay.actions', (256, 512), (256, 512, 256)),
+    'common00/e_tan_2b.tm2': ('gameplay.counter.remaining', (64, 24), (64, 32, 64)),
     'lab/o_kizai_0.tm2': ('laboratory.signs', (128, 64), (128, 64, 128)),
     'common/b_drm_0.tm2': ('pause.buttons', (128, 96), (128, 128, 128)),
     'common/e_tan_6.tm2': ('pause.counter', (128, 96), (128, 128, 128)),
     'common/c_num_s0.tm2': ('numbers.small', (288, 16), (512, 16, 288)),
+    'common/c_num_m0.tm2': ('numbers.medium', (320, 32), (512, 32, 320)),
+    'c_num_ml.lzs': ('numbers.medium_large', (512, 96), (512, 128, 512)),
     'common/c_num_l1.tm2': ('numbers.large', (480, 96), (512, 128, 480)),
     'common/c_num_l2.tm2': ('numbers.large_white', (480, 96), (512, 128, 480)),
     'common/e_stage.tm2': ('ui.common.e_stage', (160, 352), (256, 512, 160)),
@@ -299,6 +302,8 @@ def render_numeric_atlases(images, *, output_scale=1):
     regions = {}
     for asset, cell, height, size in (
             ('common/c_num_s0.tm2', 16, 16, 12),
+            ('common/c_num_m0.tm2', 16, 32, 18),
+            ('c_num_ml.lzs', 32, 48, 36),
             ('common/c_num_l1.tm2', 48, 48, 44),
             ('common/c_num_l2.tm2', 48, 48, 44)):
         if asset not in images:
@@ -307,10 +312,10 @@ def render_numeric_atlases(images, *, output_scale=1):
         glyphs = list(enumerate('x0123456789'))
         # Small-font cells 11..13 hold Japanese counter units. The large
         # atlases place punctuation directly after the digits instead.
-        glyphs += list(zip((14, 15, 16, 17) if cell == 16 else (11, 12, 13),
+        columns = images[asset].width // (output_scale * cell)
+        glyphs += list(zip((14, 15, 16, columns - 1) if cell == 16 else (11, 12, 13),
                            ':/%-' if cell == 16 else ':/%'))
         for index, text in glyphs:
-            columns = images[asset].width // (output_scale * cell)
             x, y = (index % columns) * cell, (index // columns) * height
             fitted = size
             while True:
@@ -383,6 +388,41 @@ def ascii_ui_runs(catalog):
     return runs
 
 
+def compact_monkey_name_runs(records, drafts, boot):
+    """Render the exact names emitted by the source-verified capture lookup."""
+    if not records:
+        return []
+    from dialogue_assets import GlyphMap, decode_message
+    context = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text())
+    at = int(context['kanji_table'], 0)
+    glyphs = GlyphMap(boot[at:at + context['kanji_bytes']])
+    texts = {entry['id'] + '.compact': entry.get('runtime_text', entry['text']) for entry in drafts['strings']}
+    count = struct.unpack_from('<H', records)[0]
+    at, runs, seen = 2, [], set()
+    for _ in range(count):
+        length = struct.unpack_from('<H', records, at)[0]
+        at += 2
+        key = records[at:at + length].decode('ascii')
+        at += length + 12 + 64  # source lookup/extent and its SHA-256
+        length = struct.unpack_from('<I', records, at)[0]
+        at += 4
+        payload = records[at:at + length]
+        at += length
+        tokens = decode_message(payload, 0, len(payload), glyphs).tokens
+        indices = [token['index'] for token in tokens if token['type'] == 'glyph']
+        signature = hashlib.sha256(b''.join(struct.pack('<3H', i * 16,
+            (index % 32) * 16, (index // 32) * 16) for i, index in enumerate(indices) if index != 0)).hexdigest()
+        if signature in seen:
+            continue
+        seen.add(signature)
+        runs.append({'id': key + '.native', 'text': texts[key], 'width': len(indices) * 16,
+                     'glyph_count': sum(index != 0 for index in indices), 'signature': signature,
+                     'align': 'center', 'hd_scale': 4})
+    if at != len(records):
+        raise ValueError('Invalid compact name records')
+    return runs
+
+
 def render_body_text(text, size, width, height, alignment='left', *, output_scale=1):
     from PIL import Image, ImageDraw
     if alignment not in ('left', 'center'):
@@ -408,7 +448,8 @@ def render_line(run, canvas, *, output_scale=1):
     text = run['text']
     if not text or any(not 32 <= ord(c) <= 126 for c in text):
         raise ValueError('Help lines support printable ASCII')
-    canvas.alpha_composite(render_body_text(text, 12, run['width'], 16, output_scale=output_scale))
+    canvas.alpha_composite(render_body_text(text, 12, run['width'], 16,
+                                          run.get('align', 'left'), output_scale=output_scale))
 
 
 def load_textures(iso):
@@ -564,7 +605,9 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         result += name(key) + struct.pack('<II', offset, capacity) + digest(source_field)
         result += struct.pack('<H', len(replacement)) + replacement
     runs = catalog.get('glyph_runs', []) + pause_help_runs(catalog, boot) + ascii_ui_runs(catalog)
-    if len(runs) > 64:
+    if gameplay_catalog is not None:
+        runs += compact_monkey_name_runs(compact_names, json.loads(gameplay_catalog.read_text()), boot)
+    if len(runs) > 256:
         raise ValueError('Too many glyph-run replacements')
     result += struct.pack('<H', len(runs))
     for run in runs:
@@ -574,10 +617,11 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         result += run['signature'].encode('ascii') + struct.pack('<H', run['glyph_count'])
         rgba = canvas.tobytes()
         result += struct.pack('<I', len(rgba)) + rgba
-        hd = Image.new('RGBA', (512 * 8, 16 * 8))
-        render_line(run, hd, output_scale=8)
+        hd_scale = run.get('hd_scale', 8)
+        hd = Image.new('RGBA', (512 * hd_scale, 16 * hd_scale))
+        render_line(run, hd, output_scale=hd_scale)
         hd_runs = encode_pixel_runs(hd.tobytes())
-        result += struct.pack('<HI', 8, len(hd_runs)) + hd_runs
+        result += struct.pack('<HI', hd_scale, len(hd_runs)) + hd_runs
     result += dialogue_bytes or struct.pack('<H', 0)
     # Keep base-resolution pixels for native rendering and software consumers.
     # An optional high-resolution layer is rasterized from lettering, never
