@@ -107,17 +107,15 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     body, outline, offset = scale / 2, 3 * scale, 3 * scale / 4
     body, outline, offset = int(body), int(outline), int(offset)
     fill = (255, 255, 2, 255)
-    outline_colors = ((135, 49, 35), (179, 55, 22), (255, 148, 3), (255, 236, 2))
-    # Keep every color stop on a complete authoring texel at native and HD
-    # resolutions, then interpolate the concentric strokes between stops.
+    outside, inside = (179, 55, 22), (255, 148, 3)
+    # Interpolate concentric strokes from the red outer edge to orange
+    # beside the solid yellow letter face at native and HD resolutions.
     last = outline - body - 1
-    stops = [round(i * last / 3) for i in range(4)]
     layers = []
     for index, stroke in enumerate(range(outline, body, -1)):
-        segment = next(i for i in range(3) if index <= stops[i + 1])
-        amount = (index - stops[segment]) / (stops[segment + 1] - stops[segment])
+        amount = index / last
         color = tuple(round(a + (b - a) * amount)
-                      for a, b in zip(outline_colors[segment], outline_colors[segment + 1])) + (255,)
+                      for a, b in zip(outside, inside)) + (255,)
         shift = 0 if controls or header else round(offset * (1 - index / last))
         layers.append((shift, stroke, color))
     layers.append((0, body, fill))

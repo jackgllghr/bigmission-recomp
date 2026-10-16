@@ -108,7 +108,7 @@ class MenuCatalogTests(unittest.TestCase):
                         self.assertTrue(0 <= sx < 480 and 0 <= sy < 272,
                                         f'stamp {top}: ink at {x},{y} clips screen at {sx},{sy}')
 
-    def test_yellow_ink_is_heavier_and_brown_edge_is_offset_down_and_right(self):
+    def test_yellow_ink_is_heavier_and_red_edge_is_offset_down_and_right(self):
         from PIL import Image, ImageDraw, ImageFont
         label = render_ui_label('H', 24, 80, 40)
         regular = Image.new('RGBA', label.size)
@@ -116,7 +116,7 @@ class MenuCatalogTests(unittest.TestCase):
         def points(image, red=False):
             return [(x, y) for y in range(image.height) for x in range(image.width)
                     if (lambda p: p[3] > 128 and p[0] > 120 and p[2] < 80 and
-                        (p[1] < 100 if red else p[0] > 245 and p[1] > 245))(image.getpixel((x, y)))]
+                        (p[1] < 100 if red else p[0] > 245 and p[1] > 200))(image.getpixel((x, y)))]
         gold, edge = points(label), points(label, True)
         self.assertGreater(len(gold), len(points(regular)))
         for axis in (0, 1):
@@ -149,14 +149,14 @@ class MenuCatalogTests(unittest.TestCase):
                 image = render_ui_label('H', 24, 80, 40, output_scale=8, **style)
                 pixels = set(image.get_flattened_data())
                 self.assertIn((255, 255, 2, 255), pixels)
-                self.assertIn((135, 49, 35, 255), pixels)
+                self.assertNotIn((135, 49, 35, 255), pixels)
                 self.assertIn((179, 55, 22, 255), pixels)
                 self.assertIn((255, 148, 3, 255), pixels)
-                self.assertIn((255, 236, 2, 255), pixels)
+                self.assertNotIn((255, 236, 2, 255), pixels)
                 # The edge traverses intermediate colors, rather than two
                 # flat outline bands. Ignore antialiasing and the white halo.
                 gradient = {(r, g, b) for r, g, b, a in pixels
-                            if a == 255 and 135 < r < 255 and 49 < g < 236 and 2 < b < 35}
+                            if a == 255 and 179 < r < 255 and 55 < g < 148 and 3 < b < 22}
                 self.assertGreaterEqual(len(gradient), 8)
         image = render_ui_label('H', 24, 80, 40, controls=True)
         self.catalog['labels'].append({'id': 'control.test', 'text': 'H',
