@@ -15,7 +15,6 @@
 #include "game_identity.hpp"
 #include "install/game_builder.hpp"
 #include "install/toolchain.hpp"
-#include "gpu/fov.hpp"
 #include "gpu/frame_interpolator.hpp"
 #include "kernel/guest_clock.hpp"
 #include "movie/subtitles.hpp"
@@ -182,9 +181,6 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         options.memory_stick = sarusaru::utility::default_memory_stick();
         options.skip_intro_logos = current.skip_intro_logos;
         options.camera_control = true;
-        // Always watched, so the pause menu can turn the FOV override on.
-        sarusaru::gpu::FovOverride fov(current.fov_degrees);
-        options.track_gameplay_camera = true;
         // A game that cannot start (a moved or changed disc image) goes back
         // to the launcher with the reason.
         std::unique_ptr<sarusaru::GameSession> session;
@@ -297,13 +293,10 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         sarusaru::gpu::FrameInterpolator interpolator;
         sarusaru::gpu::DrawCall between;
         std::uint64_t frame_requests = game.display.framebuffer_requests();
-        // FOV: while a gameplay camera drives the frame, every perspective
-        // projection is rescaled before the draw reaches the renderer (and
-        // the interpolator, which then eases the change over a frame).
-        // The title, menus and cutscenes keep the native projection.
-        game.ge.state().set_view_hook([&fov, &game](sarusaru::gpu::DrawCall &call) {
-            if (fov.enabled() && game.gameplay_camera.active()) fov.apply(call);
-        });
+        // FOV: the gameplay cameras' own frustum widens (game/camera_fov.hpp),
+        // so the game culls for the view it draws. The title, menus and
+        // cutscenes keep the native one.
+        game.camera_fov.set_degrees(current.fov_degrees);
         const auto render_draw = [&](const sarusaru::gpu::DrawCall &call) {
             renderer->draw(memory, call);
             if (!interpolating) return;
@@ -328,7 +321,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         const auto apply_settings = [&] {
             const sarusaru::shell::Settings next = game_settings(settings, overrides, settings_path);
             if (next.controls != current.controls) input.emplace(next.controls);
-            if (next.fov_degrees != current.fov_degrees) fov = sarusaru::gpu::FovOverride(next.fov_degrees);
+            if (next.fov_degrees != current.fov_degrees) game.camera_fov.set_degrees(next.fov_degrees);
             if (next.frame_rate != current.frame_rate) {
                 interpolating = sarusaru::shell::interpolates(next);
                 presentation = sarusaru::shell::PresentationClock(interpolating ? 0u : next.frame_rate);

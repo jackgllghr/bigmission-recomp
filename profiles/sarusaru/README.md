@@ -413,12 +413,10 @@ runs on interpolated frames.
 camera drives the frame: in stages and in the stage hub. The title and main
 menu, 3D menus such as stage select, the warp tunnel, stage introductions and
 other cutscenes keep the native FOV. A pause during gameplay keeps the wide
-view behind the pause menu. While it applies, every perspective
-projection is rescaled by the same factor, so zooms keep their proportion;
-orthographic and screen-space draws (the HUD, 2D menus) are unchanged. With
-frame interpolation the switch is eased over one in-between picture. The
-game's own visibility culling still uses the native view, so with a wider FOV
-objects just outside it can appear late at the screen edges. See
+view behind the pause menu. While it applies, the game camera's own frustum
+is widened by the same factor for every lens, so zooms keep their proportion,
+and the game culls objects for the view it draws: nothing at the screen edges
+is missing at a wider FOV. The HUD and 2D menus are unchanged. See
 [`docs/settings-investigation.md`](docs/settings-investigation.md).
 
 **Settings → Interface → Skip intro logos** skips the opening logos automatically

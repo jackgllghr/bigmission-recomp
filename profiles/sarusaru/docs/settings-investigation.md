@@ -143,7 +143,7 @@ Its coefficient alone therefore cannot establish that a draw is gameplay.
 A blanket perspective-matrix override would change other 3D scenes too and
 would leave guest camera culling unaware of a wider view.
 
-Implemented (`gpu/fov.*`): `fov_degrees` scales the x and y terms of every
+Previously implemented (`gpu/fov.*`, since replaced): `fov_degrees` scaled the x and y terms of every
 perspective projection (clip w taken from z, no constant w) by
 `tan(36.5/2) / tan(fov/2)`, through GeState's view hook, before the renderer
 and the interpolator see the draw. Orthographic and through-mode draws are
@@ -187,12 +187,50 @@ from it (101-104 s) were widened. Untested: other stage types and vehicles, whic
 use other follow cameras and would then stay native; mid-stage events;
 minigames.
 
+#### Camera-level FOV (replaces the projection override)
+
+The projection-level override left objects near the screen edges missing at a
+wider FOV: the game culled them against its native view. In stage 1-1 at an
+FOV of 55.6 degrees the fence and bunting at the left edge of the opening view
+were not drawn.
+
+Every camera object keeps its lens as near-plane frustum extents: near at +0,
+far at +4, then left, right, bottom and top at +8..+20 (-3.461, 3.461,
+-1.961, 1.961 for the common camera, near 6, far 9000). 0x088FD308 makes a
+camera: 0x088FD270 sets the FOV parameter at +248 to 62, 0x088FD008 sets the
+near and far planes and 0x088FCF80 computes the extents as
+`size * 0.002 * near * tan(fov * pi / 360)` for a 480x272 size; 0x088FD40C
+recomputes them for a new near plane. They are computed when the camera is made, not
+every frame; the trace saw the stage camera made once, at the end of the
+stage introduction.
+
+The game builds both its GE projection and its culling from those extents.
+Scaling them by 1.6 once the stage camera existed, with no GE override,
+widened the picture exactly as the GE override does at the matching FOV
+(55.6 degrees), except that the fence at the left edge was drawn. Scaling the
+far plane by 4 changed no pixel in the same run, so the far plane is not what
+limits the draw distance there.
+
+Implemented (`game/camera_fov.*`): at the view-build call (0x088FD1B0) of
+the scene's camera, `fov_degrees` scales the extents by
+`tan(fov/2) / tan(36.5/2)` when the call comes from the stage follow camera or
+the hub's walking camera, and puts the game's own extents back when another
+caller builds a view with that camera. Extents the game recomputed (a new
+camera or lens) become the new native ones. The GE projection is no longer
+changed.
+
+Verification at 55.6 degrees against native over a scripted run: the title,
+menus, tunnel and stage introduction (60-78 s) were pixel-identical to native.
+Stage gameplay (80 s on) and the pause menu entered from it were widened, and
+matched the extents experiment above. Untested: the hub, other stage types,
+vehicles, mid-stage events and minigames.
+
 Remaining refinement:
 
-1. Trace the producer of the projection upload and its camera/FOV parameters.
-2. Identify gameplay/menu/cutscene camera state and any intentional zoom paths.
-3. Prefer a camera-level hook that updates projection and culling together.
-4. Verify HUD placement, menus, movies, cutscenes and geometry at the frustum edges.
+1. Find the game's distance culling or level-of-detail limit, if any, for a
+   draw-distance setting; the far plane is not it.
+2. Verify HUD placement, menus, movies, cutscenes and geometry at the frustum edges
+   in the other stage types.
 
 ## Verification
 

@@ -72,7 +72,7 @@ struct Settings {
     // at the original game speed, one vblank later. The game always updates
     // at its native rate; guest timing stays 60000/1001 Hz.
     std::uint32_t frame_rate{0};
-    // 0 = native; otherwise the gameplay camera's vertical FOV (gpu/fov.hpp), 30-120 degrees.
+    // 0 = native; otherwise the gameplay camera's vertical FOV (game/camera_fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
     // An HD texture pack directory (textures/hd_pack.hpp), or empty for the
     // original textures. Relative paths resolve beside the settings file.
