@@ -23,6 +23,17 @@ int main() {
     const auto nintendo = render(ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO);
     const auto ps = render(ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_PS5);
     require(keyboard != xbox && xbox != nintendo && ps != xbox, "device glyphs did not change");
+    // The outer circle must have partial coverage instead of a hard stair-step
+    // silhouette. Its top edge stays symmetric around the button center.
+    unsigned softened = 0;
+    for (unsigned y = 0; y < 16; ++y)
+        for (unsigned x = 0; x < 96; ++x) {
+            const auto pixel = xbox[y * 512 + x];
+            const auto alpha = pixel >> 24;
+            if (alpha > 0 && alpha < 255) ++softened;
+            require(pixel == xbox[y * 512 + 95 - x], "button rim is not symmetric");
+        }
+    require(softened > 0, "button rim has no antialiasing");
     // Colors follow the bound Xbox letter, across both Xbox generations and
     // rendering scales; the face stays black instead of a colored disc.
     constexpr std::uint32_t inks[] = {ui::colors::kXboxX, ui::colors::kXboxY,
