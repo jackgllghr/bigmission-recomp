@@ -101,6 +101,49 @@ int main() {
     for (unsigned i = 0; i < 500; ++i) update(limits, i * 33367);
     require(std::isfinite(load(m, 0x70u)) && load(m, 0x74u) > -10.0f && load(m, 0x74u) < -9.0f,
             "pitch was not clamped away from vertical");
+    // Looking up from below the native angle pulls the eye in towards the
+    // player rather than sweeping it under the floor at full distance.
+    Camera low; low.set_input({0, 1, false});
+    float last_radius = 10.0f;
+    for (unsigned i = 0; i < 100; ++i) {
+        update(low, i * 33367);
+        const float r = std::hypot(load(m, 0x70u), load(m, 0x74u), load(m, 0x78u));
+        require(r <= last_radius + 1e-4f, "lowering the camera moved it further away");
+        last_radius = r;
+    }
+    require(std::abs(last_radius - 3.0f) < 1e-3f && load(m, 0x74u) > 0 && load(m, 0x74u) < 0.6f,
+            "lowest camera was not pulled in to the player");
+    // A manual view stops in front of geometry at once and eases back out
+    // when it clears. A native view is never swept.
+    {
+        struct Wall final : sarusaru::game::CameraCollision {
+            float fraction = 1.0f; unsigned sweeps = 0;
+            float sweep(const psprecomp::AllegrexContext &, const std::array<float, 3> &start,
+                        const std::array<float, 3> &delta, float radius) override {
+                ++sweeps;
+                require(start[0] == 0 && start[1] == 0 && start[2] == 0 && radius > 0, "sweep did not start at the target");
+                require(std::abs(std::hypot(delta[0], delta[1], delta[2]) - 10.0f) < 1e-3f, "sweep did not cover the orbit");
+                return fraction;
+            }
+        } wall;
+        const auto collide = [&](Camera &c, unsigned time) { pose(m); c.on_call(Camera::kBuildView, m, ctx, time, &wall); };
+        const auto radius = [&] { return std::hypot(load(m, 0x70u), load(m, 0x74u), load(m, 0x78u)); };
+        Camera native;
+        collide(native, 0); collide(native, 33367);
+        require(wall.sweeps == 0 && eye(m) == original, "native camera was swept");
+        Camera blocked; blocked.set_input({1, 0, false});
+        collide(blocked, 0); collide(blocked, 33367);
+        wall.fraction = 0.4f; collide(blocked, 66734);
+        require(std::abs(radius() - 4.0f) < 1e-3f, "blocked view did not move in front of the wall");
+        wall.fraction = 1.0f; blocked.set_input({}); collide(blocked, 100101);
+        const float easing = radius();
+        require(easing > 4.0f && easing < 6.0f, "cleared view jumped back out");
+        unsigned time = 100101;
+        for (unsigned i = 0; i < 60; ++i) collide(blocked, time += 33367);
+        require(std::abs(radius() - 10.0f) < 1e-3f, "cleared view did not return to its distance");
+        wall.fraction = std::numeric_limits<float>::quiet_NaN(); collide(blocked, time += 33367);
+        require(std::abs(radius() - 10.0f) < 1e-3f, "invalid sweep moved the view");
+    }
     Camera hub; ctx.set_gpr(31u, Camera::kHubViewReturn); hub.set_input({-1, 0, false});
     update(hub, 0); update(hub, 33367);
     require(load(m, 0x70u) < 0, "hub camera did not orbit");

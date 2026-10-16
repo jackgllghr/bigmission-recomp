@@ -14,6 +14,14 @@ constexpr std::uint32_t kSystemPointer = 0x08A82B24u;
 // After the stick is released, hold the manual view against the native
 // follow camera, then hand control back over a short blend.
 constexpr float kFollowDelay = 1.5f, kFollowBlend = 1.0f;
+// Manual pitch limits. Below the pull-in angle (or the native one, if lower)
+// the eye moves towards the player, as low cameras do, so looking up from
+// near the ground keeps the eye close to the player instead of under the floor.
+constexpr float kMinElevation = radians(-10.0f), kMaxElevation = radians(70.0f);
+constexpr float kPullInStart = radians(15.0f), kClosestDistance = 0.3f;
+// The eye is a sphere this size against walls and floors. A blocked view
+// moves in at once, then eases back out (fraction of the distance a second).
+constexpr float kEyeRadius = 2.0f, kClearRecovery = 1.5f;
 // A larger per-update native turn is a cut, not follow motion.
 constexpr float kMaxFollowStep = radians(30.0f);
 float load(const psprecomp::GuestMemory &memory, std::uint32_t address) {
@@ -27,7 +35,8 @@ void OrbitCamera::set_input(Input input) noexcept {
 }
 
 void OrbitCamera::on_call(std::uint32_t pc, psprecomp::GuestMemory &memory,
-                          const psprecomp::AllegrexContext &ctx, std::uint64_t now_us) {
+                          const psprecomp::AllegrexContext &ctx, std::uint64_t now_us,
+                          CameraCollision *collision) {
     if (pc != kBuildView) return;
     const auto source = ctx.gpr[31];
     if (source != kStageViewReturn && source != kHubViewReturn) return;
@@ -64,6 +73,7 @@ void OrbitCamera::on_call(std::uint32_t pc, psprecomp::GuestMemory &memory,
     if (!continuing || input_.reset) {
         yaw_ = pitch_ = 0.0f;
         idle_ = kFollowDelay + kFollowBlend;
+        clear_ = 1.0f;
     }
     seen_ = true;
     object_ = object;
@@ -91,15 +101,31 @@ void OrbitCamera::on_call(std::uint32_t pc, psprecomp::GuestMemory &memory,
         pitch_ -= input_.y * radians(70.0f) * seconds;
         idle_ = input_.x != 0.0f || input_.y != 0.0f ? 0.0f : std::min(idle_ + seconds, kFollowDelay + kFollowBlend);
     }
-    const float elevation = std::clamp(native_pitch + pitch_, radians(-10.0f), radians(70.0f));
+    const float elevation = std::clamp(native_pitch + pitch_, kMinElevation, kMaxElevation);
     if (pitch_ != 0.0f) pitch_ = elevation - native_pitch;
-    if (yaw_ == 0.0f && pitch_ == 0.0f) return;
+    if (yaw_ == 0.0f && pitch_ == 0.0f) {
+        clear_ = 1.0f;
+        return;
+    }
     const float azimuth = native_azimuth + yaw_;
-    const float horizontal = distance * std::cos(elevation);
-    const std::array<float, 3> rotated = {target[0] + horizontal * std::sin(azimuth),
-        target[1] - distance * std::sin(elevation), target[2] + horizontal * std::cos(azimuth)};
+    // Never pull in at or above the native angle, so the native view is unchanged.
+    const float pull_start = std::min(kPullInStart, native_pitch);
+    const float pull = pull_start > kMinElevation ?
+        std::clamp((pull_start - elevation) / (pull_start - kMinElevation), 0.0f, 1.0f) : 0.0f;
+    const float radius = distance * (1.0f - (1.0f - kClosestDistance) * pull * pull * (3.0f - 2.0f * pull));
+    const float horizontal = radius * std::cos(elevation);
+    std::array<float, 3> offset = {horizontal * std::sin(azimuth), -radius * std::sin(elevation),
+                                   horizontal * std::cos(azimuth)};
+    // Native cameras are placed by the stage's design; only a manual view can
+    // swing behind a wall or under the floor, so only it is swept.
+    if (collision != nullptr) {
+        const float free = collision->sweep(ctx, target, offset, kEyeRadius);
+        const float reached = std::isfinite(free) ? std::clamp(free, 0.0f, 1.0f) : 1.0f;
+        clear_ = reached < clear_ ? reached : std::min(reached, clear_ + kClearRecovery * seconds);
+        for (auto &value : offset) value *= clear_;
+    }
     for (unsigned i = 0; i < 3u; ++i)
-        memory.store32(object + 0x70u + i * 4u, std::bit_cast<std::uint32_t>(rotated[i]));
+        memory.store32(object + 0x70u + i * 4u, std::bit_cast<std::uint32_t>(target[i] + offset[i]));
     // The guest builds its direction, yaw, view matrix and culling from this
     // eye immediately afterwards. Leave the native follow/spring state alone.
     ++adjusted_frames_;

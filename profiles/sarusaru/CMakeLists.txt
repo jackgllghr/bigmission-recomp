@@ -93,7 +93,7 @@ set_target_properties(sarusaru_dump_movie_audio PROPERTIES RUNTIME_OUTPUT_DIRECT
     BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
 
 # GE display-list state and texture decoding (adapted from Yakumo).
-add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gameplay_camera.cpp host/game/intro_logos.cpp host/game/orbit_camera.cpp host/game/camera_fov.cpp host/game/draw_distance.cpp)
+add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gameplay_camera.cpp host/game/intro_logos.cpp host/game/orbit_camera.cpp host/game/guest_collision.cpp host/game/camera_fov.cpp host/game/draw_distance.cpp)
 target_include_directories(sarusaru_frame_rate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_frame_rate PUBLIC psprecomp_runtime)
 
