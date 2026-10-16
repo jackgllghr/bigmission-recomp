@@ -24,6 +24,12 @@ int main() {
     using namespace sarusaru::shell;
     using namespace sarusaru::ctrl;
     const Settings defaults = default_settings();
+    require(defaults.state_slot==1,"default state slot changed");
+    for (unsigned slot=1;slot<=5;++slot) {
+        auto selected=parse_settings("[game]\nstate_slot = "+std::to_string(slot));
+        require(selected.state_slot==slot && parse_settings(serialize_settings(selected))==selected,"selected slot did not persist");
+    }
+    rejects("[game]\nstate_slot = 0"); rejects("[game]\nstate_slot = 6");
     require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
     require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
     require(defaults.prompt_style == PromptStyle::Auto, "controller prompts must default to auto");
@@ -153,6 +159,29 @@ int main() {
     auto state = map_input(defaults.controls, keys, pads);
     require(state.pad.buttons == 0 && state.pad.lx == 128 && state.pad.ly == 128 && !state.menu,
             "neutral controls not centered");
+    keys[SDL_SCANCODE_F5]=true;
+    state=map_input(defaults.controls,keys,pads);
+    require(state.save_state && !state.load_state && state.pad.buttons==0,"F5 did not save alone");
+    keys={}; keys[SDL_SCANCODE_F8]=true;
+    state=map_input(defaults.controls,keys,pads);
+    require(state.load_state && !state.save_state,"F8 did not load alone");
+    keys={}; pads[0].buttons[SDL_GAMEPAD_BUTTON_BACK]=true;
+    pads[0].buttons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER]=true;
+    state=map_input(defaults.controls,keys,pads);
+    require(state.load_state && !state.save_state && state.pad.buttons==0,"Select+L1 leaked guest buttons or did not load");
+    pads[0].buttons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER]=false;
+    pads[0].buttons[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER]=true;
+    state=map_input(defaults.controls,keys,pads);
+    require(state.save_state && !state.load_state && state.pad.buttons==0,"Select+R1 leaked guest buttons or did not save");
+    // A chord requires both buttons on the same controller.
+    pads={}; pads[0].buttons[SDL_GAMEPAD_BUTTON_BACK]=true; pads[1].buttons[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER]=true;
+    state=map_input(defaults.controls,keys,pads);
+    require(!state.save_state && !state.load_state,"chord combined different controllers");
+    const auto remapped=parse_settings("[keyboard]\nsave_state = F6\nload_state = F7\n[gamepad]\nsave_state = back+leftstick\nload_state = back+rightstick\n");
+    require(parse_settings(serialize_settings(remapped))==remapped,"state bindings did not round trip");
+    const auto legacy=parse_settings("[keyboard]\ncross = C\n");
+    require(legacy.controls.gamepad[static_cast<std::size_t>(Action::SaveState)]==defaults.controls.gamepad[static_cast<std::size_t>(Action::SaveState)],"legacy file lost new state defaults");
+    pads={};
     keys[SDL_SCANCODE_Z] = keys[SDL_SCANCODE_J] = keys[SDL_SCANCODE_I] = true;
     state = map_input(defaults.controls, keys, pads);
     require(state.pad.buttons == kButtonCircle && state.pad.lx == 1 && state.pad.ly == 1, "default keyboard bindings changed");

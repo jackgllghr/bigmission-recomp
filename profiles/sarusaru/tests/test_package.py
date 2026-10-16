@@ -38,6 +38,14 @@ class PlayerFilesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "game-derived"):
             self.packaged()
 
+    def test_refuses_native_or_ppsspp_states(self):
+        for name in ("quick.bmstate", "snapshot.ppst"):
+            path = self.bin / "resources" / name
+            path.write_bytes(b"invented")
+            with self.assertRaisesRegex(ValueError, "game-derived"):
+                self.packaged()
+            path.unlink()
+
     def test_refuses_generated_code(self):
         (self.bin / "sdk/generated").mkdir()
         (self.bin / "sdk/generated/generated_unit_0000.cpp").write_bytes(b"invented")

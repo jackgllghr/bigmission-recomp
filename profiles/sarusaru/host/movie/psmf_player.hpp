@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 // scePsmfPlayer: Sony's movie player library (libpsmfplayer.prx), which this
 // profile provides by HLE. The player reads a PSMF movie from the disc,
@@ -65,6 +66,7 @@ struct MoviePosition {
 };
 
 class PsmfPlayer {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     using FileReader = std::function<std::optional<std::vector<std::uint8_t>>(const std::string &)>;
 

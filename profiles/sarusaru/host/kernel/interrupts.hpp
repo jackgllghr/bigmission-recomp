@@ -32,6 +32,7 @@ public:
     std::size_t raise(std::uint32_t interrupt);
 
 private:
+    friend class sarusaru::save_state::KernelSnapshot;
     struct Handler {
         std::uint32_t address{};
         std::uint32_t argument{};

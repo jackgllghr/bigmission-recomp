@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 // Adapted from Yakumo (https://github.com/TeamGDB/Yakumo, revision 39ac05f),
 // MIT License; see profiles/sarusaru/THIRD_PARTY.md.
@@ -264,6 +265,7 @@ struct BlockTransfer {
 // Executes display lists and reports the draw calls they produce. The backend
 // installs a sink; with no sink the lists are still parsed (for callbacks).
 class GeState {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     using DrawSink = std::function<void(const DrawCall &)>;
     using SignalSink = std::function<void(std::uint32_t signal, std::uint32_t pc)>;

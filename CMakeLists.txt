@@ -84,6 +84,7 @@ add_library(psprecomp_core STATIC
     src/deflate.cpp
     src/elf32.cpp
     src/guest_memory.cpp
+    src/interpreter.cpp
     src/nid_registry.cpp
     src/program_analysis.cpp
     src/runtime.cpp
@@ -136,6 +137,9 @@ endfunction()
 
 if(PSPRECOMP_BUILD_TESTS)
     enable_testing()
+    add_executable(psprecomp_interpreter_tests tests/interpreter_tests.cpp)
+    target_link_libraries(psprecomp_interpreter_tests PRIVATE psprecomp_core)
+    add_test(NAME psprecomp_interpreter_tests COMMAND psprecomp_interpreter_tests)
     add_executable(psprecomp_tests tests/test_main.cpp)
     target_link_libraries(psprecomp_tests PRIVATE psprecomp_core)
     add_dependencies(psprecomp_tests psp_recomp)

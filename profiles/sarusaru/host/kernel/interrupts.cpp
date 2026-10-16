@@ -51,7 +51,7 @@ std::size_t InterruptManager::raise(std::uint32_t interrupt) {
     for (const auto &[key, handler] : handlers_) {
         if (key.first != interrupt || !handler.enabled || handler.address == 0u) continue;
         kernel_->queue_interrupt({handler.address, {key.second, handler.argument, 0u, 0u}, handler.gp,
-                                  "interrupt " + std::to_string(interrupt) + "." + std::to_string(key.second), nullptr});
+                                  "interrupt " + std::to_string(interrupt) + "." + std::to_string(key.second), {}});
         ++queued;
     }
     return queued;

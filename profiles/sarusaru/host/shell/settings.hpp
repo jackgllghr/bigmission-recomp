@@ -13,13 +13,13 @@ namespace sarusaru::shell {
 
 enum class Action : std::size_t {
     Up, Down, Left, Right, Circle, Cross, Square, Triangle, L, R, Start, Select,
-    AnalogLeft, AnalogRight, AnalogUp, AnalogDown, FastForward, Menu, CameraLeft, CameraRight, CameraUp, CameraDown, CameraReset, Count
+    AnalogLeft, AnalogRight, AnalogUp, AnalogDown, FastForward, Menu, CameraLeft, CameraRight, CameraUp, CameraDown, CameraReset, SaveState, LoadState, Count
 };
 inline constexpr std::size_t kActionCount = static_cast<std::size_t>(Action::Count);
 inline constexpr std::array<std::string_view, kActionCount> kActionNames = {
     "up", "down", "left", "right", "circle", "cross", "square", "triangle", "l", "r", "start", "select",
     "analog_left", "analog_right", "analog_up", "analog_down", "fast_forward", "menu",
-    "camera_left", "camera_right", "camera_up", "camera_down", "camera_reset"
+    "camera_left", "camera_right", "camera_up", "camera_down", "camera_reset", "save_state", "load_state"
 };
 struct Binding {
     enum class Kind { Key, Button, Axis };
@@ -84,6 +84,7 @@ struct Settings {
     // south one (cross) by default, or the east one (circle) as the game does.
     bool confirm_south{true};
     bool skip_intro_logos{false};
+    std::uint32_t state_slot{1};
     bool check_for_updates{true};
     std::int64_t last_update_check{};
     Language language{Language::Auto};

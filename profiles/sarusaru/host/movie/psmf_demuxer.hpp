@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 // Adapted from Yakumo (https://github.com/TeamGDB/Yakumo, revision 39ac05f),
 // MIT License; see profiles/sarusaru/THIRD_PARTY.md.
@@ -33,6 +34,7 @@ struct AccessUnit {
 // headers, which stamp only some units; the rest are extrapolated at the
 // stream's fixed frame rate.
 class PsmfDemuxer {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     void reset();
 

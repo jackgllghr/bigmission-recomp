@@ -90,6 +90,17 @@ std::int32_t Audio::rest_length(std::int32_t channel) const {
     return static_cast<std::int32_t>(((target.queued_until_us - now) * kSampleRate + 999'999u) / 1'000'000u);
 }
 
+Audio::Audio(kernel::EarlyKernel &kernel) : kernel_(&kernel) {
+    kernel.set_action_handler(kernel::EarlyKernel::ActionKind::AudioOutput, [this](const kernel::EarlyKernel::Action &action) {
+        const auto index = static_cast<std::int32_t>(action.arguments[0]);
+        auto *target = reserved_channel(index);
+        if (target == nullptr) return kChannelNotInitialized;
+        target->left_volume = action.arguments[2];
+        target->right_volume = action.arguments[3];
+        return enqueue(index, *target, action.arguments[1]);
+    });
+}
+
 std::uint32_t Audio::enqueue(std::int32_t index, Channel &channel, std::uint32_t buffer) {
     if (sink_) {
         const bool mono = channel.format == kFormatMono;
@@ -124,7 +135,9 @@ void Audio::output(psprecomp::AllegrexContext &context, std::int32_t channel, st
         return;
     }
     if (!blocking) { context.set_gpr(2u, kChannelBusy); return; }
-    kernel_->block_current(context, {"audio output", room_at, 0u, [this, channel, target, buffer] { return enqueue(channel, *target, buffer); }, 0, false});
+    kernel_->block_current(context, {"audio output", room_at, 0u,
+        {kernel::EarlyKernel::ActionKind::AudioOutput, {static_cast<std::uint32_t>(channel), buffer, left, right}}, 0, false,
+        {kernel::EarlyKernel::WaitType::Audio, static_cast<std::uint32_t>(channel)}});
 }
 
 void register_audio(Audio &audio, psprecomp::Runtime &runtime) {

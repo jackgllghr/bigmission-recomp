@@ -193,6 +193,8 @@ std::int32_t PsmfPlayer::stop(std::uint32_t handle) {
     if (player == nullptr || (player->status != psmf_status::kPlaying && player->status != psmf_status::kFinished))
         return static_cast<std::int32_t>(psmf_error::kInvalidStatus);
     player->status = psmf_status::kStandby;
+    // Start always rebuilds both decoders. Release their history while stopped.
+    player->video.reset(); player->audio.reset();
     return 0;
 }
 

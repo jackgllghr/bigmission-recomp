@@ -35,7 +35,7 @@ void test_timed_waits() {
 
     // Idle advances straight to the earliest deadline and applies its result.
     at_call(cpu, 0x08805100u);
-    kernel.wait_current_until(cpu, 500u, [] { return 7u; });
+    kernel.wait_current_until(cpu, 500u, {EarlyKernel::ActionKind::ReturnValue, {7u}});
     require(kernel.current_uid() == worker && cpu.pc == 0x08805100u && cpu.gpr[2] == 7u && kernel.now_us() == 500u,
             "earliest timed wait did not complete first");
 

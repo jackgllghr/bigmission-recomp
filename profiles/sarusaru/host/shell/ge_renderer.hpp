@@ -15,6 +15,7 @@
 // resolved when a draw is queued, so later guest-memory changes cannot leak
 // into it; render-to-texture samples the in-between targets.
 #include "display/display.hpp"
+#include "save_state/slots.hpp"
 #include "shell/button_prompts.hpp"
 #include "gpu/ge_state.hpp"
 #include "shell/vulkan_context.hpp"
@@ -64,6 +65,13 @@ public:
     // `interpolated` picks the in-between picture, when one was drawn there.
     const Image *presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,
                              std::uint32_t &width, std::uint32_t &height, bool interpolated = false);
+
+    // Lossless native render-target snapshot, including depth. Calls require
+    // an active command buffer and no guest frames running.
+    [[nodiscard]] save_state::Thumbnail thumbnail(const psprecomp::GuestMemory &, const display::Display::Framebuffer &);
+    void finish_commands() { flush(); }
+    [[nodiscard]] std::vector<std::uint8_t> save_state();
+    void load_state(std::span<const std::uint8_t> bytes);
 
     [[nodiscard]] std::uint64_t draws() const noexcept { return draws_; }
     // Prints every draw of the next `frames` vblanks to stderr (SARUSARU_TRACE_DRAWS).

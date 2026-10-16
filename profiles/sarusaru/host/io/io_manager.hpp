@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "umd/disc_image.hpp"
 #include "psprecomp/runtime.hpp"
@@ -36,6 +37,7 @@ inline constexpr std::uint32_t kMaxDescriptors = 64u;
 // relative paths stop execution rather than being guessed.
 // SARUSARU_TRACE_IO=1 logs file operations to stderr.
 class IoManager {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     explicit IoManager(umd::DiscImage &disc, psprecomp::Runtime &runtime) noexcept
         : disc_(&disc), runtime_(&runtime) {}

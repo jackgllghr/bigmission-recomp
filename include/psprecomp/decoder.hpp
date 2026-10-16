@@ -10,7 +10,7 @@ enum class OpcodeKind {
     Addiu, Slti, Sltiu, Andi, Ori, Xori, Lui,
     Add, Addu, Sub, Subu, And, Or, Xor, Nor, Slt, Sltu, Max, Min, Movz, Movn,
     Sll, Srl, Sra, Rotr, Sllv, Srlv, Srav, Rotrv, Clz, Clo, Ext, Ins, Seb, Seh, Bitrev, Wsbh, Wsbw, Sync,
-    Lw, Lwl, Lwr, Sw, Swl, Swr, Lh, Lhu, Sh, Lb, Lbu, Sb, Lwc1, Swc1, Cache,
+    Lw, Lwl, Lwr, Sw, Swl, Swr, Ll, Sc, Lh, Lhu, Sh, Lb, Lbu, Sb, Lwc1, Swc1, Cache,
     Beq, Bne, Beql, Bnel, Blez, Bgtz, Blezl, Bgtzl, Bltz, Bgez, Bltzl, Bgezl, Bltzal, Bgezal, Bltzall, Bgezall, J, Jal, Jr, Jalr,
     Mfhi, Mflo, Mthi, Mtlo,
     Mult, Multu, Div, Divu,

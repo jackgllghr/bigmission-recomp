@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 // sceAtrac3plus: ATRAC3/ATRAC3plus WAVE tracks decoded one frame per call into
 // 16-bit stereo PCM, which the game hands to sceAudio itself.
@@ -77,6 +78,7 @@ struct TrackInfo {
 };
 
 class AtracLibrary {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     static constexpr std::size_t kMaxIds = 6u;
 
@@ -110,6 +112,9 @@ private:
         std::int32_t loop_num{};
         std::int32_t position{};
         std::unique_ptr<FrameDecoder> decoder;
+        std::vector<std::vector<std::uint8_t>> decoder_history;
+        std::size_t history_bytes{};
+        bool history_complete{true};
         std::vector<std::int16_t> pcm;
         std::int64_t pcm_frame{-1};
         std::int64_t next_decoder_frame{};

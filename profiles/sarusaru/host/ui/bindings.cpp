@@ -121,6 +121,8 @@ Text action_text(shell::Action action) {
     case Action::CameraRight: return Text::ActionCameraRight;
     case Action::CameraUp: return Text::ActionCameraUp;
     case Action::CameraDown: return Text::ActionCameraDown;
+    case Action::SaveState: return Text::SaveState;
+    case Action::LoadState: return Text::LoadState;
     case Action::CameraReset: return Text::ActionCameraReset;
     case Action::FastForward: return Text::ActionFastForward;
     case Action::Menu:
@@ -205,6 +207,7 @@ void BindingCapture::start(BindingDevice device, double now, SDL_GamepadButton b
     back_ = back;
     started_ = now;
     pending_button_ = SDL_GAMEPAD_BUTTON_INVALID;
+    chord_button_ = SDL_GAMEPAD_BUTTON_INVALID;
     pending_axis_.reset();
     result_.reset();
     for (int i = 0; i < SDL_GAMEPAD_AXIS_COUNT; ++i)
@@ -215,6 +218,7 @@ void BindingCapture::finish(std::optional<Binding> result) {
     result_ = result;
     outcome_ = result ? Outcome::Bound : Outcome::Cancelled;
     pending_button_ = SDL_GAMEPAD_BUTTON_INVALID;
+    chord_button_ = SDL_GAMEPAD_BUTTON_INVALID;
     pending_axis_.reset();
 }
 
@@ -235,7 +239,15 @@ void BindingCapture::button(SDL_GamepadButton button, bool down, double now) {
         if (pending_button_ == SDL_GAMEPAD_BUTTON_INVALID && !pending_axis_) {
             pending_button_ = button;
             pressed_at_ = now;
+        } else if (pending_button_ != SDL_GAMEPAD_BUTTON_INVALID && button != pending_button_ && chord_button_ == SDL_GAMEPAD_BUTTON_INVALID) {
+            chord_button_ = button;
         }
+        return;
+    }
+    if (chord_button_ != SDL_GAMEPAD_BUTTON_INVALID && (button == pending_button_ || button == chord_button_)) {
+        const int first = std::min(static_cast<int>(pending_button_), static_cast<int>(chord_button_));
+        const int second = std::max(static_cast<int>(pending_button_), static_cast<int>(chord_button_));
+        finish(Binding{Binding::Kind::Button, first, 1, second});
         return;
     }
     if (button != pending_button_) return;
@@ -267,7 +279,7 @@ void BindingCapture::pointer() {
 
 void BindingCapture::update(double now) {
     if (!active() || device_ != BindingDevice::Gamepad) return;
-    if (pending_button_ == back_ && now - pressed_at_ >= kHoldToCancel) {
+    if (pending_button_ == back_ && chord_button_ == SDL_GAMEPAD_BUTTON_INVALID && now - pressed_at_ >= kHoldToCancel) {
         finish(std::nullopt);
         return;
     }
@@ -283,7 +295,7 @@ std::optional<Binding> BindingCapture::take() {
 }
 
 float BindingCapture::cancel_progress(double now) const {
-    if (!active() || pending_button_ != back_) return 0.0f;
+    if (!active() || pending_button_ != back_ || chord_button_ != SDL_GAMEPAD_BUTTON_INVALID) return 0.0f;
     return static_cast<float>(std::clamp((now - pressed_at_) / kHoldToCancel, 0.0, 1.0));
 }
 

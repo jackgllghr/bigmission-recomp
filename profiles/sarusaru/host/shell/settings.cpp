@@ -168,11 +168,11 @@ std::filesystem::path decode_path(std::string_view text) {
 Settings default_settings() {
     Settings settings;
     const char *keys[] = {"Up", "Down", "Left", "Right", "Z", "X", "A", "S", "Q", "W", "Return", "Backspace",
-                          "J", "L", "I", "K", "Tab", "Escape", "Keypad 4", "Keypad 6", "Keypad 8", "Keypad 2", "Keypad 5"};
+                          "J", "L", "I", "K", "Tab", "Escape", "Keypad 4", "Keypad 6", "Keypad 8", "Keypad 2", "Keypad 5", "F5", "F8"};
     const char *pads[] = {"dpup", "dpdown", "dpleft", "dpright", "b", "a", "x", "y",
                          "leftshoulder, axis:lefttrigger+", "rightshoulder, axis:righttrigger+", "start", "back",
                          "axis:leftx-", "axis:leftx+", "axis:lefty-", "axis:lefty+", "none", "guide, leftstick+rightstick",
-                         "axis:rightx-", "axis:rightx+", "axis:righty-", "axis:righty+", "rightstick"};
+                         "axis:rightx-", "axis:rightx+", "axis:righty-", "axis:righty+", "rightstick", "back+rightshoulder", "back+leftshoulder"};
     for (std::size_t i = 0; i < kActionCount; ++i) {
         settings.controls.keyboard[i] = bindings(keys[i], true);
         settings.controls.gamepad[i] = bindings(pads[i], false);
@@ -246,6 +246,8 @@ Settings parse_settings(std::string_view text) {
                 settings.controls.dead_zone = number(value, 0.0f, 0.95f);
             } else if (full == "game.skip_intro_logos") {
                 settings.skip_intro_logos = integer(value, 0, 1) != 0;
+            } else if (full == "game.state_slot") {
+                settings.state_slot = static_cast<std::uint32_t>(integer(value, 1, 5));
             } else if (full == "game.disc") {
                 settings.game_disc = decode_path(value);
             } else if (full == "interface.check_for_updates") {
@@ -312,6 +314,7 @@ std::string serialize_settings(const Settings &settings) {
         << "disc = " << encode_path(settings.game_disc) << '\n'
         << "# 1 = skip the opening logos. Start also skips them with this off.\nskip_intro_logos = "
         << (settings.skip_intro_logos ? 1 : 0) << '\n'
+        << "# Selected state slot for shortcuts (1-5).\nstate_slot = " << settings.state_slot << '\n'
         << "\n[interface]\n# The gamepad button that confirms in the launcher: south (cross) or east (circle, as in the game).\n"
         << "confirm = " << (settings.confirm_south ? "south" : "east") << '\n'
         << "check_for_updates = " << (settings.check_for_updates ? 1 : 0) << '\n'

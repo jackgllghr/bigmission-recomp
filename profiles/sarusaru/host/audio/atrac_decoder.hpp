@@ -1,4 +1,6 @@
 #pragma once
+#include "save_state/session_access.hpp"
+#include <vector>
 
 // Adapted from Yakumo (https://github.com/TeamGDB/Yakumo, revision 39ac05f),
 // MIT License; see profiles/sarusaru/THIRD_PARTY.md.
@@ -23,6 +25,7 @@ enum class AtracCodec {
 // FFmpeg the class still exists but open() fails, so callers fall back to
 // silence.
 class AtracDecoder {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     AtracDecoder();
     ~AtracDecoder();
@@ -48,6 +51,20 @@ public:
     void reset();
 
 private:
+    std::vector<std::vector<std::uint8_t>> history_;
+    std::size_t history_bytes_{};
+    bool history_complete_{true};
+    void clear_history() { history_.clear(); history_bytes_=0; history_complete_=true; }
+    void remember(std::span<const std::uint8_t> bytes) {
+        if (!history_complete_) return;
+        if (bytes.size() > 32u*1024u*1024u-history_bytes_ || history_.size() >= 65536) {
+            history_.clear(); history_bytes_=0; history_complete_=false; return;
+        }
+        history_bytes_+=bytes.size(); history_.emplace_back(bytes.begin(),bytes.end());
+    }
+    AtracCodec saved_codec_{};
+    unsigned saved_channels_{}, saved_align_{};
+    std::vector<std::uint8_t> saved_extra_;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

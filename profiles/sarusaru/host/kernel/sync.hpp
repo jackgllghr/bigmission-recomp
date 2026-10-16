@@ -27,7 +27,7 @@ inline constexpr std::uint32_t kEventFlagClearPattern = 0x20u;
 // queue in arrival order, or by thread priority with kAttrPriorityQueue.
 class SyncObjects {
 public:
-    explicit SyncObjects(EarlyKernel &kernel) noexcept : kernel_(&kernel) {}
+    explicit SyncObjects(EarlyKernel &kernel);
 
     [[nodiscard]] std::int32_t create_semaphore(std::string name, std::uint32_t attributes, std::int32_t initial,
                                                 std::int32_t maximum);
@@ -46,6 +46,7 @@ public:
     [[nodiscard]] std::uint32_t event_flag_pattern(std::int32_t uid) const noexcept;
 
 private:
+    friend class sarusaru::save_state::KernelSnapshot;
     struct Waiter {
         ThreadUid thread{};
         std::uint32_t value{};  // Semaphore count needed, or event-flag bits.
@@ -71,7 +72,7 @@ private:
     std::map<std::int32_t, EventFlag> event_flags_;
 
     // Drops waiters whose thread stopped waiting (terminated) and orders the rest.
-    void order_waiters(std::deque<Waiter> &waiters, std::uint32_t attributes) const;
+    void order_waiters(std::deque<Waiter> &waiters, std::uint32_t attributes, EarlyKernel::WaitType type, std::int32_t uid) const;
     static bool satisfied(std::uint32_t pattern, std::uint32_t bits, std::uint32_t mode) noexcept;
     void finish_event_wait(EventFlag &flag, const Waiter &waiter);
 };

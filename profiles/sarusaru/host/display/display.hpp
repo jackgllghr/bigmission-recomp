@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "kernel/early_kernel.hpp"
 #include "psprecomp/runtime.hpp"
@@ -20,6 +21,7 @@ inline constexpr std::uint64_t kVblankDurationUs = 731u;
 // sceDisplay state on the kernel's virtual clock. A framebuffer set with
 // sync=1 is latched at the next vblank. Nothing is presented yet.
 class Display {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     struct Framebuffer {
         std::uint32_t address{};

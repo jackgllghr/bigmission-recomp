@@ -1,5 +1,15 @@
 # Third-party material in the SaruSaru profile
 
+## Zstandard (BSD-3-Clause)
+
+The PPSSPP state-container codec statically links Zstandard 1.5.7, downloaded
+and hash-checked by `cmake/SaveState.cmake`. Its BSD license is copied beside
+the built tools as `bin/resources/Zstandard-LICENSE.txt`.
+
+PPSSPP 1.20.4 is a wire-format reference for `host/save_state/`; no PPSSPP
+source is included or linked. Snappy decoding is independently implemented
+from [Google's raw-format specification](https://github.com/google/snappy/blob/main/format_description.txt).
+
 ## Yakumo save-data code (MIT)
 
 Adapted from [Yakumo](https://github.com/TeamGDB/Yakumo) at revision

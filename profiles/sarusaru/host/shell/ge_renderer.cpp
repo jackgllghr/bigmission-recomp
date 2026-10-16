@@ -1,4 +1,6 @@
 #include "shell/ge_renderer.hpp"
+#include "save_state/ppst.hpp"
+#include <set>
 
 #include "gpu/geometry_outline.hpp"
 #include "gpu/texture_decode.hpp"
@@ -311,7 +313,7 @@ GeRenderer::Target *GeRenderer::target(std::size_t layer, std::uint32_t address)
                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                           VK_IMAGE_ASPECT_COLOR_BIT, target->color) ||
         !vk_.create_image(width, height, vk_.depth_format,
-                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                           vk_.depth_aspect, target->depth))
         return nullptr;
     const VkImageView views[2] = {target->color.view, target->depth.view};
@@ -1126,6 +1128,112 @@ const Image *GeRenderer::presentable(const psprecomp::GuestMemory &memory, const
     width = kDisplayWidth;
     height = kTargetHeight;
     return &upload_;
+}
+
+save_state::Thumbnail GeRenderer::thumbnail(const psprecomp::GuestMemory &memory,
+                                            const display::Display::Framebuffer &framebuffer) {
+    std::uint32_t width{},height{};
+    const auto *image=presentable(memory,framebuffer,width,height,false);
+    if (!image || width==0 || height==0) return {};
+    Buffer buffer;
+    if (!vk_.create_buffer(static_cast<VkDeviceSize>(width)*height*4,VK_BUFFER_USAGE_TRANSFER_DST_BIT,buffer))
+        throw save_state::FormatError("Cannot capture state thumbnail");
+    try {
+        vk_.copy_to_buffer(*image,width,height,buffer);
+        flush();
+        save_state::Thumbnail result{save_state::kThumbnailWidth,save_state::kThumbnailHeight,{}};
+        result.rgba.resize(static_cast<std::size_t>(result.width)*result.height*4);
+        const auto *pixels=static_cast<const std::uint8_t *>(buffer.mapped);
+        for (std::uint32_t y=0;y<result.height;++y)
+            for (std::uint32_t x=0;x<result.width;++x) {
+                const auto source=(static_cast<std::size_t>(y*height/result.height)*width+x*width/result.width)*4;
+                const auto destination=(static_cast<std::size_t>(y)*result.width+x)*4;
+                std::memcpy(result.rgba.data()+destination,pixels+source,4);
+                result.rgba[destination+3]=255; // Scan-out ignores the target's alpha; previews must too.
+            }
+        vk_.destroy_buffer(buffer);
+        return result;
+    } catch (...) { vk_.destroy_buffer(buffer); throw; }
+}
+
+std::vector<std::uint8_t> GeRenderer::save_state() {
+    using namespace save_state;
+    end_pass();
+    PayloadWriter out; out.section("NativeRenderer", 2); out.u32(scale_); out.u32(vk_.depth_format); out.u32(vk_.depth_aspect);
+    if (targets_[kGame].size() > 64) throw FormatError("Too many render targets to save");
+    out.u32(static_cast<std::uint32_t>(targets_[kGame].size()));
+    for (auto &[address, entry] : targets_[kGame]) {
+        auto &t = *entry;
+        out.u32(address); out.u32(t.color.width); out.u32(t.color.height);
+        const auto bytes = static_cast<std::size_t>(t.color.width) * t.color.height * 4;
+        Buffer buffer;
+        if (!vk_.create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, buffer)) throw FormatError("Cannot read saved render target");
+        try {
+            const auto capture = [&](const Image &image, VkImageAspectFlags aspect, VkImageAspectFlags barrier_aspects,
+                                     VkImageLayout layout, std::size_t byte_count) {
+                vk_.transition(commands_, image.image, barrier_aspects, layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+                VkBufferImageCopy copy{}; copy.imageSubresource={aspect,0,0,1}; copy.imageExtent={image.width,image.height,1};
+                vk_.vkCmdCopyImageToBuffer(commands_,image.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,buffer.buffer,1,&copy);
+                vk_.transition(commands_,image.image,barrier_aspects,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,layout);
+                flush();
+                out.bytes({static_cast<const std::uint8_t *>(buffer.mapped),byte_count});
+            };
+            capture(t.color,VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_ASPECT_COLOR_BIT,t.color_layout,bytes);
+            capture(t.depth,VK_IMAGE_ASPECT_DEPTH_BIT,vk_.depth_aspect,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,bytes);
+            if (vk_.depth_aspect & VK_IMAGE_ASPECT_STENCIL_BIT)
+                capture(t.depth,VK_IMAGE_ASPECT_STENCIL_BIT,vk_.depth_aspect,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,bytes/4);
+        } catch (...) { vk_.destroy_buffer(buffer); throw; }
+        vk_.destroy_buffer(buffer);
+    }
+    out.end_section(); return out.data();
+}
+
+void GeRenderer::load_state(std::span<const std::uint8_t> bytes) {
+    using namespace save_state;
+    PayloadReader input(bytes); (void)input.section("NativeRenderer",2,2);
+    if (input.u32()!=scale_ || input.u32()!=static_cast<std::uint32_t>(vk_.depth_format) || input.u32()!=vk_.depth_aspect)
+        throw FormatError("Save state requires the same internal resolution and GPU depth format");
+    const auto count=input.u32();
+    if (count>64) throw FormatError("Invalid saved render-target count");
+    struct Saved { std::uint32_t address,width,height; std::span<const std::uint8_t> color,depth,stencil; };
+    std::vector<Saved> saved;
+    std::set<std::uint32_t> addresses;
+    for (std::uint32_t i=0;i<count;++i) {
+        const auto address=input.u32(), width=input.u32(), height=input.u32();
+        if (width!=kTargetWidth*scale_ || height!=kTargetHeight*scale_ || !addresses.insert(address).second)
+            throw FormatError("Invalid saved render target");
+        const auto size=static_cast<std::size_t>(width)*height*4;
+        const auto color=input.bytes(size), depth=input.bytes(size);
+        const auto stencil=(vk_.depth_aspect & VK_IMAGE_ASPECT_STENCIL_BIT) ? input.bytes(size/4) : std::span<const std::uint8_t>{};
+        saved.push_back({address,width,height,color,depth,stencil});
+    }
+    input.end_section(); input.finish();
+    end_pass();
+    // Restore into a fresh renderer, so failed allocation cannot damage the
+    // live renderer. The caller swaps it in only after every upload succeeds.
+    if (!targets_[kGame].empty()) throw FormatError("Renderer restore requires a fresh renderer");
+    for (const auto &s : saved) {
+        auto *t=target(kGame,s.address);
+        if (!t) throw FormatError("Cannot allocate saved render target");
+        const auto upload_saved = [&](Image &image, VkImageAspectFlags aspect, VkImageAspectFlags barrier_aspects, VkImageLayout layout,
+                                      std::span<const std::uint8_t> source) {
+            Buffer upload_buffer;
+            if (!vk_.create_buffer(source.size(),VK_BUFFER_USAGE_TRANSFER_SRC_BIT,upload_buffer))
+                throw FormatError("Cannot upload saved render target");
+            std::memcpy(upload_buffer.mapped,source.data(),source.size());
+            vk_.transition(commands_,image.image,barrier_aspects,layout,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            VkBufferImageCopy copy{}; copy.bufferOffset=0; copy.imageSubresource={aspect,0,0,1}; copy.imageExtent={image.width,image.height,1};
+            vk_.vkCmdCopyBufferToImage(commands_,upload_buffer.buffer,image.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+            vk_.transition(commands_,image.image,barrier_aspects,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,layout);
+            flush();
+            vk_.destroy_buffer(upload_buffer);
+        };
+        upload_saved(t->color,VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_ASPECT_COLOR_BIT,t->color_layout,s.color);
+        upload_saved(t->depth,VK_IMAGE_ASPECT_DEPTH_BIT,vk_.depth_aspect,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,s.depth);
+        if (!s.stencil.empty())
+            upload_saved(t->depth,VK_IMAGE_ASPECT_STENCIL_BIT,vk_.depth_aspect,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,s.stencil);
+    }
+    flush();
 }
 
 } // namespace sarusaru::shell

@@ -17,7 +17,7 @@ struct GamepadState {
 };
 struct InputState {
     ctrl::Controller::Pad pad;
-    bool fast_forward{}, menu{};
+    bool fast_forward{}, menu{}, save_state{}, load_state{};
     float camera_x{}, camera_y{};
     bool camera_reset{};
 };

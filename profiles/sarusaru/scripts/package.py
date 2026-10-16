@@ -89,7 +89,7 @@ RUN = {
 
 def is_game_derived(path):
     name = path.name
-    return name.startswith("sarusaru_game") or name.startswith("generated_") or name == "BOOT.elf"
+    return name.startswith("sarusaru_game") or name.startswith("generated_") or name == "BOOT.elf" or path.suffix.lower() in (".bmstate", ".ppst")
 
 
 def is_translation(path):

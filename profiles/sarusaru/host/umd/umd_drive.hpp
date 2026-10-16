@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "kernel/early_kernel.hpp"
 #include "umd/disc_image.hpp"
@@ -22,6 +23,7 @@ inline constexpr std::uint32_t kInvalidArgument = 0x80010016u;
 // not modeled. Activation is synchronous, so a wait either is satisfied at
 // once or can never be, and the latter stops execution explicitly.
 class UmdDrive {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     explicit UmdDrive(DiscImage &disc) noexcept : disc_(&disc) {}
 

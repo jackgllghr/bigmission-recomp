@@ -1,6 +1,11 @@
+#include "save_state/native_state.hpp"
 #include "ui/launcher.hpp"
 
 #include "game_module.hpp"
+#include "platform/paths.hpp"
+#include "utility/savedata_dialog.hpp"
+#include "save_data/savedata_store.hpp"
+#include <ctime>
 #include "platform/background_work.hpp"
 #include "platform/documents.hpp"
 
@@ -87,7 +92,10 @@ Launcher::Launcher(Layer &layer, shell::Settings &settings, std::filesystem::pat
     load_title_art();
 }
 
-Launcher::~Launcher() = default;
+Launcher::~Launcher() {
+    clear_slot_previews();
+    layer_.renderer().remove_texture(title_art_);
+}
 
 void Launcher::show_start_failure(std::string detail) {
     start_failure_ = std::move(detail);
@@ -162,6 +170,7 @@ Launcher::Outcome Launcher::run(UiScript *script) {
 }
 
 void Launcher::go(Screen screen, std::string_view focus) {
+    if (screen == Screen::Saves) refresh_slots();
     screen_ = screen;
     focus_control(focus);
 }
@@ -220,6 +229,7 @@ void Launcher::frame() {
         case Screen::Pack: pack(); break;
         case Screen::Textures: textures(); break;
         case Screen::Paused: paused(); break;
+        case Screen::Saves: saves(); break;
         }
     }
     ImGui::End();
@@ -240,7 +250,7 @@ void Launcher::home() {
     const float gap = 12.0f * u, status_height = 30.0f * u, bottom = 88.0f * u;
     const auto update = update_check_ ? update_check_->result() : install::UpdateResult{};
     const bool has_update = update_check_ && update.state == install::UpdateResult::State::Available;
-    const float buttons_height = (has_update ? 4.0f : 3.0f) * button.y + (has_update ? 3.0f : 2.0f) * gap;
+    const float buttons_height = (has_update ? 5.0f : 4.0f) * button.y + (has_update ? 4.0f : 3.0f) * gap;
     float art_height = 0.0f, art_width = 0.0f;
     if (title_art_ != ImTextureID{}) {
         const float aspect = title_size_.x / title_size_.y;
@@ -291,10 +301,13 @@ void Launcher::home() {
     place(1);
     if (menu_button(layer_, "settings", tr(Text::Settings), button)) go(Screen::Settings, "row0");
     place(2);
+    if (menu_button(layer_, "saves", tr(Text::Saves), button))
+        go(Screen::Saves, "slot"+std::to_string(settings_.state_slot));
+    place(3);
     if (menu_button(layer_, "quit", tr(Text::Quit), button)) outcome_ = Outcome::Quit;
 
     if (has_update) {
-        place(3);
+        place(4);
         if (menu_button(layer_, "update_notice", format(Text::UpdateAvailable, {update.version}), button)) {
             tab_ = static_cast<int>(settings_tabs().size()) - 1;
             go(Screen::Settings, "row0");
@@ -323,16 +336,112 @@ void Launcher::paused() {
     const ImVec2 button(300.0f * u, 48.0f * u);
     const float gap = 12.0f * u;
     const float x = (size.x - button.x) * 0.5f;
-    const float y = std::max(top + 10.0f * u, (size.y - 88.0f * u - 3.0f * button.y - 2.0f * gap) * 0.5f);
+    const float y = std::max(top + 10.0f * u, (size.y - 88.0f * u - 4.0f * button.y - 3.0f * gap) * 0.5f);
     const auto place = [&](int index) { ImGui::SetCursorScreenPos(ImVec2(x, y + static_cast<float>(index) * (button.y + gap))); };
     place(0);
     if (menu_button(layer_, "resume", tr(Text::Resume), button, true)) outcome_ = Outcome::Resume;
     place(1);
     if (menu_button(layer_, "settings", tr(Text::Settings), button)) go(Screen::Settings, "row0");
     place(2);
+    if (menu_button(layer_, "saves", tr(Text::Saves), button))
+        go(Screen::Saves, "slot"+std::to_string(settings_.state_slot));
+    place(3);
     if (menu_button(layer_, "quit", tr(Text::QuitGame), button)) outcome_ = Outcome::Quit;
     if (layer_.back()) outcome_ = Outcome::Resume;
     hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Back, tr(Text::HintResume)}});
+}
+
+// --- Save states and the game's memory-stick saves -----------------------------
+
+void Launcher::clear_slot_previews() {
+    for (auto &texture : slot_previews_) {
+        layer_.renderer().remove_texture(texture);
+        texture = ImTextureID{};
+    }
+}
+
+void Launcher::refresh_slots() {
+    clear_slot_previews();
+    saves_error_.clear();
+    for (std::uint32_t slot=1; slot<=save_state::kSlotCount; ++slot) {
+        auto &info=slots_[slot-1];
+        info=save_state::slot_info(save_state::slot_path(settings_path_,slot));
+        if (!info.thumbnail.rgba.empty())
+            slot_previews_[slot-1]=layer_.renderer().add_texture(info.thumbnail.rgba.data(),info.thumbnail.width,info.thumbnail.height);
+    }
+}
+
+void Launcher::open_saves_folder() {
+    try {
+        const auto folder=savedata::savedata_root(utility::default_memory_stick());
+        std::filesystem::create_directories(folder);
+        if (!SDL_OpenURL(platform::directory_url(folder).c_str())) throw std::runtime_error(SDL_GetError());
+        saves_error_.clear();
+    } catch (const std::exception &error) {
+        saves_error_=format(Text::OpenSavesFailed,{error.what()});
+    }
+}
+
+void Launcher::saves() {
+    const float u=layer_.unit();
+    const float top=screen_title(layer_,tr(Text::Saves))+8*u;
+    const auto size=display();
+    const float width=std::min(780*u,size.x-64*u), x=(size.x-width)*0.5f;
+    const float row_height=54*u, gap=8*u;
+    auto *draw=ImGui::GetWindowDrawList();
+    for (std::uint32_t slot=1; slot<=save_state::kSlotCount; ++slot) {
+        const auto &info=slots_[slot-1];
+        const float y=top+(slot-1)*(row_height+gap);
+        ImGui::SetCursorScreenPos(ImVec2(x,y));
+        if (menu_button(layer_,"slot"+std::to_string(slot),"",ImVec2(width,row_height))) {
+            settings_.state_slot=slot;
+            save();
+            saves_error_=settings_error_;
+        }
+        const ImVec2 image_min(x+42*u,y+4*u), image_max(x+123*u,y+50*u);
+        if (slot_previews_[slot-1]!=ImTextureID{}) draw->AddImage(slot_previews_[slot-1],image_min,image_max);
+        else {
+            draw->AddRectFilled(image_min,image_max,colors::kBlueDeep,4*u);
+            const auto text=tr(info.occupied ? Text::NoThumbnail : Text::EmptySlot);
+            const auto extent=text_size(fonts().body,12*u,text,76*u);
+            draw->AddText(fonts().body,12*u,ImVec2(image_min.x+3*u,image_min.y+(46*u-extent.y)*0.5f),colors::kWhite,
+                          text.data(),text.data()+text.size(),76*u);
+        }
+        const auto label=format(settings_.state_slot==slot ? Text::SelectedStateSlot : Text::StateSlot,{std::to_string(slot)});
+        draw->AddText(fonts().strong,21*u,ImVec2(x+142*u,y+5*u),colors::kBlue,label.c_str());
+        std::string detail(tr(Text::EmptySlot));
+        if (info.occupied) {
+            detail=std::string(tr(Text::NoThumbnail));
+            if (info.saved_at>0) {
+                const std::time_t stamp=static_cast<std::time_t>(info.saved_at);
+                std::tm local{};
+#if defined(_WIN32)
+                const bool valid=localtime_s(&local,&stamp)==0;
+#else
+                const bool valid=localtime_r(&stamp,&local)!=nullptr;
+#endif
+                char time[64]{};
+                if (valid && std::strftime(time,sizeof time,"%Y-%m-%d  %H:%M:%S",&local)) detail=time;
+            }
+        }
+        draw->AddText(fonts().body,16*u,ImVec2(x+142*u,y+30*u),colors::kInkDim,detail.c_str());
+    }
+    const float action_y=top+save_state::kSlotCount*(row_height+gap)+8*u;
+    const float save_width=180*u, folder_width=280*u, action_gap=16*u;
+    const float action_x=(size.x-2*save_width-folder_width-2*action_gap)*0.5f;
+    ImGui::SetCursorScreenPos(ImVec2(action_x,action_y));
+    if (menu_button(layer_,"save_state",tr(Text::SaveState),ImVec2(save_width,36*u),false,in_game())) outcome_=Outcome::SaveState;
+    ImGui::SetCursorScreenPos(ImVec2(action_x+save_width+action_gap,action_y));
+    const bool can_load=(in_game() || (disc_check_ && disc_check_->supported() && find_game_module().has_value())) && slots_[settings_.state_slot-1].occupied;
+    if (menu_button(layer_,"load_state",tr(Text::LoadState),ImVec2(save_width,36*u),false,can_load)) outcome_=Outcome::LoadState;
+    ImGui::SetCursorScreenPos(ImVec2(action_x+2*(save_width+action_gap),action_y));
+    if (menu_button(layer_,"open_saves",tr(Text::OpenSavesFolder),ImVec2(folder_width,36*u))) open_saves_folder();
+    ImGui::SetCursorScreenPos(ImVec2(x,action_y+48*u));
+    const auto help=format(Text::StateSlotShortcuts,{std::to_string(settings_.state_slot)});
+    paragraph(layer_,saves_error_.empty() ? help : saves_error_,width,saves_error_.empty() ? colors::kInkDim : colors::kRed);
+    if (layer_.back() || back_button(layer_,ImVec2(24*u,size.y-70*u)))
+        go(in_game() ? Screen::Paused : Screen::Home,"saves");
+    hints(layer_,{{Control::Confirm,tr(Text::HintSelect)},{Control::Back,tr(Text::Back)}});
 }
 
 // --- The game disc ---------------------------------------------------------

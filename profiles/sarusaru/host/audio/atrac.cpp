@@ -288,8 +288,15 @@ bool AtracLibrary::load_frame(const psprecomp::GuestMemory &memory, Context &con
     const TrackInfo &track = context.track;
     context.pcm.assign(atrac_frame_samples(track.codec) * 2u, 0);
     const auto decode = [&](std::int64_t index, std::span<const std::uint8_t> bytes) {
-        if (index != context.next_decoder_frame) context.decoder->reset();
+        if (index != context.next_decoder_frame) { context.decoder->reset(); context.decoder_history.clear(); context.history_bytes=0; context.history_complete=true; }
         context.next_decoder_frame = index + 1;
+        if (context.history_complete) {
+            if (bytes.size()>8u*1024u*1024u-context.history_bytes || context.decoder_history.size()>=65536) {
+                context.decoder_history.clear(); context.history_bytes=0; context.history_complete=false;
+            } else {
+                context.history_bytes+=bytes.size(); context.decoder_history.emplace_back(bytes.begin(),bytes.end());
+            }
+        }
         return context.decoder->decode(bytes, context.pcm.data()) != 0u;
     };
     bool decoded = false;
@@ -306,6 +313,7 @@ bool AtracLibrary::load_frame(const psprecomp::GuestMemory &memory, Context &con
             // A frame's output depends on the ones before it: after a seek, two
             // frames of warm-up make the output identical to decoding straight through.
             context.decoder->reset();
+            context.decoder_history.clear(); context.history_bytes=0; context.history_complete=true;
             for (std::int64_t warm_up = std::max<std::int64_t>(frame - 2, 0); warm_up < frame; ++warm_up)
                 if (read(warm_up)) (void)decode(warm_up, bytes);
             context.next_decoder_frame = frame;
