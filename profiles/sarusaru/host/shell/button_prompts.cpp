@@ -77,7 +77,20 @@ void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, uns
     x *= scale; y *= scale; w *= scale; h *= scale;
     const auto put = [&](int px, int py, std::uint32_t color) {
         if (px >= 0 && px < static_cast<int>(width) && py >= 0 &&
-            static_cast<std::size_t>(py) * width + px < pixels.size()) pixels[py * width + px] = color;
+            static_cast<std::size_t>(py) * width + px < pixels.size()) {
+            // Atlas pixels use straight alpha. Composite coverage over the
+            // restored bar (or the other button in a diagonal pair).
+            auto &background = pixels[py * width + px];
+            const unsigned alpha = color >> 24, behind = background >> 24;
+            const unsigned weight = alpha * 255 + behind * (255 - alpha);
+            if (!weight) return;
+            std::uint32_t blended = ((weight + 127) / 255) << 24;
+            for (unsigned shift = 0; shift < 24; shift += 8)
+                blended |= ((((color >> shift) & 255u) * alpha * 255 +
+                             ((background >> shift) & 255u) * behind * (255 - alpha) + weight / 2) /
+                            weight) << shift;
+            background = blended;
+        }
     };
     const float cx = x + w * .5f, cy = y + h * .5f, r = std::min(w, h) * .45f;
     for (int py = y; py < y + h; ++py) for (int px = x; px < x + w; ++px) {
@@ -136,16 +149,7 @@ void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, uns
             const int px = static_cast<int>(pen) + bx + i, py = static_cast<int>(baseline) + by + j;
             if (px < x || px >= x+w || py < y || py >= y+h) continue;
             const unsigned alpha = bitmap[j*bw+i];
-            if (alpha) {
-                const std::uint32_t background = pixels[py * width + px];
-                std::uint32_t blended = 0xff000000u;
-                for (unsigned shift = 0; shift < 24; shift += 8) {
-                    const unsigned channel = (background >> shift) & 255u;
-                    const unsigned foreground = (ink >> shift) & 255u;
-                    blended |= ((channel * (255u - alpha) + foreground * alpha) / 255u) << shift;
-                }
-                put(px, py, blended);
-            }
+            if (alpha) put(px, py, (ink & 0x00ffffffu) | (alpha << 24));
         }
         stbtt_FreeBitmap(bitmap, nullptr);
         stbtt_GetCodepointHMetrics(&info, code, &a, nullptr); pen += a * em;
@@ -160,6 +164,26 @@ void ButtonPrompts::apply(unsigned atlas, std::vector<std::uint32_t> &pixels, un
                 if (offset < pixels.size()) pixels[offset] = 0;
             }
     };
+    const auto restore_bar = [&](unsigned row, unsigned left, unsigned count, bool top) {
+        // The opposite end is free of controller artwork. Mirror its cap and
+        // extend its interior, retaining native/translated colors and HD alpha.
+        const unsigned first_y = top ? 0 : 14;
+        const unsigned last_y = top ? 10 : 24;
+        for (unsigned y = first_y * scale; y < last_y * scale; ++y)
+            for (unsigned x = left * scale; x < (left + count) * scale && x < width; ++x) {
+                if (x >= 111 * scale) continue;
+                const unsigned source_x = top ? (left == 0 ? std::min(x, 8 * scale) :
+                    std::min(111 * scale - 1 - x, 8 * scale)) :
+                    std::max(111 * scale - 1 - x, 104 * scale);
+                // Row 6 has a button over the left cap; row 0 has the same
+                // top bar and an unobscured cap.
+                const unsigned source_y = top ? y : row * 24 * scale + y;
+                const auto source = static_cast<std::size_t>(source_y) * width + source_x;
+                const auto destination = static_cast<std::size_t>(row * 24 * scale + y) * width + x;
+                if (source < pixels.size() && destination < pixels.size())
+                    pixels[destination] = pixels[source];
+            }
+    };
     const auto button = [&](int x, int y, int w, int h, Action a) { draw(pixels, width, scale, x,y,w,h,a); };
     if (atlas == 1) {
         clear(0, 0, 96, 24);
@@ -168,14 +192,18 @@ void ButtonPrompts::apply(unsigned atlas, std::vector<std::uint32_t> &pixels, un
     } else if (atlas == 2) {
         for (int i = 0; i < 5; ++i) {
             clear(0, i * 24, 32, 24);
+            restore_bar(i, 0, 32, false);
             button(0, i*24+6, 26, 14, i < 3 ? Action::Start : Action::Select);
         }
     } else if (atlas == 3) {
         // The PSP artwork extends around and between the replacement glyphs.
         // Remove its entire region, after translation/HD art, not just the
         // smaller rectangles occupied by our buttons.
-        for (unsigned row = 0; row < 9; ++row)
-            clear(row < 2 ? 88 : 0, row * 24, row < 2 ? 40 : 32, 24);
+        for (unsigned row = 0; row < 9; ++row) {
+            const unsigned left = row < 2 ? 88 : 0, count = row < 2 ? 40 : 32;
+            clear(left, row * 24, count, 24);
+            restore_bar(row, left, count, row < 2 || row == 6);
+        }
         // Paired icons are alternatives, not a chord. Each retains its own binding.
         for (int row : {0,1,4}) {
             const int x = row < 2 ? 88 : 0;
