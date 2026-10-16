@@ -24,6 +24,9 @@ compiler the APK ships (below).
 Settings and the port's data live in the app's private `files/` directory.
 `stdout` and `stderr` go to the system log under the tag `sarusaru`.
 
+Android's Back button or back swipe opens the launcher overlay during play.
+Within the launcher, Back returns to the previous screen or resumes the game.
+
 ## Build
 
 Needs a JDK 17 or newer, the Android SDK (platform 36), NDK 29.0.14206865 and
