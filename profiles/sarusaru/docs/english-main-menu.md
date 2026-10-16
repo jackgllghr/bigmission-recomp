@@ -131,7 +131,7 @@ AOT call interception is required.
 ### Prepared glyph lines
 
 Some Options help text arrives as prepared glyph sprites rather than plain
-strings. The draw adapter buffers consecutive 16x16 sprites from the verified
+strings. The draw adapter buffers aligned 16x16 sprites from the verified
 font atlas, identifies the complete line by count and SHA-256 over relative
 positions/UVs, and substitutes one host-rendered English line. Persisted
 signatures contain hashes, not copied Japanese text or glyph-coordinate arrays.
@@ -142,6 +142,27 @@ parameters, so changing an unsampled glyph invalidates the identity. Host-only
 texture IDs are generated at runtime. The transformed draws feed both normal
 rendering and frame interpolation, avoiding Japanese text on alternate frames.
 Pending draws are flushed at a line/state change or frame boundary.
+Compact spaces advance the cursor without drawing a sprite; one-cell gaps
+remain in the signature rather than splitting a line into separate words.
+
+Pause help lines use the same adapter, with signatures generated from the
+translated compact captions during the pack build. The startup autosave warning
+and static save/load help and confirmation lines use their verified 8x16 ASCII
+cells through the same path, with separate complete
+line signatures. ASCII and compact cell widths cannot combine into one line.
+The main-menu copyright footer is a separate `i_g_c.lzs` replacement, drawn in
+the rounded white body style with its original wording and copyright symbol.
+Both paths include native and 8x text layers.
+Save/load text with runtime substitutions retains the guest's rendering for
+those dynamic lines; static lines are deduplicated by their full signatures.
+
+`SSTEXPK7` adds a `u16` HD
+scale, `u32` encoded byte count and RGBA pixel runs immediately after each
+glyph line's native pixel payload. The scale is 2, 4 or 8; each run contains a
+`u16` positive length and `u32` RGBA pixel. Decoded coverage must equal the
+512x16 canvas multiplied by the scale squared. Native and older pack pixels
+remain available, while HD rendering uploads the authored HD canvas without
+changing the logical glyph-line geometry.
 
 ## Pack format and fallback
 
@@ -169,8 +190,8 @@ uses padded fields only for observed fixed name fields, with full field hashes a
 validation; it does not expand packed area strings into neighboring data.
 
 V5 appends optional HD image layers; see [expanded UI](english-expanded-ui.md#resolution-aware-image-lettering).
-Limits include 64 MiB per pack/source, 16 source files, 64 images, 64 regions per
-image, 1024 strings, 32 glyph lines, GE extents up to 512, IDs up to 128 bytes and
+Limits include 128 MiB per pack/source, 16 source files, 64 images, 64 regions per
+image, 1024 strings, 64 glyph lines, GE extents up to 512, IDs up to 128 bytes and
 paths up to 255 bytes. Unsafe paths, duplicate identities, overlapping regions,
 malformed data, incompatible hashes and trailing bytes are rejected. A single
 pack has no external replacement paths or asset extraction.

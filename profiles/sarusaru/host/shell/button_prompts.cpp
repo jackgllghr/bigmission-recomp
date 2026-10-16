@@ -24,7 +24,7 @@ void ButtonPrompts::configure(const ControlSettings &controls, ui::BindingDevice
     ++revision_;
 }
 unsigned ButtonPrompts::identify(const gpu::TextureState &t, std::span<const std::uint32_t> pixels) {
-    // common00/Keypallete.tm2 and common/e_but_{0,1}.tm2.
+    // common00/{Keypallete,action_name}.tm2 and common/e_but_{0,1}.tm2.
     // Hash only logical pixels: power-of-two padding contains unrelated data.
     unsigned atlas = 0, width = 0, height = 0;
     std::string_view expected;
@@ -37,6 +37,9 @@ unsigned ButtonPrompts::identify(const gpu::TextureState &t, std::span<const std
     } else if (t.width == 128 && t.buffer_width == 128 && t.height == 256) {
         atlas = 3; width = 128; height = 240;
         expected = "314efab32a5541b6f55f27af74d5f059dab420144aa18e9ab11cac3edd1d6a53";
+    } else if (t.width == 256 && t.buffer_width == 256 && t.height == 512) {
+        atlas = 4; width = 256; height = 512;
+        expected = "7f671a0a9144af43fac976c60efa3c075208a6e8df33e4fc601de7569dcac471";
     } else return 0;
     if (pixels.size() < static_cast<std::size_t>(t.width) * height) return 0;
     std::vector<std::uint8_t> bytes;

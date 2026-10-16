@@ -10,7 +10,7 @@
 
 namespace sarusaru::translation {
 namespace {
-constexpr std::size_t kMaxPackBytes = 64u * 1024u * 1024u;
+constexpr std::size_t kMaxPackBytes = 128u * 1024u * 1024u;
 [[noreturn]] void invalid(std::string_view reason) {
     throw std::runtime_error("translation pack: " + std::string(reason));
 }
@@ -71,7 +71,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) invalid("short read");
     Reader reader(bytes);
     const auto magic = reader.text(8);
-    if (!magic.starts_with("SSTEXPK") || magic[7] < '1' || magic[7] > '6') invalid("unsupported format/version");
+    if (!magic.starts_with("SSTEXPK") || magic[7] < '1' || magic[7] > '7') invalid("unsupported format/version");
     const int version = magic[7] - '0';
     if (disc_id.size() != 9 || reader.text(9) != disc_id || reader.digest() != executable_hash) invalid("incompatible game");
     TexturePack pack;
@@ -157,7 +157,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
         for (std::size_t i = 1; i < ranges.size(); ++i)
             if (ranges[i].first < ranges[i - 1].second) invalid("overlapping string slots");
         const auto runs = reader.integer(2);
-        if (runs > 32) invalid("too many glyph-run replacements");
+        if (runs > 64) invalid("too many glyph-run replacements");
         std::set<std::string> run_identities;
         for (std::uint32_t i = 0; i < runs; ++i) {
             GlyphRun run;
@@ -175,6 +175,25 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             if (size != 512u * 16u * 4u) invalid("invalid help-line pixel payload");
             const auto pixels = reader.take(size);
             run.rgba.assign(pixels.begin(), pixels.end());
+            if (version >= 7) {
+                const auto scale = reader.integer(2), size = reader.integer(4);
+                if ((scale != 2 && scale != 4 && scale != 8) || !size || size % 6)
+                    invalid("invalid HD help-line layer");
+                Reader runs(reader.take(size));
+                const std::size_t expected = 512u * 16u * scale * scale;
+                std::size_t total = 0;
+                run.hd_rgba.reserve(expected * 4);
+                while (!runs.empty()) {
+                    const auto count = runs.integer(2), pixel = runs.integer(4);
+                    if (!count || count > expected - total) invalid("HD help-line run exceeds image");
+                    total += count;
+                    for (unsigned i = 0; i < count; ++i)
+                        for (unsigned shift = 0; shift < 32; shift += 8)
+                            run.hd_rgba.push_back(static_cast<std::uint8_t>(pixel >> shift));
+                }
+                if (total != expected) invalid("short HD help-line image");
+                run.hd_scale = static_cast<std::uint16_t>(scale);
+            }
             pack.runs_.push_back(std::move(run));
         }
     }

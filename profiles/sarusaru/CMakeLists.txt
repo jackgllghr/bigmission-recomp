@@ -373,11 +373,11 @@ configure_file(host/install/game_build_config.hpp.in install/game_build_config.h
 # defaults pin its current release, which every build (Android's Gradle one
 # included) offers. An empty URL builds one that offers none.
 set(SARUSARU_ENGLISH_PACK_URL
-    "https://github.com/jackgllghr/sarusaru-translations/releases/download/english-960f196fc32b/english-960f196fc32b.sstp"
+    "https://github.com/jackgllghr/sarusaru-translations/releases/download/english-fdacd1b4cfe3/english-fdacd1b4cfe3.sstp"
     CACHE STRING "URL of the English translation pack the launcher offers (empty: none)")
-set(SARUSARU_ENGLISH_PACK_SHA256 "40cddbe34d07207fec3561331927c230a194950aa8e375f3cdd31224d1bf6342"
+set(SARUSARU_ENGLISH_PACK_SHA256 "0574eb59dcfe3bdf7a4be98d13281ebfba24c7aa09d486ca0996a008eb3fd784"
     CACHE STRING "SHA-256 of the English translation pack")
-set(SARUSARU_ENGLISH_PACK_SIZE "19758037" CACHE STRING "Size in bytes of the English translation pack")
+set(SARUSARU_ENGLISH_PACK_SIZE "72533342" CACHE STRING "Size in bytes of the English translation pack")
 if(NOT SARUSARU_ENGLISH_PACK_URL STREQUAL "")
     if(NOT SARUSARU_ENGLISH_PACK_URL MATCHES "^https://" OR NOT SARUSARU_ENGLISH_PACK_SHA256 MATCHES "^[0-9a-f]+$"
        OR NOT SARUSARU_ENGLISH_PACK_SIZE MATCHES "^[1-9][0-9]*$")

@@ -8,12 +8,13 @@
 namespace sarusaru::translation {
 namespace {
 bool glyph_sprite(const gpu::DrawCall &call) {
-    return call.through && !call.clear_mode && call.texture.enabled &&
+    if (!(call.through && !call.clear_mode && call.texture.enabled &&
         call.primitive == gpu::PrimitiveType::Sprites && call.vertices.size() == 2 && call.indices.empty() &&
-        call.texture.width == 512 && call.texture.height == 512 && call.texture.buffer_width == 512 &&
-        call.vertices[1].position[0] - call.vertices[0].position[0] == 16 &&
+        call.texture.width == 512 && call.texture.height == 512 && call.texture.buffer_width == 512)) return false;
+    const float width = call.vertices[1].texcoord[0] - call.vertices[0].texcoord[0];
+    return (width == 8 || width == 16) &&
+        call.vertices[1].position[0] - call.vertices[0].position[0] == width &&
         call.vertices[1].position[1] - call.vertices[0].position[1] == 16 &&
-        call.vertices[1].texcoord[0] - call.vertices[0].texcoord[0] == 16 &&
         call.vertices[1].texcoord[1] - call.vertices[0].texcoord[1] == 16;
 }
 void word(std::vector<std::uint8_t> &bytes, std::uint16_t value) {
@@ -31,6 +32,7 @@ void TexturePack::translate_draw(const psprecomp::GuestMemory &memory, const gpu
     if (!pending_.empty()) {
         const auto &first = pending_.front();
         const auto &previous = pending_.back();
+        const float cell = first.vertices[1].position[0] - first.vertices[0].position[0];
         if (call.target.color_address != first.target.color_address || call.texture.address != first.texture.address ||
             call.texture.clut_address != first.texture.clut_address || call.texture.clut_format != first.texture.clut_format ||
             call.texture.clut_shift != first.texture.clut_shift || call.texture.clut_mask != first.texture.clut_mask ||
@@ -40,7 +42,10 @@ void TexturePack::translate_draw(const psprecomp::GuestMemory &memory, const gpu
             call.viewport.scissor_x1 != first.viewport.scissor_x1 || call.viewport.scissor_x2 != first.viewport.scissor_x2 ||
             call.viewport.scissor_y1 != first.viewport.scissor_y1 || call.viewport.scissor_y2 != first.viewport.scissor_y2 ||
             call.vertices[0].position[1] != first.vertices[0].position[1] ||
-            call.vertices[0].position[0] != previous.vertices[0].position[0] + 16 || pending_.size() == 64)
+            call.vertices[1].position[0] - call.vertices[0].position[0] != cell ||
+            // Both ASCII and compact text advance over undrawn space cells.
+            (call.vertices[0].position[0] != previous.vertices[0].position[0] + cell &&
+             call.vertices[0].position[0] != previous.vertices[0].position[0] + 2 * cell) || pending_.size() == 64)
             flush_draws(emit);
     }
     if (pending_.empty()) {
@@ -115,8 +120,16 @@ void TexturePack::flush_draws(const DrawSink &emit) {
 }
 
 std::span<const std::uint8_t> TexturePack::host_rgba(std::uint32_t address) const {
+    return host_image(address, 1).rgba;
+}
+
+TexturePack::HostImage TexturePack::host_image(std::uint32_t address, std::uint32_t requested_scale) const {
     if (address < kHostTextureBase || (address - kHostTextureBase) % 0x1000u != 0) return {};
     const auto index = (address - kHostTextureBase) / 0x1000u;
-    return index < runs_.size() ? std::span<const std::uint8_t>(runs_[index].rgba) : std::span<const std::uint8_t>{};
+    if (index >= runs_.size()) return {};
+    const auto &run = runs_[index];
+    if (requested_scale > 1 && run.hd_scale)
+        return {run.hd_rgba, 512u * run.hd_scale, 16u * run.hd_scale};
+    return {run.rgba, 512u, 16u};
 }
 }

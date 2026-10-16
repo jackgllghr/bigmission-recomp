@@ -231,6 +231,7 @@ void GeRenderer::destroy() {
         vk_.destroy_image(texture.image);
     }
     textures_.clear();
+    action_hint_views_.clear();
     prompt_atlases_.clear();
     for (auto &[key, texture] : host_textures_) vk_.destroy_image(texture.image);
     host_textures_.clear();
@@ -269,6 +270,7 @@ void GeRenderer::begin_frame(VkCommandBuffer commands) {
     // The previous frame has completed, so unused textures can go.
     for (auto it = textures_.begin(); it != textures_.end();) {
         if (frame_ - it->second.last_frame > kTextureLifetimeFrames) {
+            action_hint_views_.erase(it->second.image.view);
             vk_.destroy_image(it->second.image);
             it = textures_.erase(it);
         } else {
@@ -459,17 +461,18 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     const auto &texture = call.texture;
     u_scale = v_scale = 1.0f;
     if (translation_pack_ != nullptr) {
-        const auto pixels = translation_pack_->host_rgba(texture.address);
+        const auto image = translation_pack_->host_image(texture.address, scale_);
+        const auto pixels = image.rgba;
         if (!pixels.empty()) {
             if (const auto found = host_textures_.find(texture.address); found != host_textures_.end()) return found->second.image.view;
             Texture entry;
-            if (!vk_.create_image(512, 16, kColorFormat, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            if (!vk_.create_image(image.width, image.height, kColorFormat, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                                   VK_IMAGE_ASPECT_COLOR_BIT, entry.image)) return VK_NULL_HANDLE;
             std::vector<std::uint32_t> texels(pixels.size() / 4);
             for (std::size_t i = 0; i < texels.size(); ++i)
                 for (unsigned byte = 0; byte < 4; ++byte)
                     texels[i] |= static_cast<std::uint32_t>(pixels[i * 4 + byte]) << (byte * 8);
-            upload(entry.image, texels.data(), 512, 16);
+            upload(entry.image, texels.data(), image.width, image.height);
             const auto view = entry.image.view;
             host_textures_.emplace(texture.address, std::move(entry));
             return view;
@@ -528,7 +531,7 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
                 texels = std::move(scaled);
             }
     }
-    if (prompt_atlas) {
+    if (prompt_atlas && prompt_atlas != 4) {
         // Host glyphs need their own resolution even without a translation or
         // HD pack. Keep normalized UVs and nearest-scale the surrounding art.
         const unsigned current_scale = width / texture.width;
@@ -555,6 +558,7 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     upload(entry.image, texels.data(), width, height);
     entry.last_frame = frame_;
     const VkImageView view = entry.image.view;
+    if (prompt_atlas == 4) action_hint_views_.insert(view);
     textures_.emplace(key, std::move(entry));
     return view;
 }
@@ -837,7 +841,18 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
             return v;
         };
         for (std::size_t i = 0; i + 1u < count; i += 2u) {
-            const GpuVertex a = screen(vertex_at(i)), b = screen(vertex_at(i + 1u));
+            GpuVertex a = screen(vertex_at(i)), b = screen(vertex_at(i + 1u));
+            // The south action caption starts close to the larger host button
+            // rim. Move its whole tile (lettering and bar) down four PSP pixels.
+            // The other three captions use this atlas too; only the bottom
+            // central 64x16 HUD tile needs the extra clearance.
+            if (action_hint_views_.contains(view) && call.through &&
+                a.position[0] == 348.0f && b.position[0] == 412.0f &&
+                a.position[1] >= 72.0f && b.position[1] <= 100.0f &&
+                b.position[1] - a.position[1] == 16.0f) {
+                a.position[1] += 4.0f;
+                b.position[1] += 4.0f;
+            }
             GpuVertex corners[4] = {b, b, b, b};
             corners[0].position[0] = a.position[0]; corners[0].position[1] = a.position[1];
             corners[0].texcoord[0] = a.texcoord[0]; corners[0].texcoord[1] = a.texcoord[1];

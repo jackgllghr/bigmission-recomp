@@ -48,6 +48,11 @@ public:
     void flush_draws(const DrawSink &emit);
     // Reserved host-only IDs are generated at runtime, never read from guest assets.
     [[nodiscard]] std::span<const std::uint8_t> host_rgba(std::uint32_t address) const;
+    struct HostImage {
+        std::span<const std::uint8_t> rgba;
+        std::uint32_t width{}, height{};
+    };
+    [[nodiscard]] HostImage host_image(std::uint32_t address, std::uint32_t requested_scale) const;
     [[nodiscard]] std::size_t size() const noexcept { return entries_.size(); }
     [[nodiscard]] const std::string &locale() const noexcept { return locale_; }
     // The movies' English subtitles as SubRip text, by movie name
@@ -82,6 +87,8 @@ private:
         std::string id, font_hash, signature;
         std::uint16_t width{}, height{}, glyph_count{};
         std::vector<std::uint8_t> rgba;
+        std::uint16_t hd_scale{};
+        std::vector<std::uint8_t> hd_rgba;
     };
     static constexpr std::uint32_t kHostTextureBase = 0xFFF00000u;
     std::vector<GlyphRun> runs_;

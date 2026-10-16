@@ -10,7 +10,9 @@ import unittest
 
 PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
-from build_menu_translation import ASSETS, build, render_labels, merge_regions, render_ui_label, label_font, subtitle_records
+from build_menu_translation import (ASSETS, build, render_labels, merge_regions, render_ui_label,
+                                    label_font, subtitle_records, render_numeric_atlases, pause_help_runs, render_line,
+                                    ascii_ui_runs)
 from translation_catalogs import catalog
 
 
@@ -77,6 +79,79 @@ class MenuCatalogTests(unittest.TestCase):
         from PIL import Image
         self.catalog = synthetic_catalog()
         self.images = {asset: Image.new('RGBA', size) for asset, (_, size, _) in ASSETS.items()}
+
+    def test_counter_atlases_replace_numbers_and_punctuation_without_touching_japanese_units(self):
+        from PIL import Image
+        for scale in (1, 8):
+            images = {asset: Image.new('RGBA', (size[0] * scale, size[1] * scale))
+                      for asset, (_, size, _) in ASSETS.items() if asset.startswith('common/c_num_')}
+            regions = render_numeric_atlases(images, output_scale=scale)
+            for asset, image in images.items():
+                cell, height, columns = (16, 16, 18) if 's0' in asset else (48, 48, 10)
+                glyph_indices = list(range(11)) + ([14, 15, 16, 17] if cell == 16 else [11, 12, 13])
+                for index in glyph_indices:
+                    x, y = (index % columns) * cell, (index // columns) * height
+                    self.assertIsNotNone(image.crop((x * scale, y * scale,
+                        (x + cell) * scale, (y + height) * scale)).getbbox())
+                # Preserve Japanese units in small fonts and spare large cells.
+                untouched = 11 if cell == 16 else 14
+                x, y = (untouched % columns) * cell, (untouched // columns) * height
+                self.assertIsNone(image.crop((x * scale, y * scale,
+                    (x + cell) * scale, (y + height) * scale)).getbbox())
+                self.assertTrue(all(x + w <= image.width // scale and y + h <= image.height // scale
+                                    for x, y, w, h in regions[asset]))
+
+    def test_pause_help_matches_compact_glyph_lines_and_keeps_hd_detail(self):
+        import hashlib
+        from PIL import Image
+        context = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text())
+        at = int(context['kanji_table'], 0)
+        boot = bytes(at) + b'\x81\x40' * (context['kanji_bytes'] // 2)
+        captions = {'compact_ui': [{'id': 'pause.help.synthetic', 'text': 'AB 09\nAB 09',
+                                   'columns': 14, 'lines': 2}]}
+        runs = pause_help_runs(captions, boot)
+        self.assertEqual(len(runs), 1)
+        expected = b''.join(struct.pack('<3H', i * 16, (index % 32) * 16, (index // 32) * 16)
+                            for i, index in enumerate([158, 159, 0, 148, 157]) if index != 0)
+        self.assertEqual(runs[0]['signature'], hashlib.sha256(expected).hexdigest())
+        self.assertEqual(runs[0]['glyph_count'], 4)
+        hd = Image.new('RGBA', (512 * 8, 16 * 8))
+        native = Image.new('RGBA', (512, 16))
+        render_line(runs[0], native)
+        render_line(runs[0], hd, output_scale=8)
+        self.assertIsNotNone(native.getbbox())
+        self.assertNotEqual(hd.tobytes(), native.resize(hd.size, Image.Resampling.NEAREST).tobytes())
+
+    def test_startup_warning_matches_ascii_cells_with_undrawn_spaces(self):
+        import hashlib
+        runs = ascii_ui_runs({'strings': [{'id': 'intro.autosave', 'text': 'A B\nC.', 'max_columns': 44}]})
+        self.assertEqual(len(runs), 2)
+        # ASCII A/B live in 8px cells in the penultimate atlas row.
+        signature = struct.pack('<6H', 0, 256, 480, 16, 264, 480)
+        self.assertEqual(runs[0]['signature'], hashlib.sha256(signature).hexdigest())
+        self.assertEqual(runs[0]['glyph_count'], 2)
+        self.assertEqual(runs[0]['width'], 352)
+
+    def test_save_help_deduplicates_lines_and_leaves_runtime_values_to_guest(self):
+        entries = [{'id': key, 'text': text, 'max_columns': 44} for key, text in (
+            ('save.help.back', 'Return.'), ('load.select', 'Choose data to load.'),
+            ('save.help.save', 'Return.\nNeed %s KB.'), ('unrelated.label', 'Unrelated.'))]
+        runs = ascii_ui_runs({'strings': entries})
+        self.assertEqual([run['text'] for run in runs], ['Return.', 'Choose data to load.'])
+
+    @unittest.skipUnless(catalog('english-menu.json').is_file(), 'English catalog is not checked out')
+    def test_copyright_footer_renders_with_real_copyright_symbol_and_hd_detail(self):
+        from PIL import Image
+        authored = json.loads(catalog('english-menu.json').read_text())
+        authored['labels'] = [label for label in authored['labels'] if label['id'] == 'title.copyright']
+        self.assertEqual(len(authored['labels']), 1)
+        for scale in (1, 8):
+            image = Image.new('RGBA', (384 * scale, 16 * scale))
+            render_labels(authored, {'i_g_c.lzs': image}, require_title=False, output_scale=scale)
+            self.assertIsNotNone(image.getbbox())
+            # The copyright sign must have its own glyph rather than .notdef.
+            font = label_font(40, controls=True)
+            self.assertNotEqual(bytes(font.getmask('©')), bytes(font.getmask('\uffff')))
 
     def test_catalog_renders_all_labels_within_original_slots(self):
         render_labels(self.catalog, self.images)
@@ -205,6 +280,28 @@ class MenuCatalogTests(unittest.TestCase):
                     self.assertEqual(self.images[asset].getpixel((6, 16))[3], 0)
                 if asset != 'e_but_1.lzs':
                     self.assertEqual(self.images[asset].getpixel((0, 0))[3], 0)
+
+    @unittest.skipUnless(catalog('english-menu.json').is_file(), 'English catalog is not checked out')
+    def test_disabled_actions_erase_caption_and_bar_at_native_and_hd_scales(self):
+        from PIL import Image
+        asset = 'common00/action_name.tm2'
+        authored = json.loads(catalog('english-menu.json').read_text())
+        authored['labels'] = [label for label in authored['labels'] if label['asset'] == asset]
+        for scale in (1, 8):
+            with self.subTest(scale=scale):
+                image = Image.new('RGBA', (256 * scale, 512 * scale), (255, 0, 255, 255))
+                regions = render_labels(authored, {asset: image}, require_title=False, output_scale=scale)
+                for x in (0, 64):
+                    self.assertIsNone(image.crop((x * scale, 0, (x + 64) * scale, 16 * scale)).getbbox())
+                    self.assertTrue(any(a <= x and b == 0 and a + w >= x + 64 and h >= 16
+                                        for a, b, w, h in regions[asset]))
+                # An active action keeps its caption and navy bar.
+                active = Image.new('RGBA', image.size)
+                render_labels(dict(authored, labels=[authored['labels'][1]]), {asset: active},
+                              require_title=False, output_scale=scale)
+                self.assertIsNotNone(active.crop((0, 16 * scale, 64 * scale, 32 * scale)).getbbox())
+                pixel = active.getpixel((6 * scale, 29 * scale))
+                self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, (0, 12, 100, 255))), 1)
 
     def test_header_has_thick_white_border_and_hd_contains_finer_detail(self):
         from PIL import Image

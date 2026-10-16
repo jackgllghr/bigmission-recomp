@@ -103,7 +103,13 @@ and fits its original NUL slot and three-line panel.
 The actual pause artwork is `common/b_drm_0.tm2`; its button widths differ by
 row, so each English label stays within that row's native sampling width.
 `common/e_tan_6.tm2` supplies the separate remaining-monkey label and unit.
-Digits, resource icons and control icons remain outside those rectangles.
+Resource icons and control icons remain outside those rectangles. The shared
+`c_num_s0`, `c_num_l1` and `c_num_l2` atlases now render their multiplier,
+digits and punctuation with the bundled rounded font, including HD layers.
+The save-data screen uses the same small atlas for time/resource counts and
+the large gold atlas for its completion percentage. Their cell positions
+stay fixed, so battery, chip and remaining-monkey values continue to update
+through the guest's existing counter draws. Japanese unit cells remain untouched.
 
 Pause help is a separate compact text path. The menu catalog's `compact_ui`
 records identify six source streams and their lookup pointers, and provide
@@ -111,6 +117,12 @@ English text with a 14-column/two-line budget for the narrow pause panel.
 The builder checks original hashes, lookup identity, protected controls, page
 counts and layout before emitting ordinary V4 compact records. Runtime section,
 transactional source and allocation validation is shared with dialogue/names.
+Complete translated help lines additionally generate glyph-run signatures from
+their compact glyph indices. The draw adapter substitutes proportional rounded
+text only after the entire line matches. V7 packs carry an 8x layer for each
+help line, uploaded at HD resolution by the native renderer; older packs retain
+their native-resolution fallback. Line breaks, placement and confirmation
+variants still come from the compact captions.
 
 A scripted headless run enters a stage and opens the in-game pause menu. Its
 actual guest texture identities match the translated pause atlases, and the
