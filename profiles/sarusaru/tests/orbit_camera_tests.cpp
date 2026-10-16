@@ -101,6 +101,18 @@ int main() {
     for (unsigned i = 0; i < 500; ++i) update(limits, i * 33367);
     require(std::isfinite(load(m, 0x70u)) && load(m, 0x74u) > -10.0f && load(m, 0x74u) < -9.0f,
             "pitch was not clamped away from vertical");
+    // Looking up from below the native angle pulls the eye in towards the
+    // player rather than sweeping it under the floor at full distance.
+    Camera low; low.set_input({0, 1, false});
+    float last_radius = 10.0f;
+    for (unsigned i = 0; i < 100; ++i) {
+        update(low, i * 33367);
+        const float r = std::hypot(load(m, 0x70u), load(m, 0x74u), load(m, 0x78u));
+        require(r <= last_radius + 1e-4f, "lowering the camera moved it further away");
+        last_radius = r;
+    }
+    require(std::abs(last_radius - 3.0f) < 1e-3f && load(m, 0x74u) > 0 && load(m, 0x74u) < 0.6f,
+            "lowest camera was not pulled in to the player");
     Camera hub; ctx.set_gpr(31u, Camera::kHubViewReturn); hub.set_input({-1, 0, false});
     update(hub, 0); update(hub, 33367);
     require(load(m, 0x70u) < 0, "hub camera did not orbit");

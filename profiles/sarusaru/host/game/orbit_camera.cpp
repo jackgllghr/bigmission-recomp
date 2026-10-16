@@ -14,6 +14,11 @@ constexpr std::uint32_t kSystemPointer = 0x08A82B24u;
 // After the stick is released, hold the manual view against the native
 // follow camera, then hand control back over a short blend.
 constexpr float kFollowDelay = 1.5f, kFollowBlend = 1.0f;
+// Manual pitch limits. Below the pull-in angle (or the native one, if lower)
+// the eye moves towards the player, as low cameras do, so looking up from
+// near the ground keeps the eye close to the player instead of under the floor.
+constexpr float kMinElevation = radians(-10.0f), kMaxElevation = radians(70.0f);
+constexpr float kPullInStart = radians(15.0f), kClosestDistance = 0.3f;
 // A larger per-update native turn is a cut, not follow motion.
 constexpr float kMaxFollowStep = radians(30.0f);
 float load(const psprecomp::GuestMemory &memory, std::uint32_t address) {
@@ -91,13 +96,18 @@ void OrbitCamera::on_call(std::uint32_t pc, psprecomp::GuestMemory &memory,
         pitch_ -= input_.y * radians(70.0f) * seconds;
         idle_ = input_.x != 0.0f || input_.y != 0.0f ? 0.0f : std::min(idle_ + seconds, kFollowDelay + kFollowBlend);
     }
-    const float elevation = std::clamp(native_pitch + pitch_, radians(-10.0f), radians(70.0f));
+    const float elevation = std::clamp(native_pitch + pitch_, kMinElevation, kMaxElevation);
     if (pitch_ != 0.0f) pitch_ = elevation - native_pitch;
     if (yaw_ == 0.0f && pitch_ == 0.0f) return;
     const float azimuth = native_azimuth + yaw_;
-    const float horizontal = distance * std::cos(elevation);
+    // Never pull in at or above the native angle, so the native view is unchanged.
+    const float pull_start = std::min(kPullInStart, native_pitch);
+    const float pull = pull_start > kMinElevation ?
+        std::clamp((pull_start - elevation) / (pull_start - kMinElevation), 0.0f, 1.0f) : 0.0f;
+    const float radius = distance * (1.0f - (1.0f - kClosestDistance) * pull * pull * (3.0f - 2.0f * pull));
+    const float horizontal = radius * std::cos(elevation);
     const std::array<float, 3> rotated = {target[0] + horizontal * std::sin(azimuth),
-        target[1] - distance * std::sin(elevation), target[2] + horizontal * std::cos(azimuth)};
+        target[1] - radius * std::sin(elevation), target[2] + horizontal * std::cos(azimuth)};
     for (unsigned i = 0; i < 3u; ++i)
         memory.store32(object + 0x70u + i * 4u, std::bit_cast<std::uint32_t>(rotated[i]));
     // The guest builds its direction, yaw, view matrix and culling from this
