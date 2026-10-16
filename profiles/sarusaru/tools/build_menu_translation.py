@@ -33,6 +33,7 @@ ARCHIVES = {
 # Logical dimensions and GE sampling extents, observed and verified in guest draws.
 ASSETS = {
     'i_g_titl_l.lzs': ('title.logo', (352, 144), (512, 256, 352)),
+    'i_g_c.lzs': ('title.copyright', (384, 16), (512, 16, 384)),
     'b_but_b0.lzs': ('menu.labels', (256, 96), (256, 128, 256)),
     'e_nabi_a0.lzs': ('title.press_start', (256, 16), (256, 16, 256)),
     'e_but_0.lzs': ('menu.shortcuts', (128, 120), (128, 128, 128)),
@@ -46,6 +47,8 @@ ASSETS = {
     'lab/o_kizai_0.tm2': ('laboratory.signs', (128, 64), (128, 64, 128)),
     'common/b_drm_0.tm2': ('pause.buttons', (128, 96), (128, 128, 128)),
     'common/e_tan_6.tm2': ('pause.counter', (128, 96), (128, 128, 128)),
+    'common/c_num_s0.tm2': ('numbers.small', (288, 16), (512, 16, 288)),
+    'common/c_num_l2.tm2': ('numbers.large_white', (480, 96), (512, 128, 480)),
     'common/e_stage.tm2': ('ui.common.e_stage', (160, 352), (256, 512, 160)),
     'tenso/e_s_title_1.tm2': ('ui.tenso.e_s_title_1', (288, 512), (512, 512, 288)),
     'tenso/e_s_title_2.tm2': ('ui.tenso.e_s_title_2', (288, 512), (512, 512, 288)),
@@ -199,8 +202,9 @@ def render_labels(catalog, images, require_title=True, *, output_scale=1):
         seen.add(key)
         if asset not in images or asset == 'i_g_titl_l.lzs':
             raise ValueError('Unknown label asset')
-        if not isinstance(text, str) or not text or any(ord(c) < 32 or ord(c) > 126 for c in text):
-            raise ValueError('English menu prototype supports printable ASCII labels only')
+        if not isinstance(text, str) or not text or any(not (32 <= ord(c) <= 126 or
+                (c == '©' and label.get('style') == 'body')) for c in text):
+            raise ValueError('English labels support printable ASCII; body text also supports ©')
         rect = label['rect']
         if len(rect) != 4 or any(type(n) is not int for n in rect):
             raise ValueError('Invalid label rectangle')
@@ -221,13 +225,25 @@ def render_labels(catalog, images, require_title=True, *, output_scale=1):
         tx, ty, tw, th = text_rect
         if tx < 0 or ty < 0 or tw <= 0 or th <= 0 or tx + tw > width or ty + th > height:
             raise ValueError('Text rectangle outside replacement region')
+        # Both action-table columns start with the disabled action. Keep its
+        # replacement region so the original caption and bar are erased, but
+        # leave the slot transparent at native and HD resolutions.
+        if asset == 'common00/action_name.tm2' and key in (
+                'gameplay.action.00.00', 'gameplay.action.01.00'):
+            image.paste((0, 0, 0, 0), (x * output_scale, y * output_scale,
+                                      (x + width) * output_scale, (y + height) * output_scale))
+            continue
         try:
-            layer = render_ui_label(text, size, tw, th, label.get('align', 'center'),
+            style = label.get('style', 'gold')
+            if style not in ('gold', 'body'):
+                raise ValueError('Unknown label style')
+            layer = (render_body_text(text, size, tw, th, label.get('align', 'center'), output_scale=output_scale)
+                     if style == 'body' else render_ui_label(text, size, tw, th, label.get('align', 'center'),
                                     controls=asset in ('common00/action_name.tm2', 'e_but_0.lzs', 'e_but_1.lzs'),
                                     header=(asset.startswith('tenso/e_s_title_') or asset in (
                                         'common/e_nabi_a4.tm2', 'common/e_nabi_a2.tm2')),
                                     top_hint_bar=asset == 'e_but_1.lzs' and y // 24 in (0, 1, 6),
-                                    output_scale=output_scale)
+                                    output_scale=output_scale))
         except ValueError as exc:
             raise ValueError(f'{key}: {exc}') from exc
         image.alpha_composite(layer, ((x + tx) * output_scale, (y + ty) * output_scale))
@@ -251,8 +267,100 @@ def merge_regions(regions):
     return merged
 
 
-def render_line(run, canvas):
-    from PIL import Image, ImageDraw, ImageFont
+def render_numeric_atlases(images, *, output_scale=1):
+    """Replace only the multiplier and digits; keep each guest counter live."""
+    regions = {}
+    for asset, cell, height, size in (
+            ('common/c_num_s0.tm2', 16, 16, 12),
+            ('common/c_num_l2.tm2', 48, 48, 44)):
+        if asset not in images:
+            continue
+        slots = []
+        for index, text in enumerate('x0123456789'):
+            columns = images[asset].width // (output_scale * cell)
+            x, y = (index % columns) * cell, (index // columns) * height
+            fitted = size
+            while True:
+                try:
+                    layer = render_ui_label(text, fitted, cell, height,
+                                            header=asset.endswith('l2.tm2'), output_scale=output_scale)
+                    break
+                except ValueError:
+                    fitted -= .25
+                    if fitted < 8:
+                        raise
+            images[asset].alpha_composite(layer, (x * output_scale, y * output_scale))
+            slots.append([x, y, cell, height])
+        regions[asset] = merge_regions(slots)
+    return regions
+
+
+def pause_help_runs(catalog, boot):
+    """Match complete translated compact lines, using the guest's glyph UVs."""
+    from dialogue_assets import GlyphMap, encode_english, decode_message
+    from dialogue_drafts import wrap_page
+    context = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text())
+    at = int(context['kanji_table'], 0)
+    glyphs = GlyphMap(boot[at:at + context['kanji_bytes']])
+    runs, seen = [], set()
+    for caption in catalog.get('compact_ui', []):
+        if not caption['id'].startswith('pause.help.'):
+            continue
+        for page in wrap_page(caption['text'], caption['columns'], caption['lines']):
+            for line in page.split('\n'):
+                payload = encode_english(line, glyphs) + b'\0'
+                tokens = decode_message(payload, 0, len(payload), glyphs).tokens
+                indices = [token['index'] for token in tokens if token['type'] == 'glyph']
+                # Controls/icons must keep their own native draws.
+                if not line or '{' in line:
+                    continue
+                signature = hashlib.sha256(b''.join(struct.pack('<3H', i * 16, (index % 32) * 16,
+                    (index // 32) * 16) for i, index in enumerate(indices) if index != 0)).hexdigest()
+                if signature in seen:
+                    continue
+                seen.add(signature)
+                runs.append({'id': f"{caption['id']}.line.{len(runs)}", 'text': line,
+                             'width': caption['columns'] * 16, 'glyph_count': sum(index != 0 for index in indices),
+                             'signature': signature})
+    return runs
+
+
+def startup_warning_runs(catalog):
+    """The warning uses the font atlas's 8x16 ASCII cells at rows 30/31."""
+    runs = []
+    for entry in catalog.get('strings', []):
+        if entry['id'] != 'intro.autosave':
+            continue
+        for index, line in enumerate(entry['text'].split('\n')):
+            visible = [(column, ord(char) - 33) for column, char in enumerate(line) if char != ' ']
+            if not visible:
+                continue
+            signature = b''.join(struct.pack('<3H', (column - visible[0][0]) * 8,
+                (glyph % 64) * 8, 480 + (glyph // 64) * 16) for column, glyph in visible)
+            runs.append({'id': f"{entry['id']}.line.{index}", 'text': line,
+                         'width': entry['max_columns'] * 8, 'glyph_count': len(visible),
+                         'signature': hashlib.sha256(signature).hexdigest()})
+    return runs
+
+
+def render_body_text(text, size, width, height, alignment='left', *, output_scale=1):
+    from PIL import Image, ImageDraw
+    if alignment not in ('left', 'center'):
+        raise ValueError('Label alignment must be left or center')
+    scale = max(4, output_scale)
+    layer = Image.new('RGBA', (width * scale, height * scale))
+    font = label_font(size * scale, controls=True)
+    draw = ImageDraw.Draw(layer)
+    box = draw.textbbox((0, 0), text, font=font, stroke_width=scale)
+    if box[2] - box[0] > layer.width - 2 * scale or box[3] - box[1] > layer.height - 2 * scale:
+        raise ValueError('Help line exceeds pixel budget')
+    x = scale - box[0] if alignment == 'left' else (layer.width - box[2] + box[0]) / 2 - box[0]
+    draw.text((x, (layer.height - box[3] + box[1]) / 2 - box[1]), text, font=font,
+              fill=(255, 255, 255, 255), stroke_width=scale, stroke_fill=(0, 0, 0, 255))
+    return layer.resize((width * output_scale, height * output_scale), Image.Resampling.LANCZOS)
+
+
+def render_line(run, canvas, *, output_scale=1):
     if not 1 <= run['width'] <= 448 or not 1 <= run['glyph_count'] <= 64 or len(run['signature']) != 64:
         raise ValueError('Invalid help-line metadata')
     if any(c not in '0123456789abcdef' for c in run['signature']):
@@ -260,16 +368,7 @@ def render_line(run, canvas):
     text = run['text']
     if not text or any(not 32 <= ord(c) <= 126 for c in text):
         raise ValueError('Help lines support printable ASCII')
-    scale = 4
-    layer = Image.new('RGBA', (run['width'] * scale, 16 * scale))
-    font = ImageFont.load_default(size=12 * scale)
-    draw = ImageDraw.Draw(layer)
-    box = draw.textbbox((0, 0), text, font=font, stroke_width=scale)
-    if box[2] - box[0] > layer.width - 2 * scale or box[3] - box[1] > layer.height - 2 * scale:
-        raise ValueError('Help line exceeds pixel budget')
-    draw.text((scale - box[0], (layer.height - box[3] + box[1]) / 2 - box[1]), text, font=font,
-              fill=(255, 255, 255, 255), stroke_width=scale, stroke_fill=(0, 0, 0, 255))
-    canvas.alpha_composite(layer.resize((run['width'], 16), Image.Resampling.LANCZOS))
+    canvas.alpha_composite(render_body_text(text, 12, run['width'], 16, output_scale=output_scale))
 
 
 def load_textures(iso):
@@ -363,8 +462,9 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     canvas = images['i_g_titl_l.lzs']
     canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
     regions = render_labels(catalog, images)
+    regions.update(render_numeric_atlases(images))
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
-    result = bytearray(b'SSTEXPK6')
+    result = bytearray(b'SSTEXPK7')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', len(sources))
     for source_path, source in sources.items():
@@ -423,7 +523,9 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         occupied.append((offset, offset + capacity))
         result += name(key) + struct.pack('<II', offset, capacity) + digest(source_field)
         result += struct.pack('<H', len(replacement)) + replacement
-    runs = catalog.get('glyph_runs', [])
+    runs = catalog.get('glyph_runs', []) + pause_help_runs(catalog, boot) + startup_warning_runs(catalog)
+    if len(runs) > 32:
+        raise ValueError('Too many glyph-run replacements')
     result += struct.pack('<H', len(runs))
     for run in runs:
         canvas = Image.new('RGBA', (512, 16))
@@ -432,6 +534,10 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         result += run['signature'].encode('ascii') + struct.pack('<H', run['glyph_count'])
         rgba = canvas.tobytes()
         result += struct.pack('<I', len(rgba)) + rgba
+        hd = Image.new('RGBA', (512 * 8, 16 * 8))
+        render_line(run, hd, output_scale=8)
+        hd_runs = encode_pixel_runs(hd.tobytes())
+        result += struct.pack('<HI', 8, len(hd_runs)) + hd_runs
     result += dialogue_bytes or struct.pack('<H', 0)
     # Keep base-resolution pixels for native rendering and software consumers.
     # An optional high-resolution layer is rasterized from lettering, never
@@ -443,6 +549,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         hd = Image.new('RGBA', (width * 8, height * 8))
         labels = dict(catalog, labels=[label for label in catalog['labels'] if label['asset'] == asset])
         render_labels(labels, {asset: hd}, require_title=False, output_scale=8)
+        render_numeric_atlases({asset: hd}, output_scale=8)
         pixel_runs = encode_pixel_runs(hd.tobytes())
         result += name(key) + struct.pack('<HI', 8, len(pixel_runs)) + pixel_runs
     result += subtitle_bytes

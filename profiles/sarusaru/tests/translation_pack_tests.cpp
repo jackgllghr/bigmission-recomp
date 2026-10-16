@@ -275,7 +275,9 @@ int main() {
     for (const auto value : {0, 0, 0, 16, 16, 0}) integer(glyph_signature, value, 2);
     auto run_bytes = version2(); integer(run_bytes, 0, 4); integer(run_bytes, 1, 2);
     name(run_bytes, "help.synthetic"); integer(run_bytes, 100, 2); integer(run_bytes, 16, 2);
-    text(run_bytes, psprecomp::sha256(Bytes(512 * 512 * 4, 0))); text(run_bytes, psprecomp::sha256(glyph_signature));
+    text(run_bytes, psprecomp::sha256(Bytes(512 * 512 * 4, 0)));
+    const auto run_signature_offset = run_bytes.size();
+    text(run_bytes, psprecomp::sha256(glyph_signature));
     integer(run_bytes, 2, 2); integer(run_bytes, 512 * 16 * 4, 4); run_bytes.resize(run_bytes.size() + 512 * 16 * 4);
     auto runs = load(run_bytes);
     sarusaru::gpu::DrawCall glyph; glyph.through = true; glyph.primitive = sarusaru::gpu::PrimitiveType::Sprites;
@@ -299,6 +301,71 @@ int main() {
     emitted.clear(); font_memory.store8(glyph.texture.address + 33001, 1);
     runs.translate_draw(font_memory, glyph, emit); runs.translate_draw(font_memory, next, emit); runs.flush_draws(emit);
     require(emitted.size() == 2 && emitted[0].texture.address == glyph.texture.address, "changed font passed full-content identity");
+
+    auto spaced_bytes = run_bytes;
+    auto spaced_signature = glyph_signature; spaced_signature[6] = 32;
+    const auto spaced_hash = psprecomp::sha256(spaced_signature);
+    std::copy(spaced_hash.begin(), spaced_hash.end(), spaced_bytes.begin() + run_signature_offset);
+    auto spaced_runs = load(spaced_bytes);
+    auto after_space = next;
+    after_space.vertices[0].position[0] += 16; after_space.vertices[1].position[0] += 16;
+    font_memory.store8(glyph.texture.address + 33001, 0);
+    emitted.clear();
+    spaced_runs.translate_draw(font_memory, glyph, emit); spaced_runs.translate_draw(font_memory, after_space, emit);
+    spaced_runs.flush_draws(emit);
+    require(emitted.size() == 1 && emitted[0].texture.address != glyph.texture.address,
+            "undrawn compact space split the help line");
+
+    // Startup uses 8x16 ASCII cells, including gaps for undrawn spaces.
+    for (const unsigned advance : {8u, 16u}) {
+        auto ascii_bytes = run_bytes;
+        Bytes signature;
+        for (const auto value : {0u, 0u, 0u, advance, 8u, 0u}) integer(signature, value, 2);
+        const auto hash = psprecomp::sha256(signature);
+        std::copy(hash.begin(), hash.end(), ascii_bytes.begin() + run_signature_offset);
+        auto ascii_runs = load(ascii_bytes);
+        auto a = glyph, b = next;
+        a.vertices[1].position[0] = a.vertices[0].position[0] + 8;
+        a.vertices[1].texcoord[0] = 8;
+        b.vertices[0].position[0] = a.vertices[0].position[0] + advance;
+        b.vertices[1].position[0] = b.vertices[0].position[0] + 8;
+        b.vertices[0].texcoord[0] = 8; b.vertices[1].texcoord[0] = 16;
+        emitted.clear();
+        ascii_runs.translate_draw(font_memory, a, emit); ascii_runs.translate_draw(font_memory, b, emit);
+        ascii_runs.flush_draws(emit);
+        require(emitted.size() == 1 && emitted[0].texture.address != glyph.texture.address,
+                "ASCII warning line was not rendered as host text");
+        b.vertices[1].position[0] += 8; b.vertices[1].texcoord[0] += 8;
+        emitted.clear();
+        ascii_runs.translate_draw(font_memory, a, emit); ascii_runs.translate_draw(font_memory, b, emit);
+        ascii_runs.flush_draws(emit);
+        require(emitted.size() == 2 && emitted[0].texture.address == glyph.texture.address,
+                "mixed ASCII and compact cells formed a misleading line");
+    }
+
+    // V7 help lines retain native geometry while supplying actual HD pixels.
+    auto hd_run_bytes = run_bytes; hd_run_bytes[7] = '7';
+    const auto hd_run_offset = hd_run_bytes.size();
+    integer(hd_run_bytes, 2, 2); integer(hd_run_bytes, 6, 4);
+    integer(hd_run_bytes, 512 * 16 * 4, 2); integer(hd_run_bytes, 0xff123456u, 4);
+    integer(hd_run_bytes, 0, 2); // dialogue
+    integer(hd_run_bytes, 0, 2); // atlas HD layers
+    integer(hd_run_bytes, 0, 2); // subtitles
+    auto hd_runs = load(hd_run_bytes);
+    font_memory.store8(glyph.texture.address + 33001, 0);
+    emitted.clear();
+    hd_runs.translate_draw(font_memory, glyph, emit); hd_runs.translate_draw(font_memory, next, emit); hd_runs.flush_draws(emit);
+    require(emitted.size() == 1 && emitted[0].vertices[1].position[0] == 110, "HD help line changed guest layout");
+    const auto host_id = emitted[0].texture.address;
+    const auto hd_image = hd_runs.host_image(host_id, 4);
+    require(hd_image.width == 1024 && hd_image.height == 32 && hd_image.rgba.size() == 1024 * 32 * 4 &&
+            hd_image.rgba[0] == 0x56 && hd_image.rgba[3] == 0xff, "HD help-line pixels not exposed to renderer");
+    require(hd_runs.host_image(host_id, 1).rgba.size() == 512 * 16 * 4 &&
+            runs.host_image(host_id, 8).width == 512, "native or old-pack help-line fallback failed");
+    auto invalid_hd_run = hd_run_bytes; invalid_hd_run[hd_run_offset] = 16; rejects(invalid_hd_run);
+    invalid_hd_run = hd_run_bytes; invalid_hd_run[hd_run_offset + 6] = 0; invalid_hd_run[hd_run_offset + 7] = 0;
+    rejects(invalid_hd_run);
+    invalid_hd_run = hd_run_bytes; invalid_hd_run.pop_back(); rejects(invalid_hd_run);
 
     // Captions share the compact-message format with dialogue, beyond 88 entries.
     auto many_captions = version2(); many_captions[7] = '4';

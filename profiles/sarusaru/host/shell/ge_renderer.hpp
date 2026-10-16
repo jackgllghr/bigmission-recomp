@@ -31,6 +31,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace sarusaru::shell {
@@ -80,6 +81,7 @@ public:
 private:
     ButtonPrompts *button_prompts_{};
     std::unordered_map<std::uint64_t, unsigned> prompt_atlases_;
+    std::unordered_set<VkImageView> action_hint_views_;
     const translation::TexturePack *translation_pack_{};
     const textures::HdTexturePack *hd_pack_{};
     textures::TextureDump *texture_dump_{};
