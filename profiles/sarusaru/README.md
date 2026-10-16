@@ -270,7 +270,7 @@ the pack for one run. See [`docs/hd-textures.md`](docs/hd-textures.md).
 
 A build can instead offer a **prebuilt HD pack** for the menus, icons,
 backgrounds and game textures, published apart from the port in
-[`sarusaru-hd-textures`](https://github.com/jackgllghr/sarusaru-hd-textures) (`SARUSARU_HD_PACK_URL/SHA256/SIZE`, empty by default). HD (4×)
+[`sarusaru-hd-textures`](https://github.com/jackgllghr/sarusaru-hd-textures) (`SARUSARU_HD_PACK_URL/SHA256/SIZE`, pinned to its current release). HD (4×)
 then downloads that zip once, checks its SHA-256 and that its `pack.ini`
 names the player's disc, and unpacks it to
 `<user data>/textures/4x-prebuilt-<hash>/`; 4K (8×) is still made on the

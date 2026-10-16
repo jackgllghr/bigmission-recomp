@@ -406,11 +406,16 @@ if(NOT SARUSARU_TEXTURE_RECIPE_URL STREQUAL "")
     endif()
 endif()
 # The optional prebuilt HD texture pack: a zip of a finished pack directory,
-# published apart from the port. When set, the launcher's HD (4x) choice
-# downloads it instead of upscaling on the device; 4K (8x) still needs the recipe.
-set(SARUSARU_HD_PACK_URL "" CACHE STRING "URL of the prebuilt HD texture pack zip the launcher offers (empty: none)")
-set(SARUSARU_HD_PACK_SHA256 "" CACHE STRING "SHA-256 of the prebuilt HD texture pack zip")
-set(SARUSARU_HD_PACK_SIZE "0" CACHE STRING "Size in bytes of the prebuilt HD texture pack zip")
+# published apart from the port (sarusaru-hd-textures). The defaults pin its
+# current release; the launcher's HD (4x) choice downloads it instead of
+# upscaling on the device, and 4K (8x) still needs the recipe. An empty URL
+# builds one that offers none.
+set(SARUSARU_HD_PACK_URL
+    "https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/hd-2026-10-16/sarusaru-hd-4x.zip"
+    CACHE STRING "URL of the prebuilt HD texture pack zip the launcher offers (empty: none)")
+set(SARUSARU_HD_PACK_SHA256 "39d11177c945995ad5623a048891f291f27a5a46ed5776aac668ba8bb21945ab"
+    CACHE STRING "SHA-256 of the prebuilt HD texture pack zip")
+set(SARUSARU_HD_PACK_SIZE "40814084" CACHE STRING "Size in bytes of the prebuilt HD texture pack zip")
 if(NOT SARUSARU_HD_PACK_URL STREQUAL "")
     string(LENGTH "${SARUSARU_HD_PACK_SHA256}" _sarusaru_hd_pack_hash_length)
     if(NOT SARUSARU_HD_PACK_URL MATCHES "^(https|file)://" OR NOT SARUSARU_HD_PACK_SHA256 MATCHES "^[0-9a-f]+$"
