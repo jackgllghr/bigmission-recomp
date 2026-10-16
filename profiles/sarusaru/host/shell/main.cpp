@@ -469,8 +469,16 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 script->tick(layer);
             }
             SDL_Event event;
+            bool system_back = false;
             while (SDL_PollEvent(&event)) {
                 if (event.type == SDL_EVENT_QUIT) quit = true;
+                // Android's Back button or gesture can press and release in
+                // one poll, so remember the event rather than its held state.
+                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                    event.key.scancode == SDL_SCANCODE_AC_BACK) {
+                    system_back = true;
+                    continue;
+                }
                 // Alt+Enter or F11 toggles fullscreen (at the desktop's
                 // resolution); the swapchain follows the new size.
                 if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
@@ -492,7 +500,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             const bool save_requested = controls.save_state && !save_held;
             load_held = controls.load_state; save_held = controls.save_state;
             if (!settling && !quit && (load_requested || save_requested)) queue_state(load_requested);
-            const bool open_menu = controls.menu && !menu_held && !quit;
+            const bool open_menu = (system_back || (controls.menu && !menu_held)) && !quit;
             menu_held = controls.menu;
             // What opened the menu (L3+R3, say) does nothing in the game.
             if (open_menu) controls = {};
@@ -748,6 +756,9 @@ int main(int argc, char **argv) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SaruSaru Recomp", error.what(), nullptr);
         return 2;
     }
+#if defined(__ANDROID__)
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         std::cerr << "sarusaru: SDL_Init failed: " << SDL_GetError() << '\n';
         return 1;

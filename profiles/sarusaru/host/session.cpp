@@ -6,6 +6,10 @@
 #include "psprecomp/sha256.hpp"
 
 #include <algorithm>
+#include <bit>
+#include <cstdio>
+#include <map>
+#include <string>
 #include <cstdlib>
 #include <string_view>
 
@@ -122,6 +126,61 @@ GameSession::GameSession(const std::filesystem::path &executable, const std::fil
     psprecomp::set_runtime_pre_dispatch_hook(&observe_dispatch);
 }
 
+
+// DEBUG(draw distance): temporary call census.
+namespace {
+struct DbgCensus {
+    std::uint64_t t0{}, t1{};
+    bool on{}, done{};
+    std::map<std::uint64_t, std::uint64_t> all;
+    std::map<std::uint64_t, std::uint64_t> cam; // pc<<8 | arg index
+    std::map<std::uint64_t, std::string> actors;
+    DbgCensus() {
+        if (const char *v = std::getenv("SARUSARU_DBG_CENSUS")) {
+            double a = 0, b = 0;
+            if (std::sscanf(v, "%lf,%lf", &a, &b) == 2) { on = true; t0 = std::uint64_t(a * 1e6); t1 = std::uint64_t(b * 1e6); }
+        }
+    }
+    void call(std::uint32_t pc, psprecomp::GuestMemory &m, const psprecomp::AllegrexContext &ctx, std::uint64_t now) {
+        if (!on || done || now < t0) return;
+        if (now >= t1) {
+            done = true;
+            for (auto &[k, v] : all) std::fprintf(stderr, "CENSUS all %08X %08X %llu\n", unsigned(k >> 32), unsigned(k), (unsigned long long)v);
+            for (auto &[k, v] : actors) std::fprintf(stderr, "CENSUS actor %08X ra=%08X %s\n", unsigned(k >> 32), unsigned(k), v.c_str());
+            for (auto &[k, v] : cam) std::fprintf(stderr, "CENSUS cam %08X a%u %llu\n", unsigned(k >> 8), unsigned(k & 0xFF), (unsigned long long)v);
+            return;
+        }
+        ++all[(std::uint64_t(pc) << 32) | ctx.gpr[31]];
+        if (const auto ra = ctx.gpr[31]; ra == 0x08900AE8u || ra == 0x08900BA0u || ra == 0x08900BD0u) {
+            const auto a = ctx.gpr[4];
+            auto &line = actors[(std::uint64_t(a) << 32) | ra];
+            char buf[160];
+            std::snprintf(buf, sizeof buf, "fn=%08X v300=%g b368=%u b380=%u", pc, std::bit_cast<float>(m.load32(a + 300u)), m.load32(a + 368u), unsigned(m.load8(a + 380u)));
+            line = buf;
+        }
+        const auto sys = m.load32(0x08A82B24u);
+        if (!m.contains(sys, 24u)) return;
+        const auto c = m.load32(sys + 20u);
+        for (unsigned i = 4; i < 8; ++i) {
+            const auto r = ctx.gpr[i];
+            if (r == c) ++cam[(std::uint64_t(pc) << 8) | i];
+            else if (r > c && r < c + 0x400u) ++cam[(std::uint64_t(pc) << 8) | (0x10u + i)];
+        }
+    }
+};
+DbgCensus g_dbg;
+float dbg_env(const char *n, float d) { const char *v = std::getenv(n); return v ? float(std::atof(v)) : d; }
+void dbg_pull(std::uint32_t pc, psprecomp::GuestMemory &m, const psprecomp::AllegrexContext &ctx) {
+    static const float k = dbg_env("SARUSARU_DBG_PULL", 1.0f);
+    if (k == 1.0f || pc != 0x088FD1B0u || ctx.gpr[31] != 0x0888A120u) return;
+    const auto c = ctx.gpr[4];
+    for (unsigned i = 0; i < 3; ++i) {
+        const float e = std::bit_cast<float>(m.load32(c + 112u + 4u * i)), t = std::bit_cast<float>(m.load32(c + 144u + 4u * i));
+        m.store32(c + 112u + 4u * i, std::bit_cast<std::uint32_t>(t + (e - t) * k));
+    }
+}
+}
+
 GameSession *GameSession::observed_session_ = nullptr;
 
 GameSession::~GameSession() {
@@ -134,6 +193,8 @@ GameSession::~GameSession() {
 void GameSession::observe_call(psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx,
                                std::uint32_t pc, std::uint32_t) {
     if (auto *session = observed_session_) {
+        g_dbg.call(pc, rt.memory(), ctx, session->kernel.now_us());
+        dbg_pull(pc, rt.memory(), ctx);
         session->intro_logos.on_call(pc, rt.memory(), ctx, session->controller, session->kernel.now_us());
         if (session->camera_control_) {
             session->orbit_camera.on_call(pc, rt.memory(), ctx, session->kernel.now_us());
