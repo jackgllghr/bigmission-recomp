@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "gpu/ge_state.hpp"
 #include "kernel/early_kernel.hpp"
@@ -35,6 +36,7 @@ enum class ListState : std::uint32_t { Completed = 0, Queued = 1, Drawing = 2, S
 // state for a future renderer. Nothing is rasterised. Bounding-box tests are
 // treated as visible, so BJUMP never branches.
 class Ge {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     struct Stats {
         std::uint64_t commands{};
@@ -98,7 +100,8 @@ private:
     bool execute(std::uint32_t index);
     void complete(std::uint32_t index);
     void raise(std::uint32_t function, std::uint32_t argument, std::uint32_t gp, std::uint32_t value,
-               std::uint32_t pc, std::string label, std::function<void(std::uint32_t)> on_return = nullptr);
+               std::uint32_t pc, std::string label, kernel::EarlyKernel::Action on_return = {});
+    void resume_list(std::uint32_t index);
     [[nodiscard]] std::uint32_t target(std::uint32_t data, std::uint32_t offset) const noexcept;
 };
 

@@ -204,6 +204,29 @@ static void test_nested_direct_chain_context_guard() {
     psprecomp::set_runtime_thread_identity(-1, "none");
 }
 
+static void snapshot_request(psprecomp::Runtime &runtime, psprecomp::AllegrexContext &ctx) {
+    ctx.pc = 0x08808000u;
+    runtime.request_dispatch_boundary();
+}
+static void test_snapshot_request_unwinds_chains() {
+    psprecomp::set_runtime_starvation_hook(nullptr, 0u);
+    psprecomp::set_runtime_thread_identity(3, "snapshot-owner");
+    {
+        psprecomp::Runtime runtime;
+        runtime.register_generated_unit(0,0x08800000,0x4000,&snapshot_request);
+        auto &ctx=runtime.cpu(); ctx.pc=0x08800000;
+        require(!runtime.invoke_chained_direct<&snapshot_request,0>(ctx), "save request did not unwind a direct chain");
+        require(ctx.pc==0x08808000 && psprecomp::runtime_thread_uid()==3, "save request changed execution ownership");
+    }
+    {
+        psprecomp::Runtime runtime;
+        runtime.register_generated_unit(0,0x08800000,0x4000,&snapshot_request);
+        auto &ctx=runtime.cpu(); ctx.pc=0x08800000;
+        require(!runtime.invoke_chained_unit(ctx,0), "save request did not unwind a dynamic unit chain");
+    }
+    psprecomp::set_runtime_thread_identity(-1,"none");
+}
+
 static void test_import_return_context_guard() {
     psprecomp::set_runtime_thread_identity(5, "UmdStreamThread");
     const auto worker_context = psprecomp::capture_runtime_execution_context();
@@ -899,6 +922,7 @@ int main() {
         test_import_return_context_guard();
         test_chained_call_context_guard();
         test_nested_direct_chain_context_guard();
+        test_snapshot_request_unwinds_chains();
 
         psprecomp::GuestMemory mem;
         mem.store32(0x08800000u, 0x12345678u);

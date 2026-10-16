@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "psprecomp/runtime.hpp"
 
@@ -12,6 +13,7 @@ namespace sarusaru {
 // writeback calls, which have no effect on coherent host memory. It does not
 // pretend to be a PSP kernel.
 class StartupHle {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     void install(psprecomp::Runtime &runtime);
 

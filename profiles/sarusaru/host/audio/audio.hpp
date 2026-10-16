@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "kernel/early_kernel.hpp"
 #include "psprecomp/runtime.hpp"
@@ -33,6 +34,7 @@ inline constexpr std::uint32_t kBlocksInFlight = 2u;
 // which paces the guest audio thread. Samples are counted, and handed to a
 // host sink (the windowed shell's audio output) when one is set.
 class Audio {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     struct Channel {
         bool reserved{};
@@ -44,7 +46,7 @@ public:
         std::uint64_t samples_output{};
     };
 
-    explicit Audio(kernel::EarlyKernel &kernel) noexcept : kernel_(&kernel) {}
+    explicit Audio(kernel::EarlyKernel &kernel);
 
     // Receives each accepted block when it is queued: interleaved 16-bit
     // samples (mono or stereo) and the channel's volumes (0x8000 = unity).

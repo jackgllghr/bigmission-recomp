@@ -9,19 +9,22 @@
 // mouse or a touch screen alone.
 //
 // In game, the same settings and bindings screens make the pause menu (Resume,
-// Settings, Quit game) over the paused game's picture. Installing, choosing a
+// Settings, Saves, Quit game) over the paused game's picture. Installing, choosing a
 // disc and making packs stay in the launcher.
 #include "game_disc.hpp"
+#include "save_state/slots.hpp"
 #include "install/game_builder.hpp"
 #include "install/pack_download.hpp"
 #include "install/texture_build.hpp"
 #include "install/toolchain.hpp"
 #include "install/update_check.hpp"
 #include "ui/bindings.hpp"
+#include "ui/settings_rows.hpp"
 #include "shell/settings.hpp"
 #include "ui/layer.hpp"
 
 #include <atomic>
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -35,7 +38,7 @@ class UiScript;
 
 class Launcher {
 public:
-    enum class Outcome { Play, Quit, Resume };
+    enum class Outcome { Play, Quit, Resume, SaveState, LoadState };
     enum class Mode { Launcher, InGame };
 
     // `settings` is edited in place and saved to `settings_path` as it changes.
@@ -55,7 +58,7 @@ public:
     Outcome run(UiScript *script = nullptr);
 
 private:
-    enum class Screen { Home, Install, Settings, Bindings, Pack, Textures, Paused };
+    enum class Screen { Home, Install, Settings, Bindings, Pack, Textures, Paused, Saves };
 
     Layer &layer_;
     Mode mode_;
@@ -114,6 +117,13 @@ private:
     void frame();
     void home();
     void paused();
+    void saves();
+    void refresh_slots();
+    void clear_slot_previews();
+    void open_saves_folder();
+    std::array<save_state::SlotInfo, save_state::kSlotCount> slots_{};
+    std::array<ImTextureID, save_state::kSlotCount> slot_previews_{};
+    std::string saves_error_;
     [[nodiscard]] bool in_game() const noexcept { return mode_ == Mode::InGame; }
     void install();
     void settings();
@@ -124,6 +134,10 @@ private:
     // Picks the Textures row's next choice: the original textures, a pack
     // already made, or the screen that makes one.
     void choose_textures(int direction);
+    void choose_game_text(int direction);
+    // Pack setup returns to the screen that opened it, including installation.
+    Screen pack_return_screen_{Screen::Settings};
+    void return_from_pack(SettingRow row);
     void capture_overlay();
     bool capture_event(const SDL_Event &event);
 

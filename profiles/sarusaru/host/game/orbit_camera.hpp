@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "psprecomp/runtime.hpp"
 
@@ -9,6 +10,7 @@ namespace sarusaru::game {
 // Player-centred orbit at the native view-build boundary. Only the hub's
 // walking camera and the stage's ordinary follow modes accept host input.
 class OrbitCamera {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     struct Input { float x{}, y{}; bool reset{}; };
     static constexpr std::uint32_t kBuildView = 0x088FD1B0u;

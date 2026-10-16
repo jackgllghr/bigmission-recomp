@@ -15,10 +15,27 @@ void remove_waiter(std::map<std::int32_t, Object> &objects, std::int32_t uid, Th
 }
 }
 
-void SyncObjects::order_waiters(std::deque<Waiter> &waiters, std::uint32_t attributes) const {
-    std::erase_if(waiters, [this](const Waiter &waiter) {
+SyncObjects::SyncObjects(EarlyKernel &kernel) : kernel_(&kernel) {
+    kernel.set_action_handler(EarlyKernel::ActionKind::SemaphoreTimeout, [this](const EarlyKernel::Action &action) {
+        remove_waiter(semaphores_, static_cast<std::int32_t>(action.arguments[0]), static_cast<ThreadUid>(action.arguments[1]));
+        return 0u;
+    });
+    kernel.set_action_handler(EarlyKernel::ActionKind::EventFlagTimeout, [this](const EarlyKernel::Action &action) {
+        const auto uid = static_cast<std::int32_t>(action.arguments[0]);
+        const auto found = event_flags_.find(uid);
+        if (found != event_flags_.end()) {
+            if (action.arguments[2] != 0u) kernel_->runtime().memory().store32(action.arguments[2], found->second.pattern);
+            remove_waiter(event_flags_, uid, static_cast<ThreadUid>(action.arguments[1]));
+        }
+        return 0u;
+    });
+}
+
+void SyncObjects::order_waiters(std::deque<Waiter> &waiters, std::uint32_t attributes, EarlyKernel::WaitType type, std::int32_t uid) const {
+    std::erase_if(waiters, [this, type, uid](const Waiter &waiter) {
         const auto *thread = kernel_->thread(waiter.thread);
-        return thread == nullptr || thread->state != EarlyKernel::ThreadState::Waiting;
+        return thread == nullptr || thread->state != EarlyKernel::ThreadState::Waiting ||
+            thread->wait_identity.type != type || thread->wait_identity.object != static_cast<std::uint32_t>(uid);
     });
     if ((attributes & kAttrPriorityQueue) != 0u) {
         std::ranges::stable_sort(waiters, [this](const Waiter &left, const Waiter &right) {
@@ -55,7 +72,7 @@ void SyncObjects::signal_semaphore(psprecomp::AllegrexContext &context, std::int
         return;
     }
     semaphore.count += count;
-    order_waiters(semaphore.waiters, semaphore.attributes);
+    order_waiters(semaphore.waiters, semaphore.attributes, EarlyKernel::WaitType::Semaphore, uid);
     // Waiters are served strictly in queue order: an unsatisfiable head blocks the rest.
     while (!semaphore.waiters.empty() && static_cast<std::int32_t>(semaphore.waiters.front().value) <= semaphore.count) {
         semaphore.count -= static_cast<std::int32_t>(semaphore.waiters.front().value);
@@ -71,7 +88,7 @@ void SyncObjects::wait_semaphore(psprecomp::AllegrexContext &context, std::int32
     if (found == semaphores_.end()) { context.set_gpr(2u, kUnknownSemaphore); return; }
     Semaphore &semaphore = found->second;
     if (count <= 0 || count > semaphore.maximum) { context.set_gpr(2u, kIllegalCount); return; }
-    order_waiters(semaphore.waiters, semaphore.attributes);
+    order_waiters(semaphore.waiters, semaphore.attributes, EarlyKernel::WaitType::Semaphore, uid);
     if (semaphore.waiters.empty() && semaphore.count >= count) {
         semaphore.count -= count;
         context.set_gpr(2u, 0u);
@@ -79,8 +96,10 @@ void SyncObjects::wait_semaphore(psprecomp::AllegrexContext &context, std::int32
     }
     const ThreadUid thread = kernel_->current_uid();
     semaphore.waiters.push_back({thread, static_cast<std::uint32_t>(count), 0u, 0u});
-    kernel_->block_current(context, kernel_->object_wait("semaphore " + semaphore.name, timeout_address,
-        [this, uid, thread] { remove_waiter(semaphores_, uid, thread); }));
+    auto wait = kernel_->object_wait("semaphore " + semaphore.name, timeout_address,
+        {EarlyKernel::ActionKind::SemaphoreTimeout, {static_cast<std::uint32_t>(uid), static_cast<std::uint32_t>(thread)}});
+    wait.identity = {EarlyKernel::WaitType::Semaphore, static_cast<std::uint32_t>(uid), static_cast<std::uint32_t>(count)};
+    kernel_->block_current(context, std::move(wait));
 }
 
 std::int32_t SyncObjects::semaphore_count(std::int32_t uid) const noexcept {
@@ -120,7 +139,7 @@ void SyncObjects::set_event_flag(psprecomp::AllegrexContext &context, std::int32
     if (found == event_flags_.end()) { context.set_gpr(2u, kUnknownEventFlag); return; }
     EventFlag &flag = found->second;
     flag.pattern |= bits;
-    order_waiters(flag.waiters, flag.attributes);
+    order_waiters(flag.waiters, flag.attributes, EarlyKernel::WaitType::EventFlag, uid);
     // Every satisfied waiter is released in order; earlier clears can unsatisfy later ones.
     for (auto it = flag.waiters.begin(); it != flag.waiters.end();) {
         if (!satisfied(flag.pattern, it->value, it->mode)) { ++it; continue; }
@@ -149,7 +168,7 @@ void SyncObjects::wait_event_flag(psprecomp::AllegrexContext &context, std::int3
     const auto found = event_flags_.find(uid);
     if (found == event_flags_.end()) { context.set_gpr(2u, kUnknownEventFlag); return; }
     EventFlag &flag = found->second;
-    order_waiters(flag.waiters, flag.attributes);
+    order_waiters(flag.waiters, flag.attributes, EarlyKernel::WaitType::EventFlag, uid);
     if ((flag.attributes & kEventFlagWaitMultiple) == 0u && !flag.waiters.empty()) {
         context.set_gpr(2u, kEventFlagMultipleWaiters);
         return;
@@ -161,13 +180,11 @@ void SyncObjects::wait_event_flag(psprecomp::AllegrexContext &context, std::int3
         return;
     }
     flag.waiters.push_back(waiter);
-    kernel_->block_current(context, kernel_->object_wait("event flag " + flag.name, timeout_address,
-        [this, uid, waiter] {
-            const auto timed_out = event_flags_.find(uid);
-            if (timed_out == event_flags_.end()) return;
-            if (waiter.out_address != 0u) kernel_->runtime().memory().store32(waiter.out_address, timed_out->second.pattern);
-            remove_waiter(event_flags_, uid, waiter.thread);
-        }));
+    auto wait = kernel_->object_wait("event flag " + flag.name, timeout_address,
+        {EarlyKernel::ActionKind::EventFlagTimeout,
+         {static_cast<std::uint32_t>(uid), static_cast<std::uint32_t>(waiter.thread), waiter.out_address}});
+    wait.identity = {EarlyKernel::WaitType::EventFlag, static_cast<std::uint32_t>(uid), bits};
+    kernel_->block_current(context, std::move(wait));
 }
 
 std::uint32_t SyncObjects::event_flag_pattern(std::int32_t uid) const noexcept {

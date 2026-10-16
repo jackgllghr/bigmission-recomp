@@ -117,6 +117,10 @@ std::uint32_t Controller::write_samples(psprecomp::GuestMemory &memory, std::uin
 }
 
 void register_ctrl(Controller &controller, kernel::EarlyKernel &kernel, psprecomp::Runtime &runtime) {
+    kernel.set_action_handler(kernel::EarlyKernel::ActionKind::ControllerRead,
+        [&controller, &kernel](const kernel::EarlyKernel::Action &action) {
+            return controller.write_samples(kernel.runtime().memory(), action.arguments[0], action.arguments[1], kernel.now_us());
+        });
     runtime.register_hle("sceCtrl", 0x1F803938u,  // sceCtrlReadBufferPositive
         [&controller, &kernel](psprecomp::Runtime &rt, psprecomp::AllegrexContext &ctx) {
             const std::uint32_t address = ctx.gpr[4];
@@ -127,9 +131,8 @@ void register_ctrl(Controller &controller, kernel::EarlyKernel &kernel, psprecom
             const std::uint32_t written = controller.write_samples(rt.memory(), address, count, kernel.now_us());
             if (written != 0u) { ctx.set_gpr(2u, written); return; }
             const std::uint64_t next = controller.sample_time_us(controller.sample_index(kernel.now_us()) + 1u);
-            kernel.wait_current_until(ctx, next, [&controller, &kernel, &rt, address, count] {
-                return controller.write_samples(rt.memory(), address, count, kernel.now_us());
-            });
+            kernel.wait_current_until(ctx, next, {kernel::EarlyKernel::ActionKind::ControllerRead, {address, count}},
+                {kernel::EarlyKernel::WaitType::Controller, 0u, count});
         });
     runtime.register_hle("sceCtrl", 0x1F4011E6u,  // sceCtrlSetSamplingMode
         [&controller](psprecomp::Runtime &, psprecomp::AllegrexContext &ctx) {

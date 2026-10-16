@@ -68,6 +68,7 @@ public:
 
     // Runs the game from its entry point until it stops or `dispatch_limit` is reached.
     void run(std::uint64_t dispatch_limit);
+    void restore_observers();
 
     [[nodiscard]] const std::string &module_name() const noexcept { return module_name_; }
     [[nodiscard]] std::uint32_t entry() const noexcept { return entry_; }

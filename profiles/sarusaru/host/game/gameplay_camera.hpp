@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 // Recognises the game frames drawn through a player-following gameplay camera,
 // so camera overrides (the FOV) leave the title, menus and cutscenes native.
@@ -21,6 +22,7 @@
 namespace sarusaru::game {
 
 class GameplayCamera {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     // Routines of the SHA-256-verified UCJS10060 executable.
     static constexpr std::uint32_t kStageFollowCamera = 0x0888A09Cu;

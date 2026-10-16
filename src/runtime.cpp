@@ -1,4 +1,5 @@
 #include "psprecomp/runtime.hpp"
+#include "psprecomp/interpreter.hpp"
 #include "psprecomp/common.hpp"
 
 #include <algorithm>
@@ -193,7 +194,7 @@ bool Runtime::run_starvation_boundary(AllegrexContext &ctx) {
     g_starvation_hook(*this, ctx);
     const bool same_context = runtime_execution_context_matches(before);
     if (!same_context) chain_context_invalidated_ = true;
-    return same_context;
+    return same_context && !chain_context_invalidated_;
 }
 
 bool Runtime::account_dispatch_work(AllegrexContext &ctx, bool allow_preemption) {
@@ -281,7 +282,7 @@ bool Runtime::invoke_chained_call(AllegrexContext &ctx, GuestMemory::AotFastView
     // ownership without passing through run_starvation_boundary(). Keep the
     // generation guard here even in production; compile-time direct chains use
     // chain_context_invalidated_ and retain their cheaper hot path.
-    if (caller_generation != g_runtime_thread_switch_generation_fast) {
+    if (chain_context_invalidated_ || caller_generation != g_runtime_thread_switch_generation_fast) {
         (void)account_dispatch_work(ctx, false);
         return false;
     }
@@ -323,7 +324,7 @@ bool Runtime::invoke_chained_unit(AllegrexContext &ctx, std::uint32_t unit_index
 
     // A descendant scheduler boundary may have switched the PSP context while
     // this frame was active. Never let a stale native caller resume it.
-    if (caller_generation != g_runtime_thread_switch_generation_fast) {
+    if (chain_context_invalidated_ || caller_generation != g_runtime_thread_switch_generation_fast) {
         (void)account_dispatch_work(ctx, false);
         return false;
     }
@@ -362,6 +363,11 @@ void Runtime::register_generated_unit(std::uint32_t unit_index,
 bool Runtime::invoke_isolated_aot(std::uint32_t address, AllegrexContext &ctx) {
     const RecompiledFunction function = lookup_function(address);
     if (function == nullptr) return false;
+    struct IsolatedGuard {
+        std::uint32_t &depth;
+        explicit IsolatedGuard(std::uint32_t &value) : depth(value) { ++depth; }
+        ~IsolatedGuard() { --depth; }
+    } isolated_guard(isolated_depth_);
     ctx.pc = address;
     function(*this, ctx);
     ctx.gpr[0] = 0u;
@@ -492,7 +498,27 @@ void Runtime::register_hle(std::string library, std::uint32_t nid, HleFunction f
 }
 
 bool Runtime::has_function(std::uint32_t address) const { return lookup_function(address) != nullptr; }
+Runtime::RecompiledFunction Runtime::dispatch_function(std::uint32_t address) const noexcept {
+    if (interpreter_enabled_ && cpu_.in_delay_slot) return &interpret_instruction;
+    const auto function = lookup_function(address);
+    return function != nullptr ? function : (interpreter_enabled_ ? &interpret_instruction : nullptr);
+}
+void Runtime::invoke_syscall(AllegrexContext &context, std::uint32_t code) {
+    if (syscall_handler_) syscall_handler_(*this, context, code);
+    else unsupported(context.pc, memory_.load32(context.pc), "unbound interpreter syscall");
+}
 std::size_t Runtime::function_count() const noexcept { return functions_.size(); }
+
+void Runtime::run_dispatch_boundary() {
+    // A callback may replace/remove its own binding while fulfilling a request.
+    auto hook = dispatch_boundary_hook_;
+    struct BoundaryGuard {
+        bool &active;
+        explicit BoundaryGuard(bool &value) : active(value) { active = true; }
+        ~BoundaryGuard() { active = false; }
+    } boundary_guard(at_dispatch_boundary_);
+    hook(*this);
+}
 
 void Runtime::set_game_root(std::filesystem::path root) { game_root_ = std::filesystem::weakly_canonical(std::move(root)); }
 const std::filesystem::path &Runtime::game_root() const noexcept { return game_root_; }
@@ -512,6 +538,12 @@ std::filesystem::path Runtime::translate_path(const std::string &psp_path) const
 }
 
 void Runtime::run(std::uint32_t entry, std::uint64_t max_dispatches) {
+    if (running_ || isolated_depth_ != 0) throw Error("Runtime::run cannot be nested");
+    struct RunningGuard {
+        bool &running;
+        explicit RunningGuard(bool &value) : running(value) { running = true; }
+        ~RunningGuard() { running = false; }
+    } running_guard(running_);
     stopped_ = false;
     stop_reason_.clear();
     cpu_.pc = entry;
@@ -577,10 +609,12 @@ void Runtime::run(std::uint32_t entry, std::uint64_t max_dispatches) {
             : std::min(max_dispatches, profile_dispatch_start + profile_dispatch_count);
         std::uint64_t dispatch = 0u;
         auto execute_once = [&]() {
+            if (dispatch_boundary_hook_) run_dispatch_boundary();
+            if (stopped_) return;
             const std::uint32_t before = cpu_.pc;
             chain_context_invalidated_ = false;
             const std::int32_t dispatch_thread_uid = g_runtime_thread_uid;
-            RecompiledFunction function = lookup_function(before);
+            RecompiledFunction function = dispatch_function(before);
             if (function == nullptr) {
                 stop("No recompiled function registered at " + hex32(before));
                 return;
@@ -647,6 +681,8 @@ void Runtime::run(std::uint32_t entry, std::uint64_t max_dispatches) {
         const std::uint64_t starvation_every = starvation != nullptr ? g_starvation_interval : 0u;
         std::uint64_t executed_dispatches = 0u;
         for (; executed_dispatches < max_dispatches && !stopped_; ++executed_dispatches) {
+            if (dispatch_boundary_hook_) run_dispatch_boundary();
+            if (stopped_) break;
             const std::uint32_t before = cpu_.pc;
             chain_context_invalidated_ = false;
             const std::int32_t dispatch_thread_uid = g_runtime_thread_uid;
@@ -656,8 +692,8 @@ void Runtime::run(std::uint32_t entry, std::uint64_t max_dispatches) {
             // cost a cache/TLB miss at every outer return.  Any unit containing
             // a host/import override is poisoned at registration and falls
             // back to exact per-PC dispatch automatically.
-            RecompiledFunction function = lookup_generated_unit(before);
-            if (function == nullptr) function = lookup_function(before);
+            RecompiledFunction function = interpreter_enabled_ && cpu_.in_delay_slot ? nullptr : lookup_generated_unit(before);
+            if (function == nullptr) function = dispatch_function(before);
             if (function == nullptr) {
                 stop("No recompiled function registered at " + hex32(before));
                 break;
@@ -712,10 +748,12 @@ void Runtime::run(std::uint32_t entry, std::uint64_t max_dispatches) {
         return;
     }
     for (std::uint64_t dispatch = 0; dispatch < max_dispatches && !stopped_; ++dispatch) {
+        if (dispatch_boundary_hook_) run_dispatch_boundary();
+        if (stopped_) break;
         if (profile_dispatch) ++dispatch_counts[cpu_.pc];
         const std::uint32_t before = cpu_.pc;
         chain_context_invalidated_ = false;
-        RecompiledFunction function = lookup_function(before);
+        RecompiledFunction function = dispatch_function(before);
         const FunctionEntry *function_entry = lookup_entry(before);
         if (function == nullptr) {
             stop("No recompiled function registered at " + hex32(before));

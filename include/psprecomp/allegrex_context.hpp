@@ -31,6 +31,12 @@ struct alignas(16) AllegrexContext {
     std::array<float, 128> vfpu{};
     std::array<std::uint32_t, 16> vfpu_ctrl{};
 
+    // Interpreter continuation. A restored CPU can be stopped between a branch
+    // and its delay slot; that slot must run before returning to compiled code.
+    std::uint32_t next_pc{};
+    bool in_delay_slot{};
+    bool load_linked{};
+
 
     [[nodiscard]] PSPRECOMP_CONTEXT_FORCEINLINE std::uint32_t fpr_bits(std::uint32_t index) const noexcept {
         return index < fpr.size() ? std::bit_cast<std::uint32_t>(fpr[index]) : 0u;

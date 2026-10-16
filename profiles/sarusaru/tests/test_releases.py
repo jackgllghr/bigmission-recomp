@@ -57,7 +57,7 @@ class Releases(unittest.TestCase):
             check_android_apk.check(path)
             check_android_apk.check(path, allow_missing_compiler=True)
             for extra in ('lib/arm64-v8a/sarusaru_game.so', 'assets/BOOT.elf',
-                          'assets/translation.sstp', 'assets/../unsafe', 'assets/random.png'):
+                          'assets/translation.sstp', 'assets/resources/quick.bmstate', 'assets/resources/quick.ppst', 'assets/../unsafe', 'assets/random.png'):
                 self.apk(path, extra)
                 with self.subTest(extra=extra), self.assertRaises(ValueError):
                     check_android_apk.check(path)

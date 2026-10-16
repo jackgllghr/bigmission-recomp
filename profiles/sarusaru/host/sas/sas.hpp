@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 #include "psprecomp/runtime.hpp"
 
@@ -43,6 +44,7 @@ enum class Curve : std::uint32_t {
 // start, bit 0 the end of the data, bit 1 with it (3) an end that jumps back
 // to the loop start when the voice loops, and 7 an unconditional end.
 class VagDecoder {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     void start(std::uint32_t address, std::uint32_t size, bool loop) noexcept;
     // Next sample, or nullopt once the data has ended.
@@ -60,6 +62,7 @@ private:
 
 // ADSR envelope with height 0..0x40000000, stepped once per output sample.
 class Envelope {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     enum class Phase { Off, Attack, Decay, Sustain, Release };
     struct Stage { Curve curve{Curve::LinearIncrease}; std::int64_t rate{}; };
@@ -89,6 +92,7 @@ private:
 // 7 delay and 8 pipe. Echo and delay derive their length and feedback from
 // sceSasRevParam; the other presets ignore it.
 class Reverb {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     // Registers in psx-spx order. m/d registers count 8-byte units of the
     // work buffer relative to the moving buffer position; v registers are
@@ -129,6 +133,7 @@ private:
 // into stereo 16-bit output. Effect sends feed the reverb, whose wet output
 // is mixed in when sceSasRevVON turns it on (the dry voices likewise).
 class SasCore {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     struct Voice {
         bool configured{}, on{}, paused{}, noise{}, primed{};

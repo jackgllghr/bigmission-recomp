@@ -1,4 +1,5 @@
 #pragma once
+#include "save_state/session_access.hpp"
 
 // Adapted from Yakumo (https://github.com/TeamGDB/Yakumo, revision 39ac05f),
 // MIT License; see profiles/sarusaru/THIRD_PARTY.md.
@@ -33,6 +34,7 @@ inline constexpr std::uint32_t kResultOffset = 0x1Cu;
 inline constexpr std::uint32_t kErrorInvalidStatus = 0x80110001u;
 
 class DialogLifecycle {
+    friend struct sarusaru::save_state::SessionCodec;
 public:
     [[nodiscard]] bool active() const noexcept { return status_ != dialog_status::kNone; }
     [[nodiscard]] std::uint32_t status() const noexcept { return status_; }

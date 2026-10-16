@@ -179,6 +179,14 @@ std::string emit_regular(const psprecomp::DecodedInstruction &d, std::uint32_t p
     case psprecomp::OpcodeKind::Lw: out << "    ctx.set_gpr(" << d.rt << ", rt.memory().aot_load32(" << reg(d.rs) << " + static_cast<std::uint32_t>(" << imm << ")));\n"; break;
     case psprecomp::OpcodeKind::Lwl: out << "    ctx.set_gpr(" << d.rt << ", rt.memory().aot_load_word_left(" << reg(d.rs) << " + static_cast<std::uint32_t>(" << imm << "), " << reg(d.rt) << "));\n"; break;
     case psprecomp::OpcodeKind::Lwr: out << "    ctx.set_gpr(" << d.rt << ", rt.memory().aot_load_word_right(" << reg(d.rs) << " + static_cast<std::uint32_t>(" << imm << "), " << reg(d.rt) << "));\n"; break;
+    case psprecomp::OpcodeKind::Ll:
+        if (d.rt != 0u) out << "    ctx.set_gpr(" << d.rt << ", rt.memory().aot_load32(" << reg(d.rs) << " + static_cast<std::uint32_t>(" << imm << ")));\n";
+        out << "    ctx.load_linked = true;\n";
+        break;
+    case psprecomp::OpcodeKind::Sc:
+        out << "    if (ctx.load_linked) rt.memory().aot_store32(" << reg(d.rs) << " + static_cast<std::uint32_t>(" << imm << "), " << reg(d.rt) << ");\n"
+            << "    ctx.set_gpr(" << d.rt << ", ctx.load_linked ? 1u : 0u);\n";
+        break;
     case psprecomp::OpcodeKind::Sw: out << "    rt.memory().aot_store32(" << reg(d.rs) << " + static_cast<std::uint32_t>(" << imm << "), " << reg(d.rt) << ");\n"; break;
     case psprecomp::OpcodeKind::Swl: out << "    rt.memory().aot_store_word_left(" << reg(d.rs) << " + static_cast<std::uint32_t>(" << imm << "), " << reg(d.rt) << ");\n"; break;
     case psprecomp::OpcodeKind::Swr: out << "    rt.memory().aot_store_word_right(" << reg(d.rs) << " + static_cast<std::uint32_t>(" << imm << "), " << reg(d.rt) << ");\n"; break;

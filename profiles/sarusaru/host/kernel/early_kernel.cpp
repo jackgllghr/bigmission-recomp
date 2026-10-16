@@ -88,6 +88,20 @@ void EarlyKernel::make_ready(ThreadInfo &thread) noexcept {
     thread.ready_sequence = next_ready_sequence_++;
 }
 
+void EarlyKernel::set_action_handler(ActionKind kind, ActionHandler handler) {
+    if (kind <= ActionKind::ReturnValue || kind > ActionKind::EventFlagTimeout || !handler)
+        throw psprecomp::Error("Invalid scheduler action binding");
+    action_handlers_[kind] = std::move(handler);
+}
+
+std::uint32_t EarlyKernel::perform_action(const Action &action) {
+    if (action.kind == ActionKind::None) return 0u;
+    if (action.kind == ActionKind::ReturnValue) return action.arguments[0];
+    const auto handler = action_handlers_.find(action.kind);
+    if (handler == action_handlers_.end()) throw psprecomp::Error("Unbound scheduler continuation");
+    return handler->second(action);
+}
+
 EarlyKernel::ThreadInfo *EarlyKernel::best_ready_thread() noexcept {
     ThreadInfo *best = nullptr;
     for (auto &[uid, candidate] : threads_) {
@@ -134,11 +148,19 @@ void EarlyKernel::wake_due_threads() {
                                                      : left->wait_sequence < right->wait_sequence;
     });
     for (ThreadInfo *thread : due) {
-        if (thread->on_wake) thread->context.set_gpr(2u, thread->on_wake());
-        thread->on_wake = nullptr;
+        const auto result = perform_action(thread->on_wake);
+        if (thread->timeout_address != 0u) {
+            runtime_->memory().store32(thread->timeout_address, 0u);
+            thread->context.set_gpr(2u, kWaitTimeout);
+        } else {
+            thread->context.set_gpr(2u, result);
+        }
+        thread->on_wake = {};
+        thread->resume_wait.reset();
         thread->timeout_address = 0u;
         thread->end_of = 0;
         thread->wait_label.clear();
+        thread->wait_identity = {};
         make_ready(*thread);
     }
 }
@@ -231,9 +253,7 @@ void EarlyKernel::guest_call_returned(psprecomp::AllegrexContext &context) {
         }
         context = *thread.callback_saved;
         thread.callback_saved.reset();
-        const auto after = std::move(thread.after_callbacks);
-        thread.after_callbacks = nullptr;
-        after(context);
+        finish_callbacks(thread, context);
         return;
     }
     if (interrupt_calls_.empty()) {
@@ -242,7 +262,7 @@ void EarlyKernel::guest_call_returned(psprecomp::AllegrexContext &context) {
     }
     const auto on_return = std::move(interrupt_calls_.front().on_return);
     interrupt_calls_.pop_front();
-    if (on_return) on_return(context.gpr[2]);
+    (void)perform_action(on_return);
     ThreadInfo &thread = threads_.at(interrupt_uid_);
     if (!interrupt_calls_.empty()) {
         start_interrupt_call(thread);
@@ -251,6 +271,7 @@ void EarlyKernel::guest_call_returned(psprecomp::AllegrexContext &context) {
     }
     thread.state = ThreadState::Dormant;
     thread.wait_label.clear();
+    thread.wait_identity = {};
     run_next_ready(context, "Every early-kernel guest thread has ended or is blocked with no deadline");
 }
 
@@ -261,14 +282,209 @@ bool EarlyKernel::has_pending_callbacks(ThreadUid owner) const noexcept {
 }
 
 void EarlyKernel::start_callbacks(ThreadInfo &thread, const psprecomp::AllegrexContext &saved,
-                                  std::function<void(psprecomp::AllegrexContext &)> after) {
+                                  ThreadInfo::CallbackResume after) {
     thread.callback_saved = saved;
-    thread.after_callbacks = std::move(after);
+    thread.after_callbacks = after;
     thread.callback_queue.clear();
     for (const auto &[uid, callback] : callbacks_) {
         if (callback.owner == thread.uid && callback.notify_count != 0u) thread.callback_queue.push_back(uid);
     }
     start_next_callback(thread);
+}
+
+void EarlyKernel::finish_callbacks(ThreadInfo &thread, psprecomp::AllegrexContext &context) {
+    const auto action = thread.after_callbacks;
+    thread.after_callbacks = ThreadInfo::CallbackResume::None;
+    if (action == ThreadInfo::CallbackResume::Check) {
+        context.set_gpr(2u, 1u);
+    } else if (action == ThreadInfo::CallbackResume::Sleep) {
+        sleep_current_thread(context, true);
+    } else if (action == ThreadInfo::CallbackResume::Wait) {
+        if (!thread.resume_wait) throw psprecomp::Error("Callback return without a saved wait");
+        auto wait = std::move(*thread.resume_wait);
+        thread.resume_wait.reset();
+        block_current(context, std::move(wait));
+    } else {
+        throw psprecomp::Error("Callback return without a continuation");
+    }
+}
+
+EarlyKernel::State EarlyKernel::snapshot() const {
+    if (runtime_ == nullptr || !runtime_->can_snapshot()) throw psprecomp::Error("Kernel snapshot requires an outer dispatch boundary");
+    State state{next_stack_top_, next_uid_, current_uid_, interrupt_uid_, next_ready_sequence_, now_us_,
+        interrupt_calls_, threads_, free_ranges_, blocks_, callbacks_, exit_callback_uid_, umd_callback_uid_,
+        power_callback_slots_, interrupts_enabled_, dispatch_enabled_, vblank_active_};
+    if (current_uid_ != 0) state.threads.at(current_uid_).context = runtime_->cpu();
+    validate_state(state);
+    return state;
+}
+
+void EarlyKernel::validate_state(const State &state) const {
+    const auto fail = [](const char *reason) { throw psprecomp::Error(std::string("Invalid kernel snapshot: ") + reason); };
+    if (runtime_ == nullptr) fail("kernel is not installed");
+    if (state.next_uid <= 0 || state.next_uid == std::numeric_limits<ThreadUid>::max() ||
+        state.next_ready_sequence == 0 || state.next_ready_sequence == std::numeric_limits<std::uint64_t>::max() ||
+        state.threads.size() > 4096 || state.blocks.size() > 65536 ||
+        state.callbacks.size() > 4096 || state.interrupt_calls.size() > 65536 || state.free_ranges.size() > 65536)
+        fail("invalid counters or object counts");
+    const auto action = [&](const Action &value) {
+        if (value.kind != ActionKind::None && value.kind != ActionKind::ReturnValue && !action_handlers_.contains(value.kind))
+            fail("unbound continuation");
+        switch (value.kind) {
+        case ActionKind::ControllerRead:
+            if (value.arguments[1] > 64u || !runtime_->memory().contains(value.arguments[0], value.arguments[1] * 16u))
+                fail("invalid controller continuation");
+            break;
+        case ActionKind::AudioOutput:
+            if (value.arguments[0] > 8u || value.arguments[2] > 0xFFFFu || value.arguments[3] > 0xFFFFu)
+                fail("invalid audio continuation");
+            break;
+        case ActionKind::GeResumeList:
+            if (value.arguments[0] >= 64u) fail("invalid GE continuation");
+            break;
+        case ActionKind::SemaphoreTimeout: case ActionKind::EventFlagTimeout:
+            if (value.arguments[0] == 0 || value.arguments[0] >= static_cast<std::uint32_t>(state.next_uid) ||
+                !state.threads.contains(static_cast<ThreadUid>(value.arguments[1]))) fail("invalid object timeout continuation");
+            if (value.kind == ActionKind::EventFlagTimeout && value.arguments[2] != 0 &&
+                !runtime_->memory().contains(value.arguments[2], 4u)) fail("invalid timeout output address");
+            break;
+        default: break;
+        }
+    };
+    const auto context = [&](const psprecomp::AllegrexContext &cpu) {
+        if (cpu.gpr[0] != 0 || (cpu.pc & 3u) != 0 || (cpu.in_delay_slot && (cpu.next_pc & 3u) != 0)) fail("invalid thread CPU context");
+    };
+    const auto identity = [&](const WaitIdentity &value) {
+        switch (value.type) {
+        case WaitType::None: case WaitType::Sleep: case WaitType::Delay: case WaitType::Semaphore:
+        case WaitType::EventFlag: case WaitType::ThreadEnd: case WaitType::Audio: case WaitType::Umd:
+        case WaitType::Vblank: case WaitType::Controller: case WaitType::GeDraw: case WaitType::GeList:
+        case WaitType::Custom: break;
+        default: fail("unknown wait identity");
+        }
+        if ((value.type == WaitType::Semaphore || value.type == WaitType::EventFlag || value.type == WaitType::ThreadEnd) &&
+            (value.object == 0 || value.object >= static_cast<std::uint32_t>(state.next_uid))) fail("invalid wait object");
+    };
+    const auto wait = [&](const WaitRequest &value) {
+        action(value.on_timeout);
+        identity(value.identity);
+        if (value.label.size() > 1024 || (value.timeout_address != 0 && !runtime_->memory().contains(value.timeout_address, 4u)) ||
+            (value.end_of != 0 && !state.threads.contains(value.end_of))) fail("invalid saved wait");
+    };
+    std::vector<ThreadUid> ids;
+    const auto uid = [&](ThreadUid id) {
+        if (id <= 0 || id >= state.next_uid) fail("invalid object UID");
+        ids.push_back(id);
+    };
+    std::size_t running = 0;
+    for (const auto &[id, thread] : state.threads) {
+        uid(id);
+        if (thread.uid != id || thread.name.size() > 1024 || thread.wait_label.size() > 1024 ||
+            static_cast<unsigned>(thread.state) > static_cast<unsigned>(ThreadState::Waiting) ||
+            thread.priority > 0x7Fu || thread.callback_queue.size() > 4096) fail("invalid thread record");
+        if (thread.state == ThreadState::Running) {
+            ++running;
+            if (id != state.current_uid) fail("running thread is not current");
+        }
+        if (thread.stack_size != 0 && !runtime_->memory().contains(thread.stack_bottom, thread.stack_size)) fail("unmapped thread stack");
+        if (thread.stack_block != 0 && !state.blocks.contains(thread.stack_block)) fail("missing stack allocation");
+        context(thread.context);
+        action(thread.on_wake);
+        identity(thread.wait_identity);
+        if (thread.wait_identity.type == WaitType::Semaphore || thread.wait_identity.type == WaitType::EventFlag) {
+            const auto expected = thread.wait_identity.type == WaitType::Semaphore ? ActionKind::SemaphoreTimeout : ActionKind::EventFlagTimeout;
+            if (thread.on_wake.kind != expected || thread.on_wake.arguments[0] != thread.wait_identity.object ||
+                thread.on_wake.arguments[1] != static_cast<std::uint32_t>(id)) fail("inconsistent object wait continuation");
+        }
+        if (thread.timeout_address != 0 && !runtime_->memory().contains(thread.timeout_address, 4u)) fail("invalid timeout pointer");
+        if (thread.end_of != 0 && !state.threads.contains(thread.end_of)) fail("missing thread-end target");
+        if (thread.resume_wait) wait(*thread.resume_wait);
+        if (thread.callback_saved) {
+            context(*thread.callback_saved);
+            if (thread.callback_queue.empty() || thread.after_callbacks == ThreadInfo::CallbackResume::None ||
+                static_cast<unsigned>(thread.after_callbacks) > static_cast<unsigned>(ThreadInfo::CallbackResume::Sleep))
+                fail("invalid callback continuation");
+            if (thread.after_callbacks == ThreadInfo::CallbackResume::Wait && !thread.resume_wait) fail("missing callback wait");
+            // The currently executing callback may already have deleted itself.
+            for (std::size_t i = 1; i < thread.callback_queue.size(); ++i)
+                if (!state.callbacks.contains(thread.callback_queue[i])) fail("missing queued callback");
+        } else if (!thread.callback_queue.empty() || thread.after_callbacks != ThreadInfo::CallbackResume::None) {
+            fail("callback continuation has no saved context");
+        }
+    }
+    if ((state.current_uid != 0 && (!state.threads.contains(state.current_uid) || running != 1)) ||
+        (state.current_uid == 0 && running != 0)) fail("invalid current thread");
+    if (state.interrupt_uid != 0 && !state.threads.contains(state.interrupt_uid)) fail("missing interrupt thread");
+    if (!state.interrupt_calls.empty() && state.interrupt_uid == 0) fail("interrupt calls have no thread");
+    for (const auto &call : state.interrupt_calls) {
+        if (call.address == 0 || (call.address & 3u) != 0 || call.label.size() > 1024) fail("invalid interrupt call");
+        action(call.on_return);
+    }
+    for (const auto &[id, callback] : state.callbacks) {
+        uid(id);
+        if (callback.name.size() > 1024 || callback.owner <= 0 || callback.owner >= state.next_uid ||
+            (callback.function & 3u) != 0) fail("invalid callback");
+    }
+    const auto callback_id = [&](std::int32_t id) {
+        if (id != 0 && !state.callbacks.contains(id)) fail("missing registered callback");
+    };
+    callback_id(state.exit_callback_uid);
+    callback_id(state.umd_callback_uid);
+    for (const auto id : state.power_callback_slots) callback_id(id);
+    std::vector<std::pair<std::uint32_t, std::uint64_t>> ranges;
+    const auto range = [&](std::uint32_t address, std::uint32_t size) {
+        if (size == 0 || address < psprecomp::GuestMemory::kPhysicalBase ||
+            static_cast<std::uint64_t>(address) + size > psprecomp::GuestMemory::kPhysicalBase + runtime_->memory().size())
+            fail("invalid allocation range");
+        ranges.emplace_back(address, static_cast<std::uint64_t>(address) + size);
+    };
+    for (const auto &free : state.free_ranges) range(free.address, free.size);
+    for (const auto &[id, block] : state.blocks) {
+        uid(id);
+        if (block.name.size() > 1024) fail("invalid allocation name");
+        range(block.address, block.size);
+    }
+    std::ranges::sort(ranges);
+    for (std::size_t i = 1; i < ranges.size(); ++i)
+        if (ranges[i].first < ranges[i - 1].second) fail("overlapping allocations");
+    std::ranges::sort(ids);
+    if (std::adjacent_find(ids.begin(), ids.end()) != ids.end()) fail("duplicate object UID");
+}
+
+void EarlyKernel::restore(State state) {
+    if (runtime_ == nullptr || !runtime_->can_snapshot()) throw psprecomp::Error("Kernel restore requires an outer dispatch boundary");
+    validate_state(state);
+    apply_state(state);
+}
+
+void EarlyKernel::apply_state(State &state) noexcept {
+    // All allocations and validation precede mutation. Swaps keep host bindings
+    // and frame/vblank observers attached to this kernel rather than the source.
+    threads_.swap(state.threads);
+    blocks_.swap(state.blocks);
+    callbacks_.swap(state.callbacks);
+    free_ranges_.swap(state.free_ranges);
+    interrupt_calls_.swap(state.interrupt_calls);
+    next_stack_top_ = state.next_stack_top;
+    next_uid_ = state.next_uid;
+    current_uid_ = state.current_uid;
+    interrupt_uid_ = state.interrupt_uid;
+    next_ready_sequence_ = state.next_ready_sequence;
+    now_us_ = state.now_us;
+    exit_callback_uid_ = state.exit_callback_uid;
+    umd_callback_uid_ = state.umd_callback_uid;
+    power_callback_slots_ = state.power_callback_slots;
+    interrupts_enabled_ = state.interrupts_enabled;
+    dispatch_enabled_ = state.dispatch_enabled;
+    vblank_active_ = state.vblank_active;
+    active_kernel = this;
+    if (current_uid_ != 0) {
+        const auto &current = threads_.at(current_uid_);
+        runtime_->cpu() = current.context;
+        psprecomp::set_runtime_thread_identity(current_uid_, current.name);
+    } else {
+        psprecomp::set_runtime_thread_identity(-1, "idle");
+    }
 }
 
 void EarlyKernel::start_next_callback(ThreadInfo &thread) {
@@ -293,24 +509,22 @@ void EarlyKernel::notify_callback(std::int32_t uid, std::uint32_t argument) {
     const auto owner = threads_.find(found->second.owner);
     if (owner == threads_.end()) return;
     ThreadInfo &thread = owner->second;
-    std::function<void(psprecomp::AllegrexContext &)> resume;
+    ThreadInfo::CallbackResume resume;
     if (thread.state == ThreadState::Waiting && thread.resume_wait) {
-        resume = [this, request = *thread.resume_wait](psprecomp::AllegrexContext &context) {
-            block_current(context, request);
-        };
+        resume = ThreadInfo::CallbackResume::Wait;
     } else if (thread.state == ThreadState::Sleeping && thread.resume_sleep) {
-        resume = [this](psprecomp::AllegrexContext &context) { sleep_current_thread(context, true); };
+        resume = ThreadInfo::CallbackResume::Sleep;
     } else {
         return;
     }
     // Interrupt the *CB wait: run the callbacks, then wait again as before.
-    thread.resume_wait.reset();
     thread.resume_sleep = false;
-    thread.on_wake = nullptr;
+    thread.wait_identity = {};
+    thread.on_wake = {};
     thread.timeout_address = 0u;
     thread.end_of = 0;
     thread.wait_label.clear();
-    start_callbacks(thread, thread.context, std::move(resume));
+    start_callbacks(thread, thread.context, resume);
     make_ready(thread);
 }
 
@@ -322,7 +536,7 @@ void EarlyKernel::check_callbacks(psprecomp::AllegrexContext &context) {
     }
     psprecomp::AllegrexContext saved = context;
     saved.pc = context.gpr[31];
-    start_callbacks(current->second, saved, [](psprecomp::AllegrexContext &resumed) { resumed.set_gpr(2u, 1u); });
+    start_callbacks(current->second, saved, ThreadInfo::CallbackResume::Check);
     context = current->second.context;
 }
 
@@ -566,7 +780,10 @@ std::int32_t EarlyKernel::start_thread(psprecomp::AllegrexContext &context, Thre
 void EarlyKernel::end_thread(ThreadInfo &thread, std::uint32_t status) {
     thread.state = ThreadState::Dormant;
     thread.exit_status = status;
-    thread.on_wake = nullptr;
+    thread.on_wake = {};
+    thread.resume_wait.reset();
+    thread.resume_sleep = false;
+    thread.wait_identity = {};
     for (auto &[uid, waiter] : threads_) {
         if (waiter.state == ThreadState::Waiting && waiter.end_of == thread.uid) release_wait(uid, status);
     }
@@ -621,6 +838,7 @@ void EarlyKernel::wait_thread_end(psprecomp::AllegrexContext &context, ThreadUid
     if (found->second.state == ThreadState::Dormant) { context.set_gpr(2u, found->second.exit_status); return; }
     auto request = object_wait("end of thread " + found->second.name, timeout_address);
     request.end_of = uid;
+    request.identity = {WaitType::ThreadEnd, static_cast<std::uint32_t>(uid)};
     block_current(context, std::move(request));
 }
 
@@ -633,17 +851,13 @@ std::int32_t EarlyKernel::change_current_thread_attributes(std::uint32_t clear, 
 }
 
 EarlyKernel::WaitRequest EarlyKernel::object_wait(std::string label, std::uint32_t timeout_address,
-                                                  std::function<void()> on_timeout) const {
+                                                  Action on_timeout) const {
     WaitRequest request;
     request.label = std::move(label);
+    request.on_timeout = on_timeout;
     if (timeout_address != 0u) {
         request.timeout_address = timeout_address;
         request.deadline_us = now_us_ + runtime_->memory().load32(timeout_address);
-        request.on_timeout = [this, timeout_address, cleanup = std::move(on_timeout)] {
-            runtime_->memory().store32(timeout_address, 0u);
-            if (cleanup) cleanup();
-            return kWaitTimeout;
-        };
     }
     return request;
 }
@@ -658,9 +872,8 @@ void EarlyKernel::block_current(psprecomp::AllegrexContext &context, WaitRequest
     ThreadInfo &thread = current->second;
     save_blocked_context(thread, context, 0u);
     if (request.callbacks && has_pending_callbacks(current_uid_)) {
-        start_callbacks(thread, thread.context, [this, request](psprecomp::AllegrexContext &resumed) {
-            block_current(resumed, request);
-        });
+        thread.resume_wait = request;
+        start_callbacks(thread, thread.context, ThreadInfo::CallbackResume::Wait);
         context = thread.context;
         return;
     }
@@ -669,10 +882,11 @@ void EarlyKernel::block_current(psprecomp::AllegrexContext &context, WaitRequest
     thread.state = ThreadState::Waiting;
     thread.wake_at_us = request.deadline_us;
     thread.wait_sequence = next_ready_sequence_++;
-    thread.on_wake = std::move(request.on_timeout);
+    thread.on_wake = request.on_timeout;
     thread.timeout_address = request.timeout_address;
     thread.end_of = request.end_of;
     thread.wait_label = std::move(request.label);
+    thread.wait_identity = request.identity;
     run_next_ready(context, "Every early-kernel guest thread has ended or is blocked with no deadline");
 }
 
@@ -685,10 +899,12 @@ bool EarlyKernel::release_wait(ThreadUid uid, std::uint32_t result) {
         runtime_->memory().store32(thread.timeout_address, static_cast<std::uint32_t>(left));
     }
     thread.context.set_gpr(2u, result);
-    thread.on_wake = nullptr;
+    thread.on_wake = {};
+    thread.resume_wait.reset();
     thread.timeout_address = 0u;
     thread.end_of = 0;
     thread.wait_label.clear();
+    thread.wait_identity = {};
     make_ready(thread);
     return true;
 }
@@ -720,9 +936,7 @@ void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context, bool
     }
     save_blocked_context(thread, context, 0u);
     if (callbacks && has_pending_callbacks(current_uid_)) {
-        start_callbacks(thread, thread.context, [this](psprecomp::AllegrexContext &resumed) {
-            sleep_current_thread(resumed, true);
-        });
+        start_callbacks(thread, thread.context, ThreadInfo::CallbackResume::Sleep);
         context = thread.context;
         return;
     }
@@ -732,13 +946,13 @@ void EarlyKernel::sleep_current_thread(psprecomp::AllegrexContext &context, bool
 }
 
 void EarlyKernel::wait_current_until(psprecomp::AllegrexContext &context, std::uint64_t deadline_us,
-                                     WakeHandler on_wake) {
-    block_current(context, WaitRequest{"timed wait", deadline_us, 0u, std::move(on_wake), 0});
+                                     Action on_wake, WaitIdentity identity) {
+    block_current(context, WaitRequest{"timed wait", deadline_us, 0u, on_wake, 0, false, identity});
 }
 
 void EarlyKernel::delay_current_thread(psprecomp::AllegrexContext &context, std::uint32_t micros, bool callbacks) {
     // A zero delay still yields to every other ready thread.
-    block_current(context, WaitRequest{"delay", now_us_ + micros, 0u, nullptr, 0, callbacks});
+    block_current(context, WaitRequest{"delay", now_us_ + micros, 0u, {}, 0, callbacks, {WaitType::Delay}});
 }
 
 std::int32_t EarlyKernel::wakeup_thread(psprecomp::AllegrexContext &context, ThreadUid uid) {
@@ -751,6 +965,7 @@ std::int32_t EarlyKernel::wakeup_thread(psprecomp::AllegrexContext &context, Thr
         ++thread.wakeup_count;
         return 0;
     }
+    thread.resume_sleep = false;
     make_ready(thread);
     const auto current = threads_.find(current_uid_);
     if (dispatch_enabled_ && current != threads_.end() && thread.priority < current->second.priority) {

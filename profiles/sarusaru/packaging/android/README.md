@@ -27,6 +27,12 @@ Settings and the port's data live in the app's private `files/` directory.
 Android's Back button or back swipe opens the launcher overlay during play.
 Within the launcher, Back returns to the previous screen or resumes the game.
 
+After a release update, Play opens the install screen to rebuild the game
+for the new release. That screen keeps the current texture and game-text
+choices visible and editable before installation. Pack setup returns there
+when completed or dismissed; the saved choices carry over from the previous
+release.
+
 ## Build
 
 Needs a JDK 17 or newer, the Android SDK (platform 36), NDK 29.0.14206865 and

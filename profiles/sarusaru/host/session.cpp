@@ -215,6 +215,12 @@ void GameSession::observe_dispatch(psprecomp::Runtime &rt, psprecomp::AllegrexCo
     observe_call(rt, ctx, pc, 0u);
 }
 
+void GameSession::restore_observers() {
+    observed_session_ = this;
+    psprecomp::set_runtime_pre_chained_call_hook(&observe_call);
+    psprecomp::set_runtime_pre_dispatch_hook(&observe_dispatch);
+}
+
 void GameSession::run(std::uint64_t dispatch_limit) {
     runtime.run(entry_, dispatch_limit);
 }

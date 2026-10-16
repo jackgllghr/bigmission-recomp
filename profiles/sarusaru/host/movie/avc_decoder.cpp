@@ -64,6 +64,7 @@ bool AvcDecoder::available() noexcept {
 }
 
 bool AvcDecoder::open() {
+    clear_history();
     Impl &impl = *impl_;
     impl.close();
     const AVCodec *decoder = avcodec_find_decoder(AV_CODEC_ID_H264);
@@ -87,6 +88,7 @@ bool AvcDecoder::open() {
 }
 
 void AvcDecoder::close() {
+    clear_history();
     impl_->close();
 }
 bool AvcDecoder::is_open() const noexcept {
@@ -96,6 +98,7 @@ bool AvcDecoder::is_open() const noexcept {
 bool AvcDecoder::decode(std::span<const std::uint8_t> unit, Picture &picture) {
     Impl &impl = *impl_;
     if (impl.context == nullptr || unit.empty() || impl.draining) return false;
+    remember(unit);
     av_packet_unref(impl.packet);
     if (av_new_packet(impl.packet, static_cast<int>(unit.size())) < 0) return false;
     std::memcpy(impl.packet->data, unit.data(), unit.size());
@@ -106,6 +109,7 @@ bool AvcDecoder::decode(std::span<const std::uint8_t> unit, Picture &picture) {
 bool AvcDecoder::drain(Picture &picture) {
     Impl &impl = *impl_;
     if (impl.context == nullptr) return false;
+    remember({});
     if (!impl.draining) {
         impl.draining = true;
         avcodec_send_packet(impl.context, nullptr);
@@ -114,6 +118,7 @@ bool AvcDecoder::drain(Picture &picture) {
 }
 
 void AvcDecoder::reset() {
+    clear_history();
     Impl &impl = *impl_;
     if (impl.context == nullptr) return;
     avcodec_flush_buffers(impl.context);
@@ -131,6 +136,7 @@ bool AvcDecoder::available() noexcept {
     return false;
 }
 bool AvcDecoder::open() {
+    clear_history();
     return false;
 }
 void AvcDecoder::close() {}

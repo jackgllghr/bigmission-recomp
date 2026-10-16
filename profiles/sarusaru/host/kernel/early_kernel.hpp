@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+namespace sarusaru::save_state { class KernelSnapshot; }
+
 namespace sarusaru::kernel {
 
 using ThreadUid = std::int32_t;
@@ -51,8 +53,18 @@ inline constexpr std::uint64_t kNoDeadline = ~std::uint64_t{0};
 class EarlyKernel {
 public:
     enum class ThreadState { Dormant, Ready, Running, Sleeping, Waiting };
-    // Produces the blocked call's return value when a timed wait ends.
-    using WakeHandler = std::function<std::uint32_t()>;
+    // Guest continuations carry values, not captured host pointers. Modules
+    // install handlers once; snapshots retain only these stable action records.
+    enum class ActionKind : std::uint32_t {
+        None, ReturnValue, ControllerRead, AudioOutput, GeResumeList, SemaphoreTimeout, EventFlagTimeout,
+    };
+    struct Action {
+        ActionKind kind{ActionKind::None};
+        std::array<std::uint32_t, 4> arguments{};
+        bool operator==(const Action &) const = default;
+    };
+    using ActionHandler = std::function<std::uint32_t(const Action &)>;
+    void set_action_handler(ActionKind kind, ActionHandler handler);
     void install(psprecomp::Runtime &runtime, std::uint32_t user_memory_start, std::uint32_t user_memory_top);
     void begin_main_thread(psprecomp::AllegrexContext &context, std::string name,
                            std::uint32_t priority);
@@ -73,7 +85,23 @@ public:
     // Called from inside an import: a blocked caller resumes at its return address.
     void sleep_current_thread(psprecomp::AllegrexContext &context, bool callbacks = false);
     [[nodiscard]] std::int32_t wakeup_thread(psprecomp::AllegrexContext &context, ThreadUid uid);
-    void wait_current_until(psprecomp::AllegrexContext &context, std::uint64_t deadline_us, WakeHandler on_wake);
+    // Values match PSP wait identities; diagnostic labels never determine
+    // which object or subsystem a restored thread is waiting for.
+    enum class WaitType : std::uint32_t {
+        None = 0, Sleep = 1, Delay = 2, Semaphore = 3, EventFlag = 4, ThreadEnd = 9,
+        Audio = 10, Umd = 11, Vblank = 12, Controller = 15, GeDraw = 17, GeList = 18,
+        Custom = 0xFFFFFFFFu,
+    };
+    struct WaitIdentity {
+        WaitType type{WaitType::None};
+        std::uint32_t object{}, value{};
+        bool operator==(const WaitIdentity &) const = default;
+    };
+    void wait_current_until(psprecomp::AllegrexContext &context, std::uint64_t deadline_us, Action on_wake,
+                            WaitIdentity identity);
+    void wait_current_until(psprecomp::AllegrexContext &context, std::uint64_t deadline_us, Action on_wake) {
+        wait_current_until(context, deadline_us, on_wake, {WaitType::Custom});
+    }
     void delay_current_thread(psprecomp::AllegrexContext &context, std::uint32_t micros, bool callbacks = false);
     [[nodiscard]] std::uint64_t now_us() const noexcept { return now_us_; }
 
@@ -84,13 +112,17 @@ public:
         std::string label;
         std::uint64_t deadline_us{kNoDeadline};
         std::uint32_t timeout_address{};
-        WakeHandler on_timeout;
+        Action on_timeout;
         ThreadUid end_of{};
         // A *CB wait: notified callbacks run on the thread, then the wait resumes.
         bool callbacks{};
+        WaitIdentity identity{WaitType::Custom};
     };
     [[nodiscard]] WaitRequest object_wait(std::string label, std::uint32_t timeout_address,
-                                          std::function<void()> on_timeout = nullptr) const;
+                                          Action on_timeout) const;
+    [[nodiscard]] WaitRequest object_wait(std::string label, std::uint32_t timeout_address) const {
+        return object_wait(std::move(label), timeout_address, Action{});
+    }
     void block_current(psprecomp::AllegrexContext &context, WaitRequest request);
     // Ends `uid`'s object wait with `result`; false if it is no longer waiting.
     bool release_wait(ThreadUid uid, std::uint32_t result);
@@ -107,7 +139,7 @@ public:
         std::array<std::uint32_t, 4> arguments{};
         std::uint32_t gp{};
         std::string label;
-        std::function<void(std::uint32_t)> on_return;
+        Action on_return;
     };
     // The caller must then let the interrupt run, e.g. via return_with_preemption.
     void queue_interrupt(GuestCall call);
@@ -141,12 +173,13 @@ public:
         std::uint32_t wakeup_count{};
         std::uint64_t wake_at_us{};
         std::uint64_t wait_sequence{};
-        WakeHandler on_wake;
+        Action on_wake;
         // Callbacks run on this thread: the interrupted context, the
         // callbacks still to run, and what to do after the last one returns.
         std::optional<psprecomp::AllegrexContext> callback_saved;
         std::deque<std::int32_t> callback_queue;
-        std::function<void(psprecomp::AllegrexContext &)> after_callbacks;
+        enum class CallbackResume : std::uint32_t { None, Check, Wait, Sleep };
+        CallbackResume after_callbacks{CallbackResume::None};
         // The *CB wait (or sleep) to resume after a callback interrupts it.
         std::optional<WaitRequest> resume_wait;
         bool resume_sleep{};
@@ -155,6 +188,7 @@ public:
         std::uint32_t timeout_address{};
         ThreadUid end_of{};
         std::string wait_label;
+        WaitIdentity wait_identity;
     };
     [[nodiscard]] const ThreadInfo *thread(ThreadUid uid) const noexcept;
     [[nodiscard]] ThreadUid current_uid() const noexcept { return current_uid_; }
@@ -190,7 +224,30 @@ public:
     void resume_dispatch(psprecomp::AllegrexContext &context, std::uint32_t state);
     [[nodiscard]] bool dispatch_enabled() const noexcept { return dispatch_enabled_; }
 
+    struct FreeRange { std::uint32_t address{}; std::uint32_t size{}; };
+    struct MemoryBlock { std::string name; std::uint32_t address{}; std::uint32_t size{}; };
+    struct State {
+        std::uint32_t next_stack_top{};
+        ThreadUid next_uid{}, current_uid{}, interrupt_uid{};
+        std::uint64_t next_ready_sequence{}, now_us{};
+        std::deque<GuestCall> interrupt_calls;
+        std::map<ThreadUid, ThreadInfo> threads;
+        std::vector<FreeRange> free_ranges;
+        std::map<std::int32_t, MemoryBlock> blocks;
+        std::map<std::int32_t, CallbackInfo> callbacks;
+        std::int32_t exit_callback_uid{}, umd_callback_uid{};
+        std::array<std::int32_t, 16> power_callback_slots{};
+        bool interrupts_enabled{}, dispatch_enabled{}, vblank_active{};
+    };
+    // Called after all native guest frames have unwound. Host hooks and action
+    // bindings remain installed on this kernel when a detached state is applied.
+    [[nodiscard]] State snapshot() const;
+    void validate_state(const State &state) const;
+    void restore(State state);
+
 private:
+    friend class sarusaru::save_state::KernelSnapshot;
+    void apply_state(State &state) noexcept;
     psprecomp::Runtime *runtime_{};
     std::uint32_t next_stack_top_{};
     ThreadUid next_uid_{0x100};
@@ -204,8 +261,6 @@ private:
     bool vblank_active_{};
     std::map<ThreadUid, ThreadInfo> threads_;
 
-    struct FreeRange { std::uint32_t address{}; std::uint32_t size{}; };
-    struct MemoryBlock { std::string name; std::uint32_t address{}; std::uint32_t size{}; };
     std::vector<FreeRange> free_ranges_;
     std::map<std::int32_t, MemoryBlock> blocks_;
     std::map<std::int32_t, CallbackInfo> callbacks_;
@@ -214,6 +269,8 @@ private:
     std::int32_t umd_callback_uid_{};
     bool interrupts_enabled_{true};
     bool dispatch_enabled_{true};
+    std::map<ActionKind, ActionHandler> action_handlers_;
+    std::uint32_t perform_action(const Action &action);
 
     void make_ready(ThreadInfo &thread) noexcept;
     [[nodiscard]] ThreadInfo *best_ready_thread() noexcept;
@@ -227,7 +284,8 @@ private:
     // Runs the owner's notified callbacks starting from `saved` (a resumable
     // context), then calls `after` with the restored context.
     void start_callbacks(ThreadInfo &thread, const psprecomp::AllegrexContext &saved,
-                         std::function<void(psprecomp::AllegrexContext &)> after);
+                         ThreadInfo::CallbackResume after);
+    void finish_callbacks(ThreadInfo &thread, psprecomp::AllegrexContext &context);
     void start_next_callback(ThreadInfo &thread);
     [[nodiscard]] bool refuse_wait_in_interrupt(psprecomp::AllegrexContext &context);
     void end_thread(ThreadInfo &thread, std::uint32_t status);

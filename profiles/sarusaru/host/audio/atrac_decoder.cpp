@@ -52,6 +52,9 @@ bool AtracDecoder::available() noexcept {
 
 bool AtracDecoder::open(
     AtracCodec codec, unsigned channels, unsigned block_align, std::span<const std::uint8_t> extradata) {
+    clear_history();
+    saved_codec_ = codec; saved_channels_ = channels; saved_align_ = block_align;
+    saved_extra_.assign(extradata.begin(), extradata.end());
     Impl &impl = *impl_;
     impl.close();
     if (channels == 0u || channels > 2u || block_align == 0u) return false;
@@ -97,6 +100,7 @@ AtracCodec AtracDecoder::codec() const noexcept {
 std::size_t AtracDecoder::decode(std::span<const std::uint8_t> frame, std::int16_t *out) {
     Impl &impl = *impl_;
     if (impl.context == nullptr || frame.empty()) return 0u;
+    remember(frame);
     av_packet_unref(impl.packet);
     if (av_new_packet(impl.packet, static_cast<int>(frame.size())) < 0) return 0u;
     std::memcpy(impl.packet->data, frame.data(), frame.size());
@@ -131,6 +135,7 @@ std::size_t AtracDecoder::decode(std::span<const std::uint8_t> frame, std::int16
 }
 
 void AtracDecoder::reset() {
+    clear_history();
     if (impl_->context != nullptr) avcodec_flush_buffers(impl_->context);
 }
 

@@ -305,6 +305,11 @@ void bindings() {
 
     // Keyboard capture: the next key, repeats ignored, Esc cancels.
     BindingCapture capture;
+    capture.start(BindingDevice::Gamepad, 0.0, SDL_GAMEPAD_BUTTON_EAST);
+    capture.button(SDL_GAMEPAD_BUTTON_BACK,true,0.1);
+    capture.button(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true,0.2);
+    capture.button(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,false,0.3);
+    require(capture.take()==Binding{Binding::Kind::Button,SDL_GAMEPAD_BUTTON_BACK,1,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER},"state chord was not captured");
     capture.start(BindingDevice::Keyboard, 0.0, SDL_GAMEPAD_BUTTON_EAST);
     capture.key(SDL_SCANCODE_RETURN, true);
     require(capture.active(), "key repeat captured");
