@@ -230,7 +230,9 @@ at the active render scale. Prompt tests check both Xbox types at 1x/4x,
 including the colored letters in the small diagonal pairs.
 
 Replacement image labels use a solid `#ffff02` face. Their outlines transition
-from `#873123` at the outside to `#ffec02` beside the face, using concentric
-strokes at the authoring resolution. Native and HD layers share the same
-logical outline width; stage headers retain their additional white border.
+from `#873123` through `#b33716` and `#ff9403` to `#ffec02` beside the face.
+The outer stroke is three logical pixels wide, increased from two, with
+concentric strokes interpolating between all four colors. Native and HD
+layers share that width; tight existing slots reduce letter size to retain
+the complete outline. Stage headers retain an additional white border.
 Rebuild the translation pack to apply this palette to installed labels.

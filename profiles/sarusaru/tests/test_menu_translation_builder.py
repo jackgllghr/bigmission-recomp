@@ -150,6 +150,8 @@ class MenuCatalogTests(unittest.TestCase):
                 pixels = set(image.get_flattened_data())
                 self.assertIn((255, 255, 2, 255), pixels)
                 self.assertIn((135, 49, 35, 255), pixels)
+                self.assertIn((179, 55, 22, 255), pixels)
+                self.assertIn((255, 148, 3, 255), pixels)
                 self.assertIn((255, 236, 2, 255), pixels)
                 # The edge traverses intermediate colors, rather than two
                 # flat outline bands. Ignore antialiasing and the white halo.
@@ -165,6 +167,22 @@ class MenuCatalogTests(unittest.TestCase):
         composited.alpha_composite(image)
         self.assertEqual(self.images['common00/action_name.tm2'].crop((0, 0, 80, 40)).tobytes(),
                          composited.tobytes())
+
+    def test_outline_is_wide_at_native_and_hd_resolutions(self):
+        for scale in (1, 8):
+            image = render_ui_label('H', 24, 80, 48, controls=True, output_scale=scale)
+            face, border = [], []
+            for y in range(40 * scale):  # Exclude the navy footer bar.
+                for x in range(image.width):
+                    r, g, b, a = image.getpixel((x, y))
+                    if a > 200 and r > 120 and b < 80:
+                        border.append((x, y))
+                        if r > 245 and g > 245:
+                            face.append((x, y))
+            for axis in (0, 1):
+                outer_span = max(p[axis] for p in border) - min(p[axis] for p in border)
+                face_span = max(p[axis] for p in face) - min(p[axis] for p in face)
+                self.assertGreaterEqual(outer_span - face_span, 4 * scale)
 
     def test_controls_and_footer_hints_have_navy_bars(self):
         for asset in ('common00/action_name.tm2', 'e_but_0.lzs', 'e_but_1.lzs'):
@@ -189,7 +207,7 @@ class MenuCatalogTests(unittest.TestCase):
         self.assertNotEqual(hd.tobytes(), native.resize(hd.size, Image.Resampling.NEAREST).tobytes())
         for image in (native, hd):
             white = [p for p in image.get_flattened_data() if p[3] > 200 and min(p[:3]) > 235]
-            self.assertGreater(len(white), image.width)
+            self.assertGreater(len(white), image.width // 2)
         plain = render_ui_label('Jungle', 24, 288, 64)
         self.assertFalse(any(p[3] > 200 and min(p[:3]) > 235 for p in plain.get_flattened_data()))
 

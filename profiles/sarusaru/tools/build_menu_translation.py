@@ -104,22 +104,25 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     font = ImageFont.load_default(size=size * scale)
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
-    body, outline, offset = scale / 2, 2 * scale, 3 * scale / 4
+    body, outline, offset = scale / 2, 3 * scale, 3 * scale / 4
     body, outline, offset = int(body), int(outline), int(offset)
     fill = (255, 255, 2, 255)
-    outside, inside = (135, 49, 35), (255, 236, 2)
-    # Concentric one-texel strokes form a gradient across the outline, from
-    # brown at the outside to yellow beside the solid letter face. Render at
-    # the authoring resolution so HD layers retain the same logical width.
+    outline_colors = ((135, 49, 35), (179, 55, 22), (255, 148, 3), (255, 236, 2))
+    # Keep every color stop on a complete authoring texel at native and HD
+    # resolutions, then interpolate the concentric strokes between stops.
+    last = outline - body - 1
+    stops = [round(i * last / 3) for i in range(4)]
     layers = []
-    for stroke in range(outline, body, -1):
-        amount = (outline - stroke) / (outline - body - 1)
-        color = tuple(round(a + (b - a) * amount) for a, b in zip(outside, inside)) + (255,)
-        shift = 0 if controls or header else round(offset * (1 - amount))
+    for index, stroke in enumerate(range(outline, body, -1)):
+        segment = next(i for i in range(3) if index <= stops[i + 1])
+        amount = (index - stops[segment]) / (stops[segment + 1] - stops[segment])
+        color = tuple(round(a + (b - a) * amount)
+                      for a, b in zip(outline_colors[segment], outline_colors[segment + 1])) + (255,)
+        shift = 0 if controls or header else round(offset * (1 - index / last))
         layers.append((shift, stroke, color))
     layers.append((0, body, fill))
     if header:
-        layers.insert(0, (0, 4 * scale, (255, 255, 255, 255)))
+        layers.insert(0, (0, 5 * scale, (255, 255, 255, 255)))
     # Preserve the font's kerning, adding one supersampled pixel between glyphs.
     glyphs = [(char, font.getlength(text[:i + 1]) - font.getlength(char) + i * scale / 4)
               for i, char in enumerate(text)]
@@ -137,6 +140,21 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     # Retain at least half a logical pixel of padding on the HD layer.
     margin = scale if output_scale == 1 else scale / 2
     if tw > layer.width - 2 * margin or th > layer.height - 2 * margin:
+        # Existing catalogs were fitted to a 2px outline (4px white header
+        # halo). Allow just the extra border to reduce the letter size in a
+        # tight slot; genuinely oversized text still fails authoring checks.
+        old_stroke = (4 if header else 2) * scale
+        old_shift = 0 if controls or header else offset
+        old_boxes = [draw.textbbox((advance + old_shift, old_shift), char, font=font,
+                                  stroke_width=old_stroke)
+                     for char, advance in glyphs if char != ' ']
+        if old_boxes and size > 1:
+            old_width = max(b[2] for b in old_boxes) - min(b[0] for b in old_boxes)
+            old_height = max(b[3] for b in old_boxes) - min(b[1] for b in old_boxes)
+            if old_width <= layer.width - 2 * margin and old_height <= layer.height - 2 * margin:
+                return render_ui_label(text, size - .25, width, height, alignment,
+                                       controls=controls, header=header, top_hint_bar=top_hint_bar,
+                                       output_scale=output_scale)
         raise ValueError('Text exceeds pixel budget; shorten it or reduce font_size')
     x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
     y = (layer.height - th) / 2 - bounds[1]
