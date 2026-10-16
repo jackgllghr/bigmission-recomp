@@ -1,5 +1,12 @@
 # Saru Get You: Saru Saru Daisakusen Recompilation
 
+[![Build](https://github.com/jackgllghr/bigmission-recomp/actions/workflows/build.yml/badge.svg)](https://github.com/jackgllghr/bigmission-recomp/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/jackgllghr/bigmission-recomp?include_prereleases&sort=semver)](https://github.com/jackgllghr/bigmission-recomp/releases)
+[![Downloads](https://img.shields.io/github/downloads/jackgllghr/bigmission-recomp/total)](https://github.com/jackgllghr/bigmission-recomp/releases)
+[![License: MIT](https://img.shields.io/github/license/jackgllghr/bigmission-recomp)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-blue)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/jackofsometrades)
+
 ![Saru Get You: Saru Saru Daisakusen](include/image/SaruSaruBigMission.png)
 
 This is a recompilation project of **Saru Get You: Saru Saru Daisakusen**,
