@@ -112,6 +112,25 @@ struct AlphaTestState {
     std::uint32_t mask{0xFFu};
 };
 
+// The stencil test and the per-channel write masks. The GE keeps its stencil
+// in the framebuffer's alpha: the test compares (reference & mask) with
+// (alpha & mask), and the operations decide what alpha a fragment leaves.
+// Functions follow the depth test's numbering (0 never, 1 always, 2 equal,
+// 3 not equal, 4 less, 5 less or equal, 6 greater, 7 greater or equal);
+// operations are 0 keep, 1 zero, 2 replace, 3 invert, 4 increment,
+// 5 decrement. A set bit in a write mask keeps that bit of the framebuffer.
+struct StencilState {
+    bool test_enabled{};
+    std::uint32_t function{1u};
+    std::uint32_t reference{};
+    std::uint32_t mask{0xFFu};
+    std::uint32_t fail{};
+    std::uint32_t depth_fail{};
+    std::uint32_t pass{};
+    std::uint32_t color_write_mask{}; // PMSKC: 0x00BBGGRR
+    std::uint32_t alpha_write_mask{}; // PMSKA
+};
+
 struct ViewportState {
     float x_scale{}, y_scale{}, z_scale{};
     float x_offset{}, y_offset{}, z_offset{};
@@ -169,6 +188,7 @@ struct DrawCall {
     BlendState blend;
     DepthState depth;
     AlphaTestState alpha_test;
+    StencilState stencil;
     ViewportState viewport;
     bool culling_enabled{};
     bool cull_clockwise{};
@@ -308,6 +328,7 @@ private:
     BlendState blend_{};
     DepthState depth_{};
     AlphaTestState alpha_test_{};
+    StencilState stencil_{};
     ViewportState viewport_{};
     bool culling_enabled_{};
     bool cull_clockwise_{};

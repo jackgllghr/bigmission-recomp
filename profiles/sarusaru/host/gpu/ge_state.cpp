@@ -44,6 +44,7 @@ enum Command : std::uint32_t {
     kAlphaBlendEnable = 0x21,
     kAlphaTestEnable = 0x22,
     kDepthTestEnable = 0x23,
+    kStencilTestEnable = 0x24,
     kBoneMatrixNumber = 0x2A,
     kPatchDivision = 0x36,  // PSUB: u divisions, v divisions << 8
     kPatchPrimitive = 0x37, // PPRIM: 0 triangles, 1 lines, 2 points
@@ -128,11 +129,15 @@ enum Command : std::uint32_t {
     kMinZ = 0xD6,
     kMaxZ = 0xD7,
     kAlphaTest = 0xDB,
+    kStencilTest = 0xDC,
+    kStencilOperation = 0xDD,
     kDepthTest = 0xDE,
     kBlendMode = 0xDF,
     kBlendFixedA = 0xE0,
     kBlendFixedB = 0xE1,
     kDepthWriteDisable = 0xE7,
+    kColorWriteMask = 0xE8,
+    kAlphaWriteMask = 0xE9,
     // Block transfer registers, read off a trace of the quest reward screen,
     // which copies the 16-bit framebuffer at 0x04000000 (512 pixels a row) to
     // 0x093E7EF0 in main memory and then textures from there as 512x512 5650
@@ -688,6 +693,25 @@ void GeState::handle_command(const GuestMemory &memory, std::uint32_t command, s
     case kBlendFixedB:
         blend_.fixed_destination = data;
         break;
+    case kStencilTestEnable:
+        stencil_.test_enabled = (data & 1u) != 0u;
+        break;
+    case kStencilTest:
+        stencil_.function = data & 7u;
+        stencil_.reference = (data >> 8u) & 0xFFu;
+        stencil_.mask = (data >> 16u) & 0xFFu;
+        break;
+    case kStencilOperation:
+        stencil_.fail = data & 7u;
+        stencil_.depth_fail = (data >> 8u) & 7u;
+        stencil_.pass = (data >> 16u) & 7u;
+        break;
+    case kColorWriteMask:
+        stencil_.color_write_mask = data & 0xFFFFFFu;
+        break;
+    case kAlphaWriteMask:
+        stencil_.alpha_write_mask = data & 0xFFu;
+        break;
 
     case kFrameBufferPointer:
         target_.color_address = resolve_ge_address((target_.color_address & 0xFF000000u) | data);
@@ -1125,6 +1149,7 @@ bool GeState::load_call(const GuestMemory &memory, PrimitiveType primitive, std:
     call.blend = blend_;
     call.depth = depth_;
     call.alpha_test = alpha_test_;
+    call.stencil = stencil_;
     call.viewport = viewport_;
     call.culling_enabled = culling_enabled_;
     call.cull_clockwise = cull_clockwise_;

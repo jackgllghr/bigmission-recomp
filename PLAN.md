@@ -405,13 +405,13 @@ networking (`sceNet*`, 21 in total).
         renderer (`shell/ge_renderer.*`) draws them into per-framebuffer
         targets at an adjustable internal resolution (`--scale`), with
         cached textures, render-to-texture and presentation of the displayed
-        framebuffer (uploaded from guest memory when the CPU drew it).
-        Bezier and spline patches are tessellated on the CPU into indexed
-        draws (`gpu/patch.hpp`). Still to come: writing GPU results back to
-        guest memory for games that read them, and registers GeState does not
-        model yet (stencil test and operations, dithering, morph weights,
-        some texture-mapping modes).
-12. [x] Audio: `sceAudio` output channels are modeled headless on the
+        framebuffer (uploaded from guest memory when the CPU drew it). Still
+        to come: writing GPU results back to guest memory for games that read
+        them, and registers GeState does not model yet (dithering, morph
+        weights, some texture-mapping modes; Bezier/spline patches). The
+        stencil test and write masks are modeled, but only clears and
+        stencil-tested draws update the stencil, not other alpha writes.
+12. [~] Audio: `sceAudio` output channels are modeled headless on the
         virtual clock (blocking output paces the audio thread; samples are
         counted, not played). `sceSasCore` synthesizes VAG voices with
         envelopes and mixes grains (reverb recorded, not applied).
@@ -504,12 +504,11 @@ In priority order:
 
 - Milestone 2 acceptance run (title, new game, a level, save, restart and
   reload) with real input; not yet done.
-- GE: GPU results are not written back to guest memory; the stencil test,
-  dithering, morph weights and some texture modes are missing.
-- Utility dialogs: no message dialog or OSK; no dialog UI is drawn. A mode 5
-  save from outside the recomp loads and verifies; saves are unchecked
-  against a PSP, and the save mode the recomp writes (3) differs from the
-  sample's (5).
+- GE: GPU results are not written back to guest memory; dithering, morph
+  weights, some texture modes and Bezier/spline patches are missing, and draws
+  without the stencil test do not update the stencil.
+- Utility dialogs: no message dialog or OSK; no dialog UI is drawn. Saves are
+  unchecked against PPSSPP and a PSP.
 - Unreached services: `ms0:` file paths, `umd0:` raw access, remaining
   startup libraries, ad-hoc networking reported as unavailable.
 - Audio: SAS reverb is not yet compared against a PSP.
