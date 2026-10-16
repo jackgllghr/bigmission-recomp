@@ -10,7 +10,7 @@ import unittest
 
 PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
-from build_menu_translation import ASSETS, build, render_labels, merge_regions, render_ui_label, subtitle_records
+from build_menu_translation import ASSETS, build, render_labels, merge_regions, render_ui_label, label_font, subtitle_records
 from translation_catalogs import catalog
 
 
@@ -112,11 +112,11 @@ class MenuCatalogTests(unittest.TestCase):
         from PIL import Image, ImageDraw, ImageFont
         label = render_ui_label('H', 24, 80, 40)
         regular = Image.new('RGBA', label.size)
-        ImageDraw.Draw(regular).text((10, 2), 'H', font=ImageFont.load_default(size=24), fill=(255, 255, 2, 255))
+        ImageDraw.Draw(regular).text((10, 2), 'H', font=label_font(24), fill=(249, 206, 0, 255))
         def points(image, red=False):
             return [(x, y) for y in range(image.height) for x in range(image.width)
                     if (lambda p: p[3] > 128 and p[0] > 120 and p[2] < 80 and
-                        (p[1] < 100 if red else p[0] > 245 and p[1] > 200))(image.getpixel((x, y)))]
+                        (p[1] < 100 if red else p[0] > 240 and p[1] > 180))(image.getpixel((x, y)))]
         gold, edge = points(label), points(label, True)
         self.assertGreater(len(gold), len(points(regular)))
         for axis in (0, 1):
@@ -131,8 +131,8 @@ class MenuCatalogTests(unittest.TestCase):
         tracked = render_ui_label(text, 10, 100, 20)
         untracked = Image.new('RGBA', (400, 80))
         ImageDraw.Draw(untracked).text((20, 8), text,
-            font=ImageFont.load_default(size=40), fill=(255, 255, 2, 255),
-            stroke_width=2, stroke_fill=(255, 255, 2, 255))
+            font=label_font(40), fill=(249, 206, 0, 255),
+            stroke_width=2, stroke_fill=(249, 206, 0, 255))
         untracked = untracked.resize((100, 20), Image.Resampling.LANCZOS)
         def gold_span(image):
             xs = [x for y in range(image.height) for x in range(image.width)
@@ -148,7 +148,7 @@ class MenuCatalogTests(unittest.TestCase):
             with self.subTest(style=style):
                 image = render_ui_label('H', 24, 80, 40, output_scale=8, **style)
                 pixels = set(image.get_flattened_data())
-                self.assertIn((255, 255, 2, 255), pixels)
+                self.assertIn((249, 206, 0, 255), pixels)
                 self.assertNotIn((135, 49, 35, 255), pixels)
                 self.assertIn((179, 55, 22, 255), pixels)
                 self.assertIn((255, 148, 3, 255), pixels)
@@ -179,7 +179,7 @@ class MenuCatalogTests(unittest.TestCase):
                         r, g, b, a = image.getpixel((x, y))
                         if a > 200 and r > 120 and b < 80:
                             border.append((x, y))
-                            if r > 245 and g > 245:
+                            if r > 240 and g > 195:
                                 face.append((x, y))
                 spans.append([max(p[axis] for p in border) - min(p[axis] for p in border) -
                               (max(p[axis] for p in face) - min(p[axis] for p in face))

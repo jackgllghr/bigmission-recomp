@@ -6,6 +6,7 @@ pixels and source hashes; extracted Japanese textures stay in memory.
 """
 import argparse
 import hashlib
+from functools import lru_cache
 import json
 from pathlib import Path
 import struct
@@ -94,6 +95,13 @@ def encode_pixel_runs(rgba):
     return result
 
 
+@lru_cache(maxsize=128)
+def label_font(size):
+    """The bundled rounded face keeps offline pack builds reproducible."""
+    from PIL import ImageFont
+    return ImageFont.truetype(str(PROFILE / 'tools/fonts/MPLUSRounded1c-ExtraBold-ASCII.ttf'), size=size)
+
+
 def render_ui_label(text, size, width, height, alignment='center', *, controls=False,
                     header=False, top_hint_bar=False, output_scale=1):
     """Render UI styles in logical pixels, retaining detail at output_scale."""
@@ -101,7 +109,7 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     if alignment not in ('left', 'center'):
         raise ValueError('Label alignment must be left or center')
     scale = max(4, output_scale)
-    font = ImageFont.load_default(size=size * scale)
+    font = label_font(size * scale)
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
     body, outline, offset = scale / 2, 3 * scale, 3 * scale / 4
@@ -109,7 +117,7 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
         # Halve the colored border beyond the thickened yellow face.
         outline = body + (outline - body) / 2
     body, outline, offset = int(body), int(outline), int(offset)
-    fill = (255, 255, 2, 255)
+    fill = (249, 206, 0, 255)
     outside, inside = (179, 55, 22), (255, 148, 3)
     # Interpolate concentric strokes from the red outer edge to orange
     # beside the solid yellow letter face at native and HD resolutions.
@@ -142,13 +150,16 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     margin = scale if output_scale == 1 else scale / 2
     if tw > layer.width - 2 * margin or th > layer.height - 2 * margin:
         # Existing catalogs were fitted to a 2px outline (4px white header
-        # halo). Allow just the extra border to reduce the letter size in a
-        # tight slot; genuinely oversized text still fails authoring checks.
+        # halo) and Pillow's default face. Fit the rounded font and extra
+        # border in those slots; oversized source text still fails checks.
         old_stroke = (4 if header else 2) * scale
         old_shift = 0 if controls or header else offset
-        old_boxes = [draw.textbbox((advance + old_shift, old_shift), char, font=font,
+        old_font = ImageFont.load_default(size=size * scale)
+        old_glyphs = [(char, old_font.getlength(text[:i + 1]) - old_font.getlength(char) + i * scale / 4)
+                      for i, char in enumerate(text)]
+        old_boxes = [draw.textbbox((advance + old_shift, old_shift), char, font=old_font,
                                   stroke_width=old_stroke)
-                     for char, advance in glyphs if char != ' ']
+                     for char, advance in old_glyphs if char != ' ']
         if old_boxes and size > 1:
             old_width = max(b[2] for b in old_boxes) - min(b[0] for b in old_boxes)
             old_height = max(b[3] for b in old_boxes) - min(b[1] for b in old_boxes)
