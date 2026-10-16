@@ -147,11 +147,14 @@ remain in the signature rather than splitting a line into separate words.
 
 Pause help lines use the same adapter, with signatures generated from the
 translated compact captions during the pack build. The startup autosave warning
-uses its verified 8x16 ASCII cells through the same path, with separate complete
+and static save/load help and confirmation lines use their verified 8x16 ASCII
+cells through the same path, with separate complete
 line signatures. ASCII and compact cell widths cannot combine into one line.
 The main-menu copyright footer is a separate `i_g_c.lzs` replacement, drawn in
 the rounded white body style with its original wording and copyright symbol.
 Both paths include native and 8x text layers.
+Save/load text with runtime substitutions retains the guest's rendering for
+those dynamic lines; static lines are deduplicated by their full signatures.
 
 `SSTEXPK7` adds a `u16` HD
 scale, `u32` encoded byte count and RGBA pixel runs immediately after each
@@ -187,8 +190,8 @@ uses padded fields only for observed fixed name fields, with full field hashes a
 validation; it does not expand packed area strings into neighboring data.
 
 V5 appends optional HD image layers; see [expanded UI](english-expanded-ui.md#resolution-aware-image-lettering).
-Limits include 64 MiB per pack/source, 16 source files, 64 images, 64 regions per
-image, 1024 strings, 32 glyph lines, GE extents up to 512, IDs up to 128 bytes and
+Limits include 128 MiB per pack/source, 16 source files, 64 images, 64 regions per
+image, 1024 strings, 64 glyph lines, GE extents up to 512, IDs up to 128 bytes and
 paths up to 255 bytes. Unsafe paths, duplicate identities, overlapping regions,
 malformed data, incompatible hashes and trailing bytes are rejected. A single
 pack has no external replacement paths or asset extraction.

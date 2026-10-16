@@ -367,6 +367,20 @@ int main() {
     rejects(invalid_hd_run);
     invalid_hd_run = hd_run_bytes; invalid_hd_run.pop_back(); rejects(invalid_hd_run);
 
+    // Save dialogs expand the set of complete native text lines beyond 32.
+    auto many_runs = version2(); integer(many_runs, 0, 4); integer(many_runs, 40, 2);
+    for (unsigned i = 0; i < 40; ++i) {
+        name(many_runs, "save.help." + std::to_string(i)); integer(many_runs, 100, 2); integer(many_runs, 16, 2);
+        text(many_runs, psprecomp::sha256(Bytes(512 * 512 * 4, 0)));
+        text(many_runs, psprecomp::sha256(Bytes{static_cast<std::uint8_t>(i)}));
+        integer(many_runs, 1, 2); integer(many_runs, 512 * 16 * 4, 4);
+        many_runs.resize(many_runs.size() + 512 * 16 * 4);
+    }
+    require(load(many_runs).host_rgba(0xfff00000u + 39u * 0x1000u).size() == 512 * 16 * 4,
+            "expanded save help catalog rejected");
+    auto too_many_runs = version2(); integer(too_many_runs, 0, 4); integer(too_many_runs, 65, 2);
+    rejects(too_many_runs);
+
     // Captions share the compact-message format with dialogue, beyond 88 entries.
     auto many_captions = version2(); many_captions[7] = '4';
     integer(many_captions, 0, 4); integer(many_captions, 0, 2); integer(many_captions, 100, 2);

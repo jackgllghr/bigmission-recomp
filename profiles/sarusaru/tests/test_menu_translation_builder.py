@@ -12,7 +12,7 @@ PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
 from build_menu_translation import (ASSETS, build, render_labels, merge_regions, render_ui_label,
                                     label_font, subtitle_records, render_numeric_atlases, pause_help_runs, render_line,
-                                    startup_warning_runs)
+                                    ascii_ui_runs)
 from translation_catalogs import catalog
 
 
@@ -80,7 +80,7 @@ class MenuCatalogTests(unittest.TestCase):
         self.catalog = synthetic_catalog()
         self.images = {asset: Image.new('RGBA', size) for asset, (_, size, _) in ASSETS.items()}
 
-    def test_counter_atlases_replace_every_digit_without_touching_other_symbols(self):
+    def test_counter_atlases_replace_numbers_and_punctuation_without_touching_japanese_units(self):
         from PIL import Image
         for scale in (1, 8):
             images = {asset: Image.new('RGBA', (size[0] * scale, size[1] * scale))
@@ -88,12 +88,14 @@ class MenuCatalogTests(unittest.TestCase):
             regions = render_numeric_atlases(images, output_scale=scale)
             for asset, image in images.items():
                 cell, height, columns = (16, 16, 18) if 's0' in asset else (48, 48, 10)
-                for index in range(11):
+                glyph_indices = list(range(11)) + ([14, 15, 16, 17] if cell == 16 else [11, 12, 13])
+                for index in glyph_indices:
                     x, y = (index % columns) * cell, (index // columns) * height
                     self.assertIsNotNone(image.crop((x * scale, y * scale,
                         (x + cell) * scale, (y + height) * scale)).getbbox())
-                # Punctuation and Japanese counter units follow the digits.
-                x, y = (11 % columns) * cell, (11 // columns) * height
+                # Preserve Japanese units in small fonts and spare large cells.
+                untouched = 11 if cell == 16 else 14
+                x, y = (untouched % columns) * cell, (untouched // columns) * height
                 self.assertIsNone(image.crop((x * scale, y * scale,
                     (x + cell) * scale, (y + height) * scale)).getbbox())
                 self.assertTrue(all(x + w <= image.width // scale and y + h <= image.height // scale
@@ -122,13 +124,20 @@ class MenuCatalogTests(unittest.TestCase):
 
     def test_startup_warning_matches_ascii_cells_with_undrawn_spaces(self):
         import hashlib
-        runs = startup_warning_runs({'strings': [{'id': 'intro.autosave', 'text': 'A B\nC.', 'max_columns': 44}]})
+        runs = ascii_ui_runs({'strings': [{'id': 'intro.autosave', 'text': 'A B\nC.', 'max_columns': 44}]})
         self.assertEqual(len(runs), 2)
         # ASCII A/B live in 8px cells in the penultimate atlas row.
         signature = struct.pack('<6H', 0, 256, 480, 16, 264, 480)
         self.assertEqual(runs[0]['signature'], hashlib.sha256(signature).hexdigest())
         self.assertEqual(runs[0]['glyph_count'], 2)
         self.assertEqual(runs[0]['width'], 352)
+
+    def test_save_help_deduplicates_lines_and_leaves_runtime_values_to_guest(self):
+        entries = [{'id': key, 'text': text, 'max_columns': 44} for key, text in (
+            ('save.help.back', 'Return.'), ('load.select', 'Choose data to load.'),
+            ('save.help.save', 'Return.\nNeed %s KB.'), ('unrelated.label', 'Unrelated.'))]
+        runs = ascii_ui_runs({'strings': entries})
+        self.assertEqual([run['text'] for run in runs], ['Return.', 'Choose data to load.'])
 
     @unittest.skipUnless(catalog('english-menu.json').is_file(), 'English catalog is not checked out')
     def test_copyright_footer_renders_with_real_copyright_symbol_and_hd_detail(self):

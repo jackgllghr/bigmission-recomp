@@ -10,7 +10,7 @@
 
 namespace sarusaru::translation {
 namespace {
-constexpr std::size_t kMaxPackBytes = 64u * 1024u * 1024u;
+constexpr std::size_t kMaxPackBytes = 128u * 1024u * 1024u;
 [[noreturn]] void invalid(std::string_view reason) {
     throw std::runtime_error("translation pack: " + std::string(reason));
 }
@@ -157,7 +157,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
         for (std::size_t i = 1; i < ranges.size(); ++i)
             if (ranges[i].first < ranges[i - 1].second) invalid("overlapping string slots");
         const auto runs = reader.integer(2);
-        if (runs > 32) invalid("too many glyph-run replacements");
+        if (runs > 64) invalid("too many glyph-run replacements");
         std::set<std::string> run_identities;
         for (std::uint32_t i = 0; i < runs; ++i) {
             GlyphRun run;

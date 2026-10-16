@@ -104,10 +104,12 @@ The actual pause artwork is `common/b_drm_0.tm2`; its button widths differ by
 row, so each English label stays within that row's native sampling width.
 `common/e_tan_6.tm2` supplies the separate remaining-monkey label and unit.
 Resource icons and control icons remain outside those rectangles. The shared
-`c_num_s0` and `c_num_l2` atlases now render their multiplier and
-digits with the bundled rounded font, including HD layers. Their cell positions
+`c_num_s0`, `c_num_l1` and `c_num_l2` atlases now render their multiplier,
+digits and punctuation with the bundled rounded font, including HD layers.
+The save-data screen uses the same small atlas for time/resource counts and
+the large gold atlas for its completion percentage. Their cell positions
 stay fixed, so battery, chip and remaining-monkey values continue to update
-through the guest's existing counter draws. Other symbols remain untouched.
+through the guest's existing counter draws. Japanese unit cells remain untouched.
 
 Pause help is a separate compact text path. The menu catalog's `compact_ui`
 records identify six source streams and their lookup pointers, and provide

@@ -48,6 +48,7 @@ ASSETS = {
     'common/b_drm_0.tm2': ('pause.buttons', (128, 96), (128, 128, 128)),
     'common/e_tan_6.tm2': ('pause.counter', (128, 96), (128, 128, 128)),
     'common/c_num_s0.tm2': ('numbers.small', (288, 16), (512, 16, 288)),
+    'common/c_num_l1.tm2': ('numbers.large', (480, 96), (512, 128, 480)),
     'common/c_num_l2.tm2': ('numbers.large_white', (480, 96), (512, 128, 480)),
     'common/e_stage.tm2': ('ui.common.e_stage', (160, 352), (256, 512, 160)),
     'tenso/e_s_title_1.tm2': ('ui.tenso.e_s_title_1', (288, 512), (512, 512, 288)),
@@ -268,15 +269,21 @@ def merge_regions(regions):
 
 
 def render_numeric_atlases(images, *, output_scale=1):
-    """Replace only the multiplier and digits; keep each guest counter live."""
+    """Replace number glyphs in their existing cells; keep guest counters live."""
     regions = {}
     for asset, cell, height, size in (
             ('common/c_num_s0.tm2', 16, 16, 12),
+            ('common/c_num_l1.tm2', 48, 48, 44),
             ('common/c_num_l2.tm2', 48, 48, 44)):
         if asset not in images:
             continue
         slots = []
-        for index, text in enumerate('x0123456789'):
+        glyphs = list(enumerate('x0123456789'))
+        # Small-font cells 11..13 hold Japanese counter units. The large
+        # atlases place punctuation directly after the digits instead.
+        glyphs += list(zip((14, 15, 16, 17) if cell == 16 else (11, 12, 13),
+                           ':/%-' if cell == 16 else ':/%'))
+        for index, text in glyphs:
             columns = images[asset].width // (output_scale * cell)
             x, y = (index % columns) * cell, (index // columns) * height
             fitted = size
@@ -325,21 +332,28 @@ def pause_help_runs(catalog, boot):
     return runs
 
 
-def startup_warning_runs(catalog):
-    """The warning uses the font atlas's 8x16 ASCII cells at rows 30/31."""
-    runs = []
+def ascii_ui_runs(catalog):
+    """Startup/save UI uses the font atlas's 8x16 ASCII cells at rows 30/31."""
+    runs, seen = [], set()
     for entry in catalog.get('strings', []):
-        if entry['id'] != 'intro.autosave':
+        if entry['id'] != 'intro.autosave' and not entry['id'].startswith(('save.', 'load.')):
             continue
         for index, line in enumerate(entry['text'].split('\n')):
+            # Runtime substitutions have no fixed glyph identity.
+            if '%' in line:
+                continue
             visible = [(column, ord(char) - 33) for column, char in enumerate(line) if char != ' ']
             if not visible:
                 continue
             signature = b''.join(struct.pack('<3H', (column - visible[0][0]) * 8,
                 (glyph % 64) * 8, 480 + (glyph // 64) * 16) for column, glyph in visible)
+            signature = hashlib.sha256(signature).hexdigest()
+            if signature in seen:
+                continue
+            seen.add(signature)
             runs.append({'id': f"{entry['id']}.line.{index}", 'text': line,
                          'width': entry['max_columns'] * 8, 'glyph_count': len(visible),
-                         'signature': hashlib.sha256(signature).hexdigest()})
+                         'signature': signature})
     return runs
 
 
@@ -523,8 +537,8 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         occupied.append((offset, offset + capacity))
         result += name(key) + struct.pack('<II', offset, capacity) + digest(source_field)
         result += struct.pack('<H', len(replacement)) + replacement
-    runs = catalog.get('glyph_runs', []) + pause_help_runs(catalog, boot) + startup_warning_runs(catalog)
-    if len(runs) > 32:
+    runs = catalog.get('glyph_runs', []) + pause_help_runs(catalog, boot) + ascii_ui_runs(catalog)
+    if len(runs) > 64:
         raise ValueError('Too many glyph-run replacements')
     result += struct.pack('<H', len(runs))
     for run in runs:
