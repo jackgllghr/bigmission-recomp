@@ -233,6 +233,7 @@ Replacement image labels use a solid `#ffff02` face. Their outlines transition
 from `#b33716` at the outside to `#ff9403` beside the face.
 The outer stroke is three logical pixels wide, increased from two, with
 concentric strokes interpolating between red and orange. Native and HD
-layers share that width; tight existing slots reduce letter size to retain
+layers share that width. Control hints use half the colored border thickness
+beyond the yellow face. Tight existing slots reduce letter size to retain
 the complete outline. Stage headers retain an additional white border.
 Rebuild the translation pack to apply this palette to installed labels.

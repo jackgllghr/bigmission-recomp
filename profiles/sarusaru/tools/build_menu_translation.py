@@ -105,6 +105,9 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
     body, outline, offset = scale / 2, 3 * scale, 3 * scale / 4
+    if controls:
+        # Halve the colored border beyond the thickened yellow face.
+        outline = body + (outline - body) / 2
     body, outline, offset = int(body), int(outline), int(offset)
     fill = (255, 255, 2, 255)
     outside, inside = (179, 55, 22), (255, 148, 3)

@@ -168,21 +168,28 @@ class MenuCatalogTests(unittest.TestCase):
         self.assertEqual(self.images['common00/action_name.tm2'].crop((0, 0, 80, 40)).tobytes(),
                          composited.tobytes())
 
-    def test_outline_is_wide_at_native_and_hd_resolutions(self):
+    def test_control_hint_outlines_are_half_the_regular_width(self):
         for scale in (1, 8):
-            image = render_ui_label('H', 24, 80, 48, controls=True, output_scale=scale)
-            face, border = [], []
-            for y in range(40 * scale):  # Exclude the navy footer bar.
-                for x in range(image.width):
-                    r, g, b, a = image.getpixel((x, y))
-                    if a > 200 and r > 120 and b < 80:
-                        border.append((x, y))
-                        if r > 245 and g > 245:
-                            face.append((x, y))
+            spans = []
+            for controls in (False, True):
+                image = render_ui_label('H', 24, 80, 48, controls=controls, output_scale=scale)
+                face, border = [], []
+                for y in range(40 * scale):  # Exclude the navy footer bar.
+                    for x in range(image.width):
+                        r, g, b, a = image.getpixel((x, y))
+                        if a > 200 and r > 120 and b < 80:
+                            border.append((x, y))
+                            if r > 245 and g > 245:
+                                face.append((x, y))
+                spans.append([max(p[axis] for p in border) - min(p[axis] for p in border) -
+                              (max(p[axis] for p in face) - min(p[axis] for p in face))
+                              for axis in (0, 1)])
             for axis in (0, 1):
-                outer_span = max(p[axis] for p in border) - min(p[axis] for p in border)
-                face_span = max(p[axis] for p in face) - min(p[axis] for p in face)
-                self.assertGreaterEqual(outer_span - face_span, 4 * scale)
+                self.assertGreaterEqual(spans[0][axis], 4 * scale)
+                # Native downsampling can move each thresholded edge by
+                # one pixel. HD coverage retains the exact half-width.
+                self.assertAlmostEqual(spans[1][axis], spans[0][axis] / 2,
+                                       delta=2 if scale == 1 else 1)
 
     def test_controls_and_footer_hints_have_navy_bars(self):
         for asset in ('common00/action_name.tm2', 'e_but_0.lzs', 'e_but_1.lzs'):
