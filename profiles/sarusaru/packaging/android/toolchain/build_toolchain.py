@@ -185,6 +185,8 @@ def build_llvm(ndk, source, jobs):
         "-DLLVM_ENABLE_PROJECTS=clang;lld", "-DLLVM_TARGETS_TO_BUILD=AArch64",
         f"-DLLVM_DEFAULT_TARGET_TRIPLE={TRIPLE}", "-DLLVM_HOST_TRIPLE=aarch64-linux-android",
         "-DLLVM_TOOL_LLVM_DRIVER_BUILD=ON",
+        # Links take gigabytes each: one at a time, so compiling can use every core.
+        "-DLLVM_PARALLEL_LINK_JOBS=1",
         # The source is unpacked inside this repository: keep its git
         # revision and URL out of the program's version.
         "-DLLVM_APPEND_VC_REV=OFF",
