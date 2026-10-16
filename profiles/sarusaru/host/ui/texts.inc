@@ -86,6 +86,11 @@ X(RowFov, "Field of View", "視野角")
 X(ValueFovNative, "Native (36.5°)", "標準 (36.5°)")
 X(DescFov, "Widens the camera in stages and the hub. Menus and cutscenes keep the original view.",
   "ステージとハブでカメラの視野を広げます。メニューやイベントシーンは元の視野のままです。")
+X(RowDrawDistance, "Draw Distance", "描画距離")
+X(ValueDrawDistanceNative, "Native", "標準")
+X(DescDrawDistance,
+  "Keeps enemies, monkeys and other characters drawn farther from the camera. Some enemies also start moving from farther away.",
+  "敵やサルなどのキャラクターを、カメラから遠くても表示します。一部の敵は遠くから動き出すようになります。")
 X(RowFullscreen, "Full Screen", "フルスクリーン")
 X(DescFullscreen, "Fills the screen at the desktop's resolution. Alt+Enter or F11 switches while playing.",
   "デスクトップの解像度で画面全体に表示します。プレイ中は Alt+Enter か F11 で切り替えられます。")

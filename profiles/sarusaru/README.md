@@ -158,7 +158,7 @@ yellow and wears Pipo's red siren lamp.
   buttons, as does a kept image that has since moved or changed.
 - **Settings** has Graphics, Controls and Interface tabs: full screen,
   window size (not while full screen), resolution, frame rate (Native, 30 or
-  60 FPS motion), FOV, cel shading, HD textures, the stick dead zone, the
+  60 FPS motion), FOV, draw distance, cel shading, HD textures, the stick dead zone, the
   launcher's language, the game's text (below) and the confirm button. Values
   step with left/right, the row's arrows, or by activating it; each is saved
   at once.
@@ -324,6 +324,7 @@ window_height = 1080
 fullscreen = 0
 frame_rate = 60
 fov_degrees = 50
+draw_distance = 1
 cel_shading = 0
 
 [input]
@@ -418,6 +419,15 @@ is widened by the same factor for every lens, so zooms keep their proportion,
 and the game culls objects for the view it draws: nothing at the screen edges
 is missing at a wider FOV. The HUD and 2D menus are unchanged. See
 [`docs/settings-investigation.md`](docs/settings-investigation.md).
+
+`draw_distance` keeps actors (enemies, monkeys, "?" markers and other
+characters) drawn farther from the camera: 1 is native, up to 8. The game
+fades each actor out between 250 and 350 units from the camera, while level
+geometry is drawn to the far plane; beyond 200 units the setting multiplies
+the distance at which actors fade, so at 4 they fade between 400 and 800
+units. Enemies that stop animating when far away (the robots) also keep
+moving to that distance. It applies wherever actors update, and changes take
+effect from the pause menu at once.
 
 **Settings → Interface → Skip intro logos** skips the opening logos automatically
 (default Off). The equivalent setting is `skip_intro_logos = 1` under `[game]`.

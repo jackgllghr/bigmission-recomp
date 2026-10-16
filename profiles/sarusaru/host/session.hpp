@@ -13,6 +13,7 @@
 #include "ge/ge.hpp"
 #include "game/frame_rate.hpp"
 #include "game/camera_fov.hpp"
+#include "game/draw_distance.hpp"
 #include "game/gameplay_camera.hpp"
 #include "game/intro_logos.hpp"
 #include "game/orbit_camera.hpp"
@@ -48,7 +49,8 @@ struct SessionOptions {
     // overrides that leave menus and cutscenes native.
     bool track_gameplay_camera{false};
     bool skip_intro_logos{false};
-    // Watches the view build for the orbit camera and the FOV (camera_fov).
+    // Watches the view build for the orbit camera and the FOV (camera_fov),
+    // and the actor updates for the draw distance (draw_distance).
     bool camera_control{false};
     // The game module to load; empty finds it (find_game_module()).
     std::filesystem::path game_module;
@@ -96,6 +98,7 @@ public:
     game::IntroLogos intro_logos;
     game::OrbitCamera orbit_camera;
     game::CameraFov camera_fov;
+    game::DrawDistance draw_distance;
     ge::Ge ge{kernel};
     rtc::Rtc rtc{kernel, rtc::Rtc::host_boot_local_unix_us()};
     modules::UtilityModules utility_modules;

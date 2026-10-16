@@ -93,7 +93,7 @@ set_target_properties(sarusaru_dump_movie_audio PROPERTIES RUNTIME_OUTPUT_DIRECT
     BUILD_RPATH "$<IF:$<PLATFORM_ID:Darwin>,@loader_path/lib,$ORIGIN/lib>")
 
 # GE display-list state and texture decoding (adapted from Yakumo).
-add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gameplay_camera.cpp host/game/intro_logos.cpp host/game/orbit_camera.cpp host/game/camera_fov.cpp)
+add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gameplay_camera.cpp host/game/intro_logos.cpp host/game/orbit_camera.cpp host/game/camera_fov.cpp host/game/draw_distance.cpp)
 target_include_directories(sarusaru_frame_rate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_frame_rate PUBLIC psprecomp_runtime)
 
@@ -223,6 +223,9 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     add_executable(sarusaru_camera_fov_tests tests/camera_fov_tests.cpp)
     target_link_libraries(sarusaru_camera_fov_tests PRIVATE sarusaru_frame_rate)
     add_test(NAME sarusaru_camera_fov_tests COMMAND sarusaru_camera_fov_tests)
+    add_executable(sarusaru_draw_distance_tests tests/draw_distance_tests.cpp)
+    target_link_libraries(sarusaru_draw_distance_tests PRIVATE sarusaru_frame_rate)
+    add_test(NAME sarusaru_draw_distance_tests COMMAND sarusaru_draw_distance_tests)
     add_executable(sarusaru_orbit_camera_tests tests/orbit_camera_tests.cpp)
     target_link_libraries(sarusaru_orbit_camera_tests PRIVATE sarusaru_frame_rate)
     add_test(NAME sarusaru_orbit_camera_tests COMMAND sarusaru_orbit_camera_tests)

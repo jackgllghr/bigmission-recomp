@@ -9,7 +9,7 @@ namespace sarusaru::ui {
 namespace {
 
 constexpr SettingRow kGraphics[] = {SettingRow::Fullscreen, SettingRow::WindowSize, SettingRow::InternalResolution,
-    SettingRow::FrameRate, SettingRow::Fov, SettingRow::CelShading, SettingRow::Textures};
+    SettingRow::FrameRate, SettingRow::Fov, SettingRow::DrawDistance, SettingRow::CelShading, SettingRow::Textures};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone};
 constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::Subtitles, SettingRow::ConfirmButton, SettingRow::ControllerButtons, SettingRow::SkipIntroLogos};
 constexpr SettingRow kUpdates[] = {SettingRow::AutomaticUpdates};
@@ -18,6 +18,8 @@ constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabContr
 
 // Native, a cap of 30 and 60 FPS motion (shell::interpolates).
 constexpr double kFrameRates[] = {0, 30, 60};
+// Native and how many times as far actors stay drawn (game/draw_distance.hpp).
+constexpr double kDrawDistances[] = {1, 1.5, 2, 3, 4, 6, 8};
 // Window widths at the PSP's aspect (the height follows): 2, 3, 4 and 6 times 480.
 constexpr double kWindowWidths[] = {960, 1440, 1920, 2880};
 
@@ -116,6 +118,12 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
         view.value = settings.fov_degrees == 0.0f ? text(Text::ValueFovNative) : number("%.0f\u00B0", settings.fov_degrees);
         view.description = text(Text::DescFov);
         break;
+    case SettingRow::DrawDistance:
+        view.label = text(Text::RowDrawDistance);
+        view.value = settings.draw_distance == 1.0f ? text(Text::ValueDrawDistanceNative)
+                                                    : number("%g\u00D7", settings.draw_distance);
+        view.description = text(Text::DescDrawDistance);
+        break;
     case SettingRow::Fullscreen:
         view.label = text(Text::RowFullscreen);
         view.value = on_off(settings.fullscreen);
@@ -208,6 +216,9 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
         settings.fov_degrees = static_cast<float>(step_value(steps, settings.fov_degrees, direction));
         break;
     }
+    case SettingRow::DrawDistance:
+        settings.draw_distance = static_cast<float>(step_value(kDrawDistances, settings.draw_distance, direction));
+        break;
     case SettingRow::Fullscreen:
         settings.fullscreen = !settings.fullscreen;
         break;

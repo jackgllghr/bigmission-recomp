@@ -16,7 +16,7 @@
 namespace sarusaru::ui {
 
 enum class SettingRow {
-    InternalResolution, Textures, FrameRate, Fov, CelShading, Fullscreen,
+    InternalResolution, Textures, FrameRate, Fov, DrawDistance, CelShading, Fullscreen,
     WindowSize,
     DeadZone,
     Language, GameText, Subtitles, ConfirmButton, ControllerButtons, SkipIntroLogos, AutomaticUpdates,

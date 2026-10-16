@@ -225,12 +225,57 @@ Stage gameplay (80 s on) and the pause menu entered from it were widened, and
 matched the extents experiment above. Untested: the hub, other stage types,
 vehicles, mid-stage events and minigames.
 
-Remaining refinement:
+Remaining refinement: verify HUD placement, menus, movies, cutscenes and
+geometry at the frustum edges in the other stage types.
 
-1. Find the game's distance culling or level-of-detail limit, if any, for a
-   draw-distance setting; the far plane is not it.
-2. Verify HUD placement, menus, movies, cutscenes and geometry at the frustum edges
-   in the other stage types.
+### Draw distance
+
+Level geometry has no distance limit short of the far plane: with the stage
+camera's eye pulled back four times as far from its target (a debug hook at
+the view build), stage 1-1's beach, rocks and fences were all drawn. The
+robots, the far "?" marker and other actors were not, so actors carry their
+own limit.
+
+The actor manager draws from the actor list twice a frame. 0x08900A5C calls
+each actor's draw (vtable +24) when the fade at actor+300 is at least 1, and
+0x08900B14 draws those between 0 and 1 translucent; an actor at 0 is not
+drawn. The update loop 0x08900BFC (vtable +16, returning to 0x08900C40 or
+0x08900C6C) runs the actor updates, twice per stage frame from 0x08868108
+(0x08868158 and 0x08868170) before the camera code. Each class's update sets
+the fade itself: it measures from the scene camera's eye
+(`*(*(0x08A82B24)+20)+112`) to its own position and calls its fade setter
+(vtable +32, typically `actor+300 = f12`). The world matrix translation is at
+actor+80 with w = 1 at +92.
+
+The fades logged for three classes (0x088FFF68, 0x0882E2C0, 0x0886B17C) at
+camera distances 307.8, 324.0 and 335.2 were 0.42, 0.26 and 0.15, which is
+`clamp((350 - d) / 100, 0, 1)`: fully drawn to 250 units and gone at 350.
+Other classes write the same limits inline (the floats 250 and 350 near
+0x08831840, 0x08875028, 0x088B24D0, 0x088B5AA4) and some step the fade by 0.1
+a frame towards their target. The robot's update (0x0883160C) also returns
+before its AI and animation beyond 350.
+
+Since the limits are inlined per class and the code is compiled ahead of
+time, there is no one constant to change. Implemented (`game/draw_distance.*`):
+while the update loop runs an actor's update, the eye at cam+112 is moved
+along the line from the actor (+80) towards the real eye, so that the
+distance beyond 200 units is divided by `draw_distance`; the real eye is put
+back at the next call from the loop's caller (or from another thread's
+stack), before the camera code and the draws read it. An eye the game wrote
+in the meantime is kept. Directions from actors to the camera, and anything
+within 200 units (near fades), are unchanged. At 4, actors fade from 400 to
+800 units instead of 250 to 350.
+
+Verification, stage 1-1, opening view at 88 s: with the camera pulled back
+four times, native drew none of the robots by the far rocks and no far "?"
+marker; at 4 they were all drawn and the framing was pixel-identical
+elsewhere. At the normal camera, the robots and marker near the palm, faded at
+native, were opaque at 4. A walk to the first "?" marker, its dialogue and a
+pause matched between native and 4. Side effect: classes that stop animating
+when far (the robots) now animate and patrol to the same scaled distance, so
+distant robots start moving sooner. Untested: other stages, the hub, sound
+volume or panning tied to the eye, and actors whose position is not the
+world matrix at +80 (those see the real eye).
 
 ## Verification
 
