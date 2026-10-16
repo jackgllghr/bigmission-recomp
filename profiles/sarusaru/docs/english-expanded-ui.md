@@ -228,3 +228,9 @@ Xbox 360/One faces share the launcher's palette: black faces with green A,
 red B, blue X and yellow Y letters. Letter coverage is blended into that face
 at the active render scale. Prompt tests check both Xbox types at 1x/4x,
 including the colored letters in the small diagonal pairs.
+
+Replacement image labels use a solid `#ffff02` face. Their outlines transition
+from `#873123` at the outside to `#ffec02` beside the face, using concentric
+strokes at the authoring resolution. Native and HD layers share the same
+logical outline width; stage headers retain their additional white border.
+Rebuild the translation pack to apply this palette to installed labels.

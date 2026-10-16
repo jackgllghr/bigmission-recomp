@@ -106,11 +106,20 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     draw = ImageDraw.Draw(layer)
     body, outline, offset = scale / 2, 2 * scale, 3 * scale / 4
     body, outline, offset = int(body), int(outline), int(offset)
-    gold, red = (255, 224, 32, 255), (220, 55, 8, 255)
-    layers = ((0, outline, red), (0, 5 * scale // 4, (255, 140, 8, 255)), (0, body, gold)) if controls or header else (
-        (offset, outline, red), (0, body, gold))
+    fill = (255, 255, 2, 255)
+    outside, inside = (135, 49, 35), (255, 236, 2)
+    # Concentric one-texel strokes form a gradient across the outline, from
+    # brown at the outside to yellow beside the solid letter face. Render at
+    # the authoring resolution so HD layers retain the same logical width.
+    layers = []
+    for stroke in range(outline, body, -1):
+        amount = (outline - stroke) / (outline - body - 1)
+        color = tuple(round(a + (b - a) * amount) for a, b in zip(outside, inside)) + (255,)
+        shift = 0 if controls or header else round(offset * (1 - amount))
+        layers.append((shift, stroke, color))
+    layers.append((0, body, fill))
     if header:
-        layers = ((0, 4 * scale, (255, 255, 255, 255)),) + layers
+        layers.insert(0, (0, 4 * scale, (255, 255, 255, 255)))
     # Preserve the font's kerning, adding one supersampled pixel between glyphs.
     glyphs = [(char, font.getlength(text[:i + 1]) - font.getlength(char) + i * scale / 4)
               for i, char in enumerate(text)]

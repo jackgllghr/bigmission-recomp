@@ -108,20 +108,20 @@ class MenuCatalogTests(unittest.TestCase):
                         self.assertTrue(0 <= sx < 480 and 0 <= sy < 272,
                                         f'stamp {top}: ink at {x},{y} clips screen at {sx},{sy}')
 
-    def test_gold_ink_is_heavier_and_red_edge_is_offset_down_and_right(self):
+    def test_yellow_ink_is_heavier_and_brown_edge_is_offset_down_and_right(self):
         from PIL import Image, ImageDraw, ImageFont
         label = render_ui_label('H', 24, 80, 40)
         regular = Image.new('RGBA', label.size)
-        ImageDraw.Draw(regular).text((10, 2), 'H', font=ImageFont.load_default(size=24), fill=(255, 224, 32, 255))
+        ImageDraw.Draw(regular).text((10, 2), 'H', font=ImageFont.load_default(size=24), fill=(255, 255, 2, 255))
         def points(image, red=False):
             return [(x, y) for y in range(image.height) for x in range(image.width)
-                    if (lambda p: p[3] > 128 and p[0] > 180 and p[2] < 80 and
-                        (p[1] < 100 if red else p[1] > 160))(image.getpixel((x, y)))]
+                    if (lambda p: p[3] > 128 and p[0] > 120 and p[2] < 80 and
+                        (p[1] < 100 if red else p[0] > 245 and p[1] > 245))(image.getpixel((x, y)))]
         gold, edge = points(label), points(label, True)
         self.assertGreater(len(gold), len(points(regular)))
         for axis in (0, 1):
             self.assertGreaterEqual(max(p[axis] for p in edge) - min(p[axis] for p in edge),
-                                    max(p[axis] for p in gold) - min(p[axis] for p in gold) + 3)
+                                    max(p[axis] for p in gold) - min(p[axis] for p in gold) + 2)
             self.assertGreater(sum(p[axis] for p in edge) / len(edge),
                                sum(p[axis] for p in gold) / len(gold))
 
@@ -131,8 +131,8 @@ class MenuCatalogTests(unittest.TestCase):
         tracked = render_ui_label(text, 10, 100, 20)
         untracked = Image.new('RGBA', (400, 80))
         ImageDraw.Draw(untracked).text((20, 8), text,
-            font=ImageFont.load_default(size=40), fill=(255, 224, 32, 255),
-            stroke_width=2, stroke_fill=(255, 224, 32, 255))
+            font=ImageFont.load_default(size=40), fill=(255, 255, 2, 255),
+            stroke_width=2, stroke_fill=(255, 255, 2, 255))
         untracked = untracked.resize((100, 20), Image.Resampling.LANCZOS)
         def gold_span(image):
             xs = [x for y in range(image.height) for x in range(image.width)
@@ -143,26 +143,20 @@ class MenuCatalogTests(unittest.TestCase):
         self.assertGreaterEqual(gold_span(tracked), gold_span(untracked) + 1)
         self.assertLessEqual(gold_span(tracked), gold_span(untracked) + 3)
 
-    def test_controls_have_centered_orange_and_outer_red_borders(self):
+    def test_label_fill_and_outline_gradient_match_game_palette(self):
+        for style in ({}, {'controls': True}, {'header': True}):
+            with self.subTest(style=style):
+                image = render_ui_label('H', 24, 80, 40, output_scale=8, **style)
+                pixels = set(image.get_flattened_data())
+                self.assertIn((255, 255, 2, 255), pixels)
+                self.assertIn((135, 49, 35, 255), pixels)
+                self.assertIn((255, 236, 2, 255), pixels)
+                # The edge traverses intermediate colors, rather than two
+                # flat outline bands. Ignore antialiasing and the white halo.
+                gradient = {(r, g, b) for r, g, b, a in pixels
+                            if a == 255 and 135 < r < 255 and 49 < g < 236 and 2 < b < 35}
+                self.assertGreaterEqual(len(gradient), 8)
         image = render_ui_label('H', 24, 80, 40, controls=True)
-        colors = {'gold': [], 'orange': [], 'red': []}
-        for y in range(image.height):
-            for x in range(image.width):
-                r, g, b, a = image.getpixel((x, y))
-                if a > 200 and r > 180 and b < 80:
-                    colors['gold' if g > 185 else 'orange' if g > 100 else 'red'].append((x, y))
-        for axis in (0, 1):
-            spans = []
-            self.assertTrue(colors['orange'], 'Missing orange inner border')
-            for name in ('gold', 'red'):
-                points = colors[name]
-                self.assertTrue(points, f'Missing {name} layer')
-                low, high = min(p[axis] for p in points), max(p[axis] for p in points)
-                spans.append(high - low)
-                gold = colors['gold']
-                center = (min(p[axis] for p in gold) + max(p[axis] for p in gold)) / 2
-                self.assertAlmostEqual((low + high) / 2, center, delta=0.5)
-            self.assertLess(spans[0], spans[1])
         self.catalog['labels'].append({'id': 'control.test', 'text': 'H',
             'asset': 'common00/action_name.tm2', 'rect': [0, 0, 80, 40], 'font_size': 24})
         render_labels(self.catalog, self.images)
