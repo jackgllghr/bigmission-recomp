@@ -6,6 +6,7 @@ pixels and source hashes; extracted Japanese textures stay in memory.
 """
 import argparse
 import hashlib
+from functools import lru_cache
 import json
 from pathlib import Path
 import struct
@@ -94,6 +95,14 @@ def encode_pixel_runs(rgba):
     return result
 
 
+@lru_cache(maxsize=128)
+def label_font(size, *, controls=False):
+    """The bundled rounded face keeps offline pack builds reproducible."""
+    from PIL import ImageFont
+    weight = 'Bold' if controls else 'ExtraBold'
+    return ImageFont.truetype(str(PROFILE / f'tools/fonts/MPLUSRounded1c-{weight}-ASCII.ttf'), size=size)
+
+
 def render_ui_label(text, size, width, height, alignment='center', *, controls=False,
                     header=False, top_hint_bar=False, output_scale=1):
     """Render UI styles in logical pixels, retaining detail at output_scale."""
@@ -101,16 +110,29 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     if alignment not in ('left', 'center'):
         raise ValueError('Label alignment must be left or center')
     scale = max(4, output_scale)
-    font = ImageFont.load_default(size=size * scale)
+    font = label_font(size * scale, controls=controls)
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
-    body, outline, offset = scale / 2, 2 * scale, 3 * scale / 4
+    body, outline, offset = scale / 2, 3 * scale, 3 * scale / 4
+    if controls:
+        # Halve the colored border beyond the thickened yellow face.
+        outline = body + (outline - body) / 2
     body, outline, offset = int(body), int(outline), int(offset)
-    gold, red = (255, 224, 32, 255), (220, 55, 8, 255)
-    layers = ((0, outline, red), (0, 5 * scale // 4, (255, 140, 8, 255)), (0, body, gold)) if controls or header else (
-        (offset, outline, red), (0, body, gold))
+    fill = (249, 206, 0, 255)
+    outside, inside = (179, 55, 22), (255, 148, 3)
+    # Interpolate concentric strokes from the red outer edge to orange
+    # beside the solid yellow letter face at native and HD resolutions.
+    last = outline - body - 1
+    layers = []
+    for index, stroke in enumerate(range(outline, body, -1)):
+        amount = index / last
+        color = tuple(round(a + (b - a) * amount)
+                      for a, b in zip(outside, inside)) + (255,)
+        shift = 0 if controls or header else round(offset * (1 - index / last))
+        layers.append((shift, stroke, color))
+    layers.append((0, body, fill))
     if header:
-        layers = ((0, 4 * scale, (255, 255, 255, 255)),) + layers
+        layers.insert(0, (0, 5 * scale, (255, 255, 255, 255)))
     # Preserve the font's kerning, adding one supersampled pixel between glyphs.
     glyphs = [(char, font.getlength(text[:i + 1]) - font.getlength(char) + i * scale / 4)
               for i, char in enumerate(text)]
@@ -128,6 +150,24 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     # Retain at least half a logical pixel of padding on the HD layer.
     margin = scale if output_scale == 1 else scale / 2
     if tw > layer.width - 2 * margin or th > layer.height - 2 * margin:
+        # Existing catalogs were fitted to a 2px outline (4px white header
+        # halo) and Pillow's default face. Fit the rounded font and extra
+        # border in those slots; oversized source text still fails checks.
+        old_stroke = (4 if header else 2) * scale
+        old_shift = 0 if controls or header else offset
+        old_font = ImageFont.load_default(size=size * scale)
+        old_glyphs = [(char, old_font.getlength(text[:i + 1]) - old_font.getlength(char) + i * scale / 4)
+                      for i, char in enumerate(text)]
+        old_boxes = [draw.textbbox((advance + old_shift, old_shift), char, font=old_font,
+                                  stroke_width=old_stroke)
+                     for char, advance in old_glyphs if char != ' ']
+        if old_boxes and size > 1:
+            old_width = max(b[2] for b in old_boxes) - min(b[0] for b in old_boxes)
+            old_height = max(b[3] for b in old_boxes) - min(b[1] for b in old_boxes)
+            if old_width <= layer.width - 2 * margin and old_height <= layer.height - 2 * margin:
+                return render_ui_label(text, size - .25, width, height, alignment,
+                                       controls=controls, header=header, top_hint_bar=top_hint_bar,
+                                       output_scale=output_scale)
         raise ValueError('Text exceeds pixel budget; shorten it or reduce font_size')
     x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
     y = (layer.height - th) / 2 - bounds[1]

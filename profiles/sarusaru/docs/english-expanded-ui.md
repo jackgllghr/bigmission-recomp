@@ -229,6 +229,17 @@ red B, blue X and yellow Y letters. Letter coverage is blended into that face
 at the active render scale. Prompt tests check both Xbox types at 1x/4x,
 including the colored letters in the small diagonal pairs.
 
+Replacement image labels use M PLUS Rounded 1c ExtraBold with a solid
+`#f9ce00` face. Control hints use the slightly lighter Bold weight.
+The authoring tool uses the bundled printable-ASCII font subsets in `tools/fonts/`. Their outlines transition
+from `#b33716` at the outside to `#ff9403` beside the face.
+The outer stroke is three logical pixels wide, increased from two, with
+concentric strokes interpolating between red and orange. Native and HD
+layers share that width. Control hints use half the colored border thickness
+beyond the yellow face. Tight existing slots reduce letter size to retain
+the complete outline. Stage headers retain an additional white border.
+Rebuild the translation pack to apply this palette to installed labels.
+
 Host prompt cleanup reconstructs the navy hint bars from unobscured atlas
 ends before drawing replacement buttons. This preserves native and translated
 bar colors, rounded caps and HD coverage without retaining the original PSP
