@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace sarusaru::sas {
@@ -82,10 +83,51 @@ private:
     void walk(const Stage &stage) noexcept;
 };
 
+// The SAS effect: the PlayStation SPU reverb (nocash's psx-spx formula and
+// preset table), run at 22050 Hz on the voices' effect sends. PSP types are
+// -1 off, 0 room, 1-3 studio small/medium/large, 4 hall, 5 space, 6 echo,
+// 7 delay and 8 pipe. Echo and delay derive their length and feedback from
+// sceSasRevParam; the other presets ignore it.
+class Reverb {
+public:
+    // Registers in psx-spx order. m/d registers count 8-byte units of the
+    // work buffer relative to the moving buffer position; v registers are
+    // signed 1.15 volumes.
+    struct Registers {
+        std::uint16_t dAPF1, dAPF2, vIIR, vCOMB1, vCOMB2, vCOMB3, vCOMB4, vWALL;
+        std::uint16_t vAPF1, vAPF2, mLSAME, mRSAME, mLCOMB1, mRCOMB1, mLCOMB2, mRCOMB2;
+        std::uint16_t dLSAME, dRSAME, mLDIFF, mRDIFF, mLCOMB3, mRCOMB3, mLCOMB4, mRCOMB4;
+        std::uint16_t dLDIFF, dRDIFF, mLAPF1, mRAPF1, mLAPF2, mRAPF2, vLIN, vRIN;
+    };
+
+    static constexpr std::int32_t kOff = -1, kEcho = 6, kDelay = 7, kMaxType = 8;
+
+    // Selecting a type (even the same one) clears the work buffer.
+    void set_type(std::int32_t type);
+    void set_parameters(std::int32_t delay, std::int32_t feedback);
+    [[nodiscard]] std::int32_t type() const noexcept { return type_; }
+    [[nodiscard]] const Registers &registers() const noexcept { return registers_; }
+    // One grain of 44.1 kHz sends (an even count), replaced in place by the
+    // wet signal scaled by the effect volumes (0x1000 = unity).
+    void process(std::span<std::int64_t> left, std::span<std::int64_t> right, std::int32_t volume_left,
+                 std::int32_t volume_right);
+
+private:
+    std::int32_t type_{kOff}, delay_{}, feedback_{};
+    Registers registers_{};
+    std::vector<std::int16_t> buffer_;
+    std::size_t position_{};
+    std::int32_t previous_left_{}, previous_right_{};
+
+    void load_registers();
+    [[nodiscard]] std::int16_t &at(std::int32_t halfwords) noexcept;
+    void step(std::int32_t in_left, std::int32_t in_right, std::int32_t &out_left, std::int32_t &out_right) noexcept;
+};
+
 // sceSasCore: up to 32 voices from VAG or noise sources, pitch-resampled
 // with linear interpolation, shaped by their envelope and mixed per grain
-// into stereo 16-bit output. Reverb settings are recorded but not applied:
-// effect sends are dropped.
+// into stereo 16-bit output. Effect sends feed the reverb, whose wet output
+// is mixed in when sceSasRevVON turns it on (the dry voices likewise).
 class SasCore {
 public:
     struct Voice {
@@ -134,6 +176,7 @@ public:
                                       std::int32_t mix_left, std::int32_t mix_right);
 
     [[nodiscard]] const Voice &voice(std::uint32_t index) const noexcept { return voices_[index]; }
+    [[nodiscard]] const Reverb &reverb() const noexcept { return reverb_; }
 
 private:
     std::uint32_t core_{};
@@ -142,7 +185,8 @@ private:
     std::uint32_t output_mode_{};
     std::array<Voice, kMaxVoices> voices_{};
     std::uint32_t noise_state_{1u};
-    std::int32_t reverb_type_{}, reverb_delay_{}, reverb_feedback_{}, reverb_left_{}, reverb_right_{};
+    Reverb reverb_;
+    std::int32_t reverb_left_{}, reverb_right_{};
     std::int32_t dry_on_{1}, wet_on_{};
 
     [[nodiscard]] Voice *voice_at(std::int32_t index) noexcept;
