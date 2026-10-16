@@ -696,7 +696,10 @@ void Launcher::settings() {
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const RowView view = describe(rows[i], settings_, in_game());
         const int change = setting_row(layer_, "row" + std::to_string(i), view, row_width);
-        if (change != 0 && rows[i] == SettingRow::Textures) {
+        if (change != 0 && rows[i] == SettingRow::Preset) {
+            pack_return_screen_ = Screen::Settings;
+            choose_preset(change);
+        } else if (change != 0 && rows[i] == SettingRow::Textures) {
             pack_return_screen_ = Screen::Settings;
             choose_textures(change);
         } else if (change != 0 && rows[i] == SettingRow::GameText) {
@@ -754,7 +757,34 @@ std::string url_host(std::string_view url) {
 void Launcher::return_from_pack(SettingRow row) {
     go(pack_return_screen_, pack_return_screen_ == Screen::Install
                                 ? (row == SettingRow::Textures ? "install_textures" : "install_game_text")
-                                : row_id(row));
+                                : row_id(preset_active_ ? SettingRow::Preset : row));
+    continue_preset();
+}
+
+void Launcher::choose_preset(int direction) {
+    settings_error_.clear();
+    const Preset preset = next_preset(preset_of(settings_), direction);
+    apply_preset(settings_, preset);
+    save();
+    preset_pending_.clear();
+    if (preset == Preset::Modern) preset_pending_ = {SettingRow::GameText, SettingRow::Textures};
+    preset_active_ = true;
+    continue_preset();
+}
+
+// Each step either turns its row on at once (continuing to the next) or opens
+// its download screen, which comes back here through return_from_pack(); a
+// download cancelled there leaves that row as it was, and the preset Custom.
+void Launcher::continue_preset() {
+    while (!preset_pending_.empty()) {
+        const SettingRow row = preset_pending_.front();
+        preset_pending_.erase(preset_pending_.begin());
+        const Screen before = screen_;
+        if (row == SettingRow::GameText && settings_.translation_language != "en") choose_game_text(1);
+        if (row == SettingRow::Textures && texture_scale(settings_) != 4u) select_textures(4u);
+        if (screen_ != before) return;
+    }
+    preset_active_ = false;
 }
 
 void Launcher::choose_game_text(int direction) {
@@ -780,10 +810,28 @@ void Launcher::choose_game_text(int direction) {
 }
 
 void Launcher::choose_textures(int direction) {
-    const auto scale = next_texture_scale(texture_scale(settings_), direction);
+    select_textures(next_texture_scale(texture_scale(settings_), direction));
+}
+
+void Launcher::select_textures(std::uint32_t scale) {
     if (scale == 0u) {
         settings_.texture_pack.clear();
         save();
+        return;
+    }
+    // HD is the prebuilt pack, downloaded once, when the build offers one.
+    if (const auto prebuilt = install::prebuilt_pack_source(); prebuilt && scale == 4u) {
+        const auto directory = install::prebuilt_pack_directory(*prebuilt);
+        if (directory && install::texture_pack_state(*directory) != install::TexturePackState::Missing) {
+            settings_.texture_pack = *directory;
+            save();
+        } else if (in_game()) {
+            settings_error_ = tr(Text::MakeInLauncher);
+        } else {
+            texture_scale_ = scale;
+            texture_error_.clear();
+            go(Screen::Textures, "textures_make");
+        }
         return;
     }
     const auto recipe = install::texture_recipe_source();
@@ -807,6 +855,10 @@ void Launcher::choose_textures(int direction) {
 }
 
 void Launcher::textures() {
+    if (texture_scale_ == 4u && install::prebuilt_pack_source()) {
+        prebuilt_textures();
+        return;
+    }
     using Step = install::TextureProgress::Step;
     const float u = layer_.unit();
     const float top = screen_title(layer_, tr(Text::TexturesTitle));
@@ -899,6 +951,78 @@ void Launcher::textures() {
     }
     hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
                    {Control::Back, tr(texture_build_ ? Text::HintCancel : Text::HintBack)}});
+}
+
+void Launcher::prebuilt_textures() {
+    using Step = install::TextureProgress::Step;
+    const float u = layer_.unit();
+    const float top = screen_title(layer_, tr(Text::TexturesTitle));
+    const ImRect inner = content_panel(layer_, top, 700.0f);
+    const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
+    const auto source = install::prebuilt_pack_source();
+    const auto directory = install::prebuilt_pack_directory(*source);
+
+    // A download that ended: HD on and back to the settings, or the choice again with why.
+    if (prebuilt_download_) {
+        const auto progress = prebuilt_download_->progress();
+        if (progress.step == Step::Done) {
+            settings_.texture_pack = prebuilt_download_->destination();
+            prebuilt_download_.reset();
+            save();
+            return_from_pack(SettingRow::Textures);
+            return;
+        }
+        if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
+            texture_error_ = progress.step == Step::Failed ? format(Text::TexturesNotDownloaded, {progress.error}) : "";
+            prebuilt_download_.reset();
+            focus_control("textures_make");
+        }
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, inner.Min.y + pad * 0.8f));
+    begin_list("##textures", ImVec2(inner.GetWidth() - 2.0f * pad, inner.GetHeight() - 1.6f * pad));
+    paragraph(layer_, tr(Text::TexturesPrebuiltIntro), width, colors::kInkDim);
+    ImGui::Dummy(ImVec2(0, 8.0f * u));
+    if (!directory) {
+        paragraph(layer_, format(Text::TexturesNotDownloaded, {"there is no per-user data directory"}), width, colors::kRed);
+    } else if (prebuilt_download_) {
+        const auto progress = prebuilt_download_->progress();
+        paragraph(layer_, progress.step == Step::Unpacking
+                              ? std::string(tr(Text::TexturesUnpackingPack))
+                              : format(Text::TexturesDownloading, {megabytes(progress.done), megabytes(progress.total)}),
+                  width);
+        ImGui::Dummy(ImVec2(0, 4.0f * u));
+        std::optional<float> fraction;
+        if (progress.total != 0u && progress.step == Step::Downloading)
+            fraction = static_cast<float>(progress.done) / static_cast<float>(progress.total);
+        progress_bar(layer_, width, fraction);
+        ImGui::Dummy(ImVec2(0, 8.0f * u));
+        if (action_row(layer_, "textures_cancel", tr(Text::InstallCancel), "", width)) prebuilt_download_->cancel();
+    } else {
+        paragraph(layer_, format(Text::PackSource, {url_host(source->url), megabytes(source->bytes)}), width);
+        ImGui::Dummy(ImVec2(0, 4.0f * u));
+        if (action_row(layer_, "textures_make", tr(Text::TexturesDownload), "", width)) {
+            texture_error_.clear();
+            prebuilt_download_ = std::make_unique<install::PrebuiltPackDownload>(*source, std::string(identity_.disc_id),
+                                                                                *directory);
+            focus_control("textures_cancel");
+        }
+    }
+    if (!texture_error_.empty()) {
+        ImGui::Dummy(ImVec2(0, 6.0f * u));
+        paragraph(layer_, texture_error_, width, colors::kRed);
+    }
+    end_list(layer_);
+
+    // Back stops a download under way rather than leaving it running.
+    if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) {
+        if (prebuilt_download_)
+            prebuilt_download_->cancel();
+        else
+            return_from_pack(SettingRow::Textures);
+    }
+    hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
+                   {Control::Back, tr(prebuilt_download_ ? Text::HintCancel : Text::HintBack)}});
 }
 
 bool Launcher::pack_ready() const {

@@ -6,6 +6,10 @@
 // own disc (and any the game collected while they played), upscale colour and
 // alpha as separate straight planes, and write the pack the renderer loads
 // (textures/hd_pack.hpp). Nothing derived from the game is downloaded.
+//
+// A build can instead offer a prebuilt HD pack (SARUSARU_HD_PACK_*),
+// published apart from the port like the English pack: a zip of that same
+// directory, downloaded, checked by its SHA-256 and unpacked (HdPackDownload).
 #include "install/pack_download.hpp"
 #include "install/process.hpp"
 
@@ -16,6 +20,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace sarusaru::install {
@@ -38,6 +43,13 @@ struct UpscalerSource {
 
 // <user data>/textures/<scale>x-<first 16 digits of the recipe's SHA-256>.
 [[nodiscard]] std::optional<std::filesystem::path> texture_pack_directory(const PackSource &recipe, std::uint32_t scale);
+
+// The prebuilt HD pack this build offers, or nothing if it was configured
+// without one. When there is one, it is the HD (4x) choice in place of
+// making that pack on the device.
+[[nodiscard]] std::optional<PackSource> prebuilt_pack_source();
+// <user data>/textures/4x-prebuilt-<first 16 digits of the zip's SHA-256>.
+[[nodiscard]] std::optional<std::filesystem::path> prebuilt_pack_directory(const PackSource &pack);
 
 enum class TexturePackState {
     Missing,    // never made (or cut short)
@@ -105,6 +117,39 @@ private:
 
     void run();
     void report(const TextureProgress &progress);
+};
+
+// Unpacks a downloaded pack zip into `destination`: its pack.ini (at the top
+// of the zip, or in its only folder) must load for `disc_id`. The pack goes
+// into place whole or not at all. Throws std::runtime_error on failure.
+void install_prebuilt_pack(const std::filesystem::path &archive, std::string_view disc_id,
+                           const std::filesystem::path &destination, ProcessGroup &processes);
+
+// Downloads and unpacks the prebuilt pack on its own thread: Downloading,
+// Unpacking, then Done, Failed or Cancelled (TextureProgress).
+class PrebuiltPackDownload {
+public:
+    PrebuiltPackDownload(PackSource pack, std::string disc_id, std::filesystem::path destination);
+    // Cancels a download still under way and waits for it to stop.
+    ~PrebuiltPackDownload();
+    PrebuiltPackDownload(const PrebuiltPackDownload &) = delete;
+    PrebuiltPackDownload &operator=(const PrebuiltPackDownload &) = delete;
+
+    void cancel();
+    [[nodiscard]] TextureProgress progress() const;
+    [[nodiscard]] const std::filesystem::path &destination() const noexcept { return destination_; }
+
+private:
+    PackSource pack_;
+    std::string disc_id_;
+    std::filesystem::path destination_;
+    ProcessGroup processes_;
+    std::atomic<bool> cancelled_{false};
+    mutable std::mutex mutex_;
+    TextureProgress progress_;
+    std::thread thread_;
+
+    void run();
 };
 
 } // namespace sarusaru::install

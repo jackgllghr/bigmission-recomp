@@ -405,6 +405,22 @@ if(NOT SARUSARU_TEXTURE_RECIPE_URL STREQUAL "")
         message(WARNING "SARUSARU_TEXTURE_RECIPE_URL is a local file; release builds need an https URL")
     endif()
 endif()
+# The optional prebuilt HD texture pack: a zip of a finished pack directory,
+# published apart from the port. When set, the launcher's HD (4x) choice
+# downloads it instead of upscaling on the device; 4K (8x) still needs the recipe.
+set(SARUSARU_HD_PACK_URL "" CACHE STRING "URL of the prebuilt HD texture pack zip the launcher offers (empty: none)")
+set(SARUSARU_HD_PACK_SHA256 "" CACHE STRING "SHA-256 of the prebuilt HD texture pack zip")
+set(SARUSARU_HD_PACK_SIZE "0" CACHE STRING "Size in bytes of the prebuilt HD texture pack zip")
+if(NOT SARUSARU_HD_PACK_URL STREQUAL "")
+    string(LENGTH "${SARUSARU_HD_PACK_SHA256}" _sarusaru_hd_pack_hash_length)
+    if(NOT SARUSARU_HD_PACK_URL MATCHES "^(https|file)://" OR NOT SARUSARU_HD_PACK_SHA256 MATCHES "^[0-9a-f]+$"
+       OR NOT _sarusaru_hd_pack_hash_length EQUAL 64 OR NOT SARUSARU_HD_PACK_SIZE MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR "SARUSARU_HD_PACK_URL needs an https (or file) URL, a 64-digit lowercase SHA-256 and a size in bytes")
+    endif()
+    if(SARUSARU_HD_PACK_URL MATCHES "^file://")
+        message(WARNING "SARUSARU_HD_PACK_URL is a local file; release builds need an https URL")
+    endif()
+endif()
 configure_file(host/install/texture_config.hpp.in install/texture_config.hpp @ONLY)
 # llvm-mingw links its C++ runtime as DLLs; they go beside the executables,
 # and the module a player builds uses the same ones.

@@ -82,6 +82,18 @@ X(DescFrameRate, "How often pictures are shown. The game itself keeps its speed.
 X(DescFrameRate60,
   "Shows a blended picture between the game's own 30 FPS frames, at the original game speed. Adds about 17 ms of delay.",
   "ゲーム本来の 30 FPS のフレームの間に補間した画面を表示します。ゲームの速さは変わりません。遅延が約 17 ms 増えます。")
+X(RowPreset, "Preset", "プリセット")
+X(ValuePresetNative, "Native", "オリジナル")
+X(ValuePresetModern, "Modern", "モダン")
+X(ValuePresetCustom, "Custom", "カスタム")
+X(DescPresetNative,
+  "The game as the PSP drew it: original resolution and textures, Japanese text, native draw distance and the intro logos.",
+  "PSPと同じ見た目です。元の解像度とテクスチャ、日本語の文章、標準の描画距離で、オープニングのロゴも表示します。")
+X(DescPresetModern,
+  "1080p rendering, HD textures, English game text, the farthest draw distance and no intro logos. Downloads the textures and English the first time.",
+  "1080pで描画し、HDテクスチャ・英語の文章・最大の描画距離を使い、オープニングのロゴを飛ばします。はじめて選んだときにテクスチャと英語をダウンロードします。")
+X(DescPresetCustom, "Your own mix of the settings below. Choose Native or Modern to set them all at once.",
+  "下の設定を個別に選んでいます。オリジナルかモダンを選ぶと、まとめて設定されます。")
 X(RowFov, "Field of View", "視野角")
 X(ValueFovNative, "Native (36.5°)", "標準 (36.5°)")
 X(DescFov, "Widens the camera in stages and the hub. Menus and cutscenes keep the original view.",
@@ -130,8 +142,8 @@ X(ValueTexturesHd, "HD (4×)", "HD（4×）")
 X(ValueTextures4k, "4K (8×)", "4K（8×）")
 X(ValueTexturesCustom, "Custom pack", "カスタムパック")
 X(DescTextures,
-  "Sharper textures, upscaled on this computer from your own disc. Made the first time each is chosen.",
-  "お手持ちのディスクからこのコンピューターで高解像度にしたテクスチャです。はじめて選んだときに作ります。")
+  "Sharper textures for the menus, icons, backgrounds and the world. Downloaded, or upscaled on this computer from your own disc, the first time each is chosen.",
+  "メニュー・アイコン・背景・ステージのテクスチャを高解像度にします。はじめて選んだときにダウンロードするか、お手持ちのディスクからこのコンピューターで作ります。")
 
 // HD textures (made on this computer)
 X(TexturesTitle, "HD Textures", "HDテクスチャ")
@@ -149,6 +161,12 @@ X(TexturesWriting, "Saving: {0} of {1} textures", "保存中：{0} / {1} テク�
 X(TexturesFailed, "The textures were not made: {0}", "テクスチャを作れませんでした：{0}")
 X(TexturesUnavailable, "This build of the port does not offer HD textures.", "このビルドではHDテクスチャを利用できません。")
 X(TexturesNoUpscaler, "The upscaler has no build for this computer.", "このコンピューター用の拡大ツールがありません。")
+X(TexturesPrebuiltIntro,
+  "A ready-made HD pack for the menus, icons, backgrounds and game textures, published apart from the port. It is downloaded once and kept on this computer.",
+  "メニュー・アイコン・背景・ゲーム内のテクスチャを高解像度にした既製のHDパックです。移植とは別に公開されていて、一度ダウンロードするとこのコンピューターに保存されます。")
+X(TexturesDownload, "Download HD textures", "HDテクスチャをダウンロード")
+X(TexturesUnpackingPack, "Unpacking the textures…", "テクスチャを展開しています…")
+X(TexturesNotDownloaded, "The textures were not downloaded: {0}", "テクスチャをダウンロードできませんでした：{0}")
 X(TexturesNeedDisc, "Choose your game disc first.", "先にゲームディスクを選んでください。")
 
 // The English game text (an optional download)

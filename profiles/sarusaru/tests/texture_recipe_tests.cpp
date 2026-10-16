@@ -176,6 +176,42 @@ std::string read(const std::filesystem::path &path) {
     return text.str();
 }
 
+// A zip of `files` (stored, no compression), as a published pack would be.
+Bytes stored_zip(const std::vector<std::pair<std::string, Bytes>> &files) {
+    const auto crc32 = [](const Bytes &data) {
+        std::uint32_t crc = 0xFFFFFFFFu;
+        for (const auto byte : data) {
+            crc ^= byte;
+            for (int bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+        }
+        return ~crc;
+    };
+    Bytes out, central;
+    const auto put = [](Bytes &to, std::uint32_t value, unsigned bytes) {
+        for (unsigned i = 0; i < bytes; ++i) to.push_back(static_cast<std::uint8_t>(value >> (8u * i)));
+    };
+    for (const auto &[name, data] : files) {
+        const auto offset = static_cast<std::uint32_t>(out.size());
+        const auto crc = crc32(data);
+        const auto size = static_cast<std::uint32_t>(data.size());
+        put(out, 0x04034b50u, 4); put(out, 20, 2); put(out, 0, 2); put(out, 0, 2); put(out, 0, 2); put(out, 0x21, 2);
+        put(out, crc, 4); put(out, size, 4); put(out, size, 4); put(out, static_cast<std::uint32_t>(name.size()), 2); put(out, 0, 2);
+        out.insert(out.end(), name.begin(), name.end());
+        out.insert(out.end(), data.begin(), data.end());
+        put(central, 0x02014b50u, 4); put(central, 20, 2); put(central, 20, 2); put(central, 0, 2); put(central, 0, 2);
+        put(central, 0, 2); put(central, 0x21, 2); put(central, crc, 4); put(central, size, 4); put(central, size, 4);
+        put(central, static_cast<std::uint32_t>(name.size()), 2); put(central, 0, 2); put(central, 0, 2); put(central, 0, 2);
+        put(central, 0, 2); put(central, 0, 4); put(central, offset, 4);
+        central.insert(central.end(), name.begin(), name.end());
+    }
+    const auto start = static_cast<std::uint32_t>(out.size());
+    out.insert(out.end(), central.begin(), central.end());
+    put(out, 0x06054b50u, 4); put(out, 0, 2); put(out, 0, 2);
+    put(out, static_cast<std::uint32_t>(files.size()), 2); put(out, static_cast<std::uint32_t>(files.size()), 2);
+    put(out, static_cast<std::uint32_t>(central.size()), 4); put(out, start, 4); put(out, 0, 2);
+    return out;
+}
+
 } // namespace
 
 int main() {
@@ -364,6 +400,31 @@ int main() {
     inputs.disc_id = "TEST00002";
     throws([&] { install::build_texture_pack(inputs, processes, [](const install::TextureProgress &) {}); },
            "recipe for another disc used");
+
+    // A prebuilt pack: a zip of a pack directory, its pack.ini in the zip's
+    // only folder, unpacked whole; one for another disc is refused and leaves nothing.
+    {
+        const std::string manifest = serialize_hd_manifest({"TEST00001", 4});
+        const Bytes ini(manifest.begin(), manifest.end());
+        require(save_png(base / "prebuilt.png", resize_nearest(Image{32, 8, named.texels}, 4)), "prebuilt image written");
+        const auto png = read(base / "prebuilt.png");
+        const Bytes image(png.begin(), png.end());
+        const auto zip = stored_zip({{"sarusaru-hd/pack.ini", ini}, {"sarusaru-hd/" + named.identity().hash + ".png", image}});
+        std::ofstream(base / "prebuilt.zip", std::ios::binary)
+            .write(reinterpret_cast<const char *>(zip.data()), static_cast<std::streamsize>(zip.size()));
+        const auto destination = base / "textures" / "4x-prebuilt-0123456789abcdef";
+        install::install_prebuilt_pack(base / "prebuilt.zip", "TEST00001", destination, processes);
+        require(install::texture_pack_state(destination) == install::TexturePackState::Ready, "prebuilt pack not ready");
+        require(*HdTexturePack::load(destination, "TEST00001").find(named.identity()) ==
+                    resize_nearest(Image{32, 8, named.texels}, 4).texels, "prebuilt texture exact");
+        require(!std::filesystem::exists(base / "textures" / "4x-prebuilt-0123456789abcdef.partial"), "prebuilt work cleaned");
+        const auto other_disc = base / "textures" / "4x-prebuilt-fedcba9876543210";
+        throws([&] { install::install_prebuilt_pack(base / "prebuilt.zip", "TEST00002", other_disc, processes); },
+               "prebuilt pack for another disc installed");
+        require(!std::filesystem::exists(other_disc) &&
+                    install::texture_pack_state(other_disc) == install::TexturePackState::Missing,
+                "refused prebuilt pack left behind");
+    }
 
     std::filesystem::remove_all(base);
     std::cout << "Texture recipe tests passed\n";

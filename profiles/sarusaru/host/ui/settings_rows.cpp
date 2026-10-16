@@ -8,7 +8,7 @@
 namespace sarusaru::ui {
 namespace {
 
-constexpr SettingRow kGraphics[] = {SettingRow::Fullscreen, SettingRow::WindowSize, SettingRow::InternalResolution,
+constexpr SettingRow kGraphics[] = {SettingRow::Preset, SettingRow::Fullscreen, SettingRow::WindowSize, SettingRow::InternalResolution,
     SettingRow::FrameRate, SettingRow::Fov, SettingRow::DrawDistance, SettingRow::CelShading, SettingRow::Textures};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone};
 constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::Subtitles, SettingRow::ConfirmButton, SettingRow::ControllerButtons, SettingRow::SkipIntroLogos};
@@ -60,6 +60,41 @@ std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direc
     return kOrder[(index + (direction > 0 ? 1 : 2)) % 3];
 }
 
+Preset preset_of(const shell::Settings &settings) {
+    const bool english = settings.translation_language == "en";
+    if (settings.internal_resolution == 1u && settings.texture_pack.empty() && !english &&
+        settings.draw_distance == 1.0f && !settings.skip_intro_logos)
+        return Preset::Native;
+    if (settings.internal_resolution == kModernResolution && texture_scale(settings) == 4u && english &&
+        settings.draw_distance == kModernDrawDistance && settings.skip_intro_logos)
+        return Preset::Modern;
+    return Preset::Custom;
+}
+
+Preset next_preset(Preset current, int direction) {
+    if (current == Preset::Custom) return direction > 0 ? Preset::Native : Preset::Modern;
+    return current == Preset::Native ? Preset::Modern : Preset::Native;
+}
+
+void apply_preset(shell::Settings &settings, Preset preset) {
+    switch (preset) {
+    case Preset::Native:
+        settings.internal_resolution = 1u;
+        settings.texture_pack.clear();
+        settings.translation_language = "ja";
+        settings.draw_distance = 1.0f;
+        settings.skip_intro_logos = false;
+        break;
+    case Preset::Modern:
+        settings.internal_resolution = kModernResolution;
+        settings.draw_distance = kModernDrawDistance;
+        settings.skip_intro_logos = true;
+        break;
+    case Preset::Custom:
+        break;
+    }
+}
+
 double step_value(std::span<const double> values, double current, int direction) {
     if (values.empty()) return current;
     // Within half a thousandth counts as the step itself (float settings).
@@ -85,6 +120,15 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
     RowView view;
     const auto text = [](Text id) { return std::string(tr(id)); };
     switch (row) {
+    case SettingRow::Preset: {
+        constexpr Text values[] = {Text::ValuePresetNative, Text::ValuePresetModern, Text::ValuePresetCustom};
+        constexpr Text descriptions[] = {Text::DescPresetNative, Text::DescPresetModern, Text::DescPresetCustom};
+        const auto preset = static_cast<std::size_t>(preset_of(settings));
+        view.label = text(Text::RowPreset);
+        view.value = text(values[preset]);
+        view.description = text(descriptions[preset]);
+        break;
+    }
     case SettingRow::InternalResolution: {
         const auto scale = settings.internal_resolution;
         view.label = text(Text::RowResolution);
@@ -194,6 +238,10 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
 
 void step(SettingRow row, shell::Settings &settings, int direction) {
     switch (row) {
+    // The launcher also turns on Modern's HD textures and English (apply_preset).
+    case SettingRow::Preset:
+        apply_preset(settings, next_preset(preset_of(settings), direction));
+        break;
     case SettingRow::InternalResolution:
         // 1 to 8, wrapping.
         settings.internal_resolution = direction > 0 ? settings.internal_resolution % 8u + 1u

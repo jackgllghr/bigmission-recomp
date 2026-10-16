@@ -1,7 +1,8 @@
 #pragma once
 
 // An HD texture pack: a directory made on the player's device by upscaling
-// textures from their own disc, never downloaded as pixels. It holds
+// textures from their own disc, or a prebuilt one downloaded from apart from
+// the port (install/texture_build.hpp). It holds
 //
 //   pack.ini      format = 1, disc = <disc ID>, scale = 2-8
 //   <hash>.png    one image per texture, named by gpu::TextureIdentity
