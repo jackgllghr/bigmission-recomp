@@ -103,6 +103,14 @@ int main() {
     // around our smaller replacement glyphs. None may show through.
     for (unsigned scale : {1u, 4u}) {
         std::vector<std::uint32_t> hints(128 * 256 * scale * scale, 0x12345678);
+        // Only the icon regions contain old artwork; leave clean cap
+        // samples at the opposite end, as in the real atlas.
+        for (unsigned row = 0; row < 9; ++row) {
+            const unsigned left = row < 2 ? 0 : 104, right = row < 2 ? 9 : 112;
+            for (unsigned y = row * 24 * scale; y < (row + 1) * 24 * scale; ++y)
+                for (unsigned x = left * scale; x < right * scale; ++x)
+                    hints[y * 128 * scale + x] = 0;
+        }
         prompts.apply(3, hints, 128 * scale, scale);
         for (unsigned row = 0; row < 9; ++row) {
             const unsigned left = row < 2 ? 88 : 0;
@@ -116,6 +124,38 @@ int main() {
         prompts.apply(2, shortcuts, 128 * scale, scale);
         require(shortcuts[0] != 0x12345678, "original shortcut artwork remains around host glyphs");
     }
+    // Icon cleanup must retain the bar, and antialiased rims must composite
+    // over it rather than punching partially transparent holes in it.
+    for (auto device : {ui::BindingDevice::Keyboard, ui::BindingDevice::Gamepad})
+        for (auto type : {SDL_GAMEPAD_TYPE_XBOXONE, SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO, SDL_GAMEPAD_TYPE_PS5})
+            for (unsigned scale : {1u, 4u, 8u}) {
+                prompts.configure(shell::default_settings().controls, device, type);
+                for (unsigned atlas : {2u, 3u}) {
+                    const unsigned rows = atlas == 2 ? 5 : 9;
+                    std::vector<std::uint32_t> bars(128 * 256 * scale * scale);
+                    constexpr std::uint32_t navy = 0xff47130b;
+                    for (unsigned row = 0; row < rows; ++row) {
+                        const bool top = atlas == 3 && (row < 2 || row == 6);
+                        const unsigned start = row * 24 + (top ? 1 : 15);
+                        for (unsigned y = start * scale; y < (start + 8) * scale; ++y)
+                            for (unsigned x = scale; x < 111 * scale; ++x)
+                                bars[y * 128 * scale + x] = navy;
+                    }
+                    prompts.apply(atlas, bars, 128 * scale, scale);
+                    for (unsigned row = 0; row < rows; ++row) {
+                        const bool top = atlas == 3 && (row < 2 || row == 6);
+                        const unsigned start = row * 24 + (top ? 1 : 15);
+                        const unsigned left = row < 2 && atlas == 3 ? 88 : 8;
+                        for (unsigned y = start * scale; y < (start + 8) * scale; ++y)
+                            for (unsigned x = left * scale; x < (left + 16) * scale; ++x)
+                                require((bars[y * 128 * scale + x] >> 24) == 255,
+                                        "control hint has a transparent hole in its navy bar");
+                        const unsigned gap = row < 2 && atlas == 3 ? 90 : 30;
+                        require(bars[(start + 1) * scale * 128 * scale + gap * scale] == navy,
+                                "control hint cleanup erased its navy bar");
+                    }
+                }
+            }
     gpu::TextureState texture; texture.width = texture.buffer_width = 128; texture.height = 128;
     require(shell::ButtonPrompts::identify(texture, {}) == 0, "short pixels accepted");
     std::vector<std::uint32_t> unrelated(128*128);

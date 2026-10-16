@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
+import android.view.KeyEvent;
 
 import org.libsdl.app.SDLActivity;
 
@@ -80,6 +81,15 @@ public class SaruSaruActivity extends SDLActivity {
     protected void onPause() {
         resumed = false;
         super.onPause();
+    }
+
+    @Override
+    public void onBackPressed() {
+        // System back gestures have no key event. Send the same pair SDL
+        // delivers for the hardware Back button, instead of leaving the app.
+        if (mBrokenLibraries) return;
+        onNativeKeyDown(KeyEvent.KEYCODE_BACK);
+        onNativeKeyUp(KeyEvent.KEYCODE_BACK);
     }
 
     /**

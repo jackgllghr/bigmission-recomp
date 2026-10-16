@@ -24,6 +24,9 @@ compiler the APK ships (below).
 Settings and the port's data live in the app's private `files/` directory.
 `stdout` and `stderr` go to the system log under the tag `sarusaru`.
 
+Android's Back button or back swipe opens the launcher overlay during play.
+Within the launcher, Back returns to the previous screen or resumes the game.
+
 After a release update, Play opens the install screen to rebuild the game
 for the new release. That screen keeps the current texture and game-text
 choices visible and editable before installation. Pack setup returns there

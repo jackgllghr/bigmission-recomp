@@ -239,3 +239,10 @@ layers share that width. Control hints use half the colored border thickness
 beyond the yellow face. Tight existing slots reduce letter size to retain
 the complete outline. Stage headers retain an additional white border.
 Rebuild the translation pack to apply this palette to installed labels.
+
+Host prompt cleanup reconstructs the navy hint bars from unobscured atlas
+ends before drawing replacement buttons. This preserves native and translated
+bar colors, rounded caps and HD coverage without retaining the original PSP
+icons. Button rims and letters composite with straight alpha over those bars
+and overlapping buttons. Pixel regressions cover shortcut and dialog bars at
+1x, 4x and 8x with keyboard, Xbox, Nintendo and PlayStation prompts.
