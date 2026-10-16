@@ -217,6 +217,9 @@ X(InstallIntro,
   "Before the first game, the launcher builds the game for this computer from your disc. It takes a few minutes and is needed again only after an update. Nothing from your disc leaves this computer.",
   "はじめてあそぶ前に、ランチャーがお手持ちのディスクからこのコンピューター用にゲームを作ります。数分かかりますが、次に必要になるのはアップデートのあとだけです。ディスクの内容がこのコンピューターの外に送られることはありません。")
 #endif
+X(InstallOptions,
+  "Choose your textures and game text before installing. Your current choices are kept after an update.",
+  "インストール前にテクスチャとゲームの言語を選んでください。アップデート後も現在の設定は引き継がれます。")
 X(InstallStart, "Install", "インストールする")
 X(InstallDownloadNote, "First the compiler is downloaded ({0} MB).", "まずコンパイラーをダウンロードします（{0} MB）。")
 X(InstallNeedXcode, "This needs Apple's Command Line Tools, which macOS can install for you.",

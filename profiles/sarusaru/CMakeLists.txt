@@ -1,4 +1,9 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+if(PSPRECOMP_BUILD_PROFILE_TESTS)
+    enable_testing()
+    add_test(NAME sarusaru_game_build_identity_tests
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_game_build_identity.py")
+endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Version.cmake")
 
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
@@ -293,14 +298,14 @@ string(JSON SARUSARU_LOAD_BASE GET "${supported_game}" load_base)
 string(JSON SARUSARU_UNIT_SPAN GET "${supported_game}" unit_span)
 string(JSON SARUSARU_DISC_ID GET "${supported_game}" disc_id)
 configure_file(host/game_identity.hpp.in game_identity.hpp @ONLY)
-# A module built from other headers, another code generator or another game
-# must be rebuilt, so all of them are in the hash (host/game_module.hpp).
+# Every release rebuilds the on-device game, even when the runtime interface
+# is unchanged. Headers, the generator and the game also invalidate it.
 file(GLOB _sarusaru_abi_inputs CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/include/psprecomp/*.hpp")
 list(APPEND _sarusaru_abi_inputs "${PROJECT_SOURCE_DIR}/tools/codegen_main.cpp" "${PROJECT_SOURCE_DIR}/src/decoder.cpp"
     "${PROJECT_SOURCE_DIR}/src/program_analysis.cpp" "${PROJECT_SOURCE_DIR}/src/elf32.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/supported_game.json" "${CMAKE_CURRENT_SOURCE_DIR}/host/game_module_entry.cpp")
 list(SORT _sarusaru_abi_inputs)
-set(_sarusaru_abi "${PROJECT_VERSION} ${PSPRECOMP_AOT_ASSUME_NO_WRITE_WATCH} ${PSPRECOMP_AOT_PRODUCTION_FASTPATHS}")
+set(_sarusaru_abi "${PROJECT_VERSION} ${SARUSARU_RELEASE_VERSION} ${PSPRECOMP_AOT_ASSUME_NO_WRITE_WATCH} ${PSPRECOMP_AOT_PRODUCTION_FASTPATHS}")
 foreach(input IN LISTS _sarusaru_abi_inputs)
     # Line endings depend on the checkout, not on the interface.
     file(READ "${input}" _sarusaru_abi_text)

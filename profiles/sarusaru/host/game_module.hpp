@@ -7,7 +7,8 @@
 //
 // The module and the host share one runtime (the psprecomp_runtime library).
 // A module records the runtime interface it was built for, game_module_abi,
-// and one built for another is refused, so an updated port rebuilds it.
+// and one built for another is refused. Its identity includes the release version,
+// so each updated port rebuilds it.
 #include "psprecomp/runtime.hpp"
 
 #include <filesystem>
