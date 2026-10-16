@@ -74,6 +74,8 @@ struct Settings {
     std::uint32_t frame_rate{0};
     // 0 = native; otherwise the gameplay camera's vertical FOV (game/camera_fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
+    // 1 = native; otherwise how much farther actors stay drawn (game/draw_distance.hpp), 1-8.
+    float draw_distance{1.0f};
     // An HD texture pack directory (textures/hd_pack.hpp), or empty for the
     // original textures. Relative paths resolve beside the settings file.
     std::filesystem::path texture_pack;

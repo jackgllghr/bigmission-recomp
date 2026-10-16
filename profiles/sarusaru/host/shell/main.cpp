@@ -297,6 +297,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         // so the game culls for the view it draws. The title, menus and
         // cutscenes keep the native one.
         game.camera_fov.set_degrees(current.fov_degrees);
+        // Draw distance: actors measure their fade from a nearer eye (game/draw_distance.hpp).
+        game.draw_distance.set_scale(current.draw_distance);
         const auto render_draw = [&](const sarusaru::gpu::DrawCall &call) {
             renderer->draw(memory, call);
             if (!interpolating) return;
@@ -322,6 +324,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             const sarusaru::shell::Settings next = game_settings(settings, overrides, settings_path);
             if (next.controls != current.controls) input.emplace(next.controls);
             if (next.fov_degrees != current.fov_degrees) game.camera_fov.set_degrees(next.fov_degrees);
+            if (next.draw_distance != current.draw_distance) game.draw_distance.set_scale(next.draw_distance);
             if (next.frame_rate != current.frame_rate) {
                 interpolating = sarusaru::shell::interpolates(next);
                 presentation = sarusaru::shell::PresentationClock(interpolating ? 0u : next.frame_rate);

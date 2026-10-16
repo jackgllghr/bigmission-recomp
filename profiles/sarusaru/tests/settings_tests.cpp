@@ -91,10 +91,10 @@ int main() {
     rejects("[translation]\nlanguage = fr");
     rejects("[translation]\npack = ");
     const auto custom = parse_settings(
-        "[graphics]\r\ninternal_resolution = 4\r\nwindow_width = 1920\nwindow_height = 1080\nfullscreen = 1\nframe_rate = 30\nfov_degrees = 75\n"
+        "[graphics]\r\ninternal_resolution = 4\r\nwindow_width = 1920\nwindow_height = 1080\nfullscreen = 1\nframe_rate = 30\nfov_degrees = 75\ndraw_distance = 2.5\n"
         "[input]\ndead_zone = 0.3\n[keyboard]\ncircle = C, V\nquit = none\nfast_forward = F\n"
         "[gamepad]\nanalog_left = axis:rightx+\nanalog_right = axis:rightx-\nl = axis:righttrigger+\n");
-    require(custom.internal_resolution == 4 && custom.frame_rate == 30 && custom.fov_degrees == 75 &&
+    require(custom.internal_resolution == 4 && custom.frame_rate == 30 && custom.fov_degrees == 75 && custom.draw_distance == 2.5f &&
                 custom.window_width == 1920 && custom.window_height == 1080 &&
                 custom.fullscreen,
             "graphics settings not parsed");
@@ -147,7 +147,7 @@ int main() {
         "[graphics]\ninternal_resolution = 0", "[graphics]\nframe_rate = 61",
         "[graphics]\nframe_rate = 30junk", "[graphics]\nframe_interpolation = 2", "[graphics]\nwindow_width = 100",
         "[graphics]\nwindow_height = 99999", "[graphics]\nfullscreen = yes", "[graphics]\nfov_degrees = 10",
-        "[graphics]\nfov_degrees = nan", "[graphics]\nframe_rate = 30\nframe_rate = 60",
+        "[graphics]\nfov_degrees = nan", "[graphics]\ndraw_distance = 0.5", "[graphics]\ndraw_distance = 9", "[graphics]\nframe_rate = 30\nframe_rate = 60",
         "[input]\ndead_zone = 1", "[input]\ndead_zone = -0.1", "[input]\nunknown = 1",
         "[keyboard]\ncircle = NotAKey", "[keyboard]\nunknown = C", "[keyboard]\ncircle = C,",
         "[gamepad]\nl = axis:leftx", "[gamepad]\nl = axis:unknown+", "[gamepad]\nl = unknown",

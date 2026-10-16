@@ -231,6 +231,8 @@ Settings parse_settings(std::string_view text) {
                 settings.fov_degrees = number(value, 0.0f, 120.0f);
                 if (settings.fov_degrees != 0.0f && settings.fov_degrees < 30.0f)
                     throw std::runtime_error("FOV must be 0 (native) or 30-120 degrees");
+            } else if (full == "graphics.draw_distance") {
+                settings.draw_distance = number(value, 1.0f, 8.0f);
             } else if (full == "graphics.texture_pack") {
                 if (value.empty()) throw std::runtime_error("texture_pack needs a directory or none");
                 settings.texture_pack = value == "none" ? std::filesystem::path{} : decode_path(value);
@@ -302,6 +304,9 @@ std::string serialize_settings(const Settings &settings) {
         << "# picture between game frames (adds one vblank of latency).\nframe_rate = " << settings.frame_rate << '\n'
         << "# Gameplay camera vertical FOV: 0 = native (about 36.5); 30-120. Menus, cutscenes and HUD stay native.\n"
         << "fov_degrees = " << decimal(settings.fov_degrees) << '\n'
+        << "# Actor draw distance: 1 = native (enemies and monkeys fade out 250-350 units from the camera);\n"
+        << "# up to 8 times as far beyond 200 units.\n"
+        << "draw_distance = " << decimal(settings.draw_distance) << '\n'
         << "# HD texture pack directory, relative to this settings file, or none for the original textures.\n"
         << "texture_pack = " << (settings.texture_pack.empty() ? "none" : encode_path(settings.texture_pack)) << '\n'
         << "\n[translation]\n# ja = original; en = English menu pack. Restart to change languages.\n"

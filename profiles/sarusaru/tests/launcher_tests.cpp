@@ -149,6 +149,14 @@ void rows() {
     step(SettingRow::Fov, settings, 1);
     require(settings.fov_degrees == 30.0f, "FOV after native is not 30");
 
+    require(describe(SettingRow::DrawDistance, settings).value == "Native", "draw distance must start native");
+    step(SettingRow::DrawDistance, settings, 1);
+    require(settings.draw_distance == 1.5f && describe(SettingRow::DrawDistance, settings).value == "1.5\u00D7",
+            "draw distance after native is not 1.5x");
+    step(SettingRow::DrawDistance, settings, -1);
+    step(SettingRow::DrawDistance, settings, -1);
+    require(settings.draw_distance == 8.0f, "draw distance did not wrap to 8x");
+
     settings.window_width = 1000;
     step(SettingRow::WindowSize, settings, 1);
     require(settings.window_width == 1440 && settings.window_height == 816, "window size step wrong");
@@ -237,7 +245,8 @@ void rows() {
         }
     require(restart_only(SettingRow::GameText) && restart_only(SettingRow::SkipIntroLogos) &&
                 !restart_only(SettingRow::InternalResolution) && !restart_only(SettingRow::Textures) &&
-                !restart_only(SettingRow::FrameRate) && !restart_only(SettingRow::Fov),
+                !restart_only(SettingRow::FrameRate) && !restart_only(SettingRow::Fov) &&
+                !restart_only(SettingRow::DrawDistance),
             "rows applied live or at the next start changed");
     require(describe(SettingRow::SkipIntroLogos, settings).value == "Off", "logo skip must start off");
     step(SettingRow::SkipIntroLogos, settings, 1);
@@ -250,11 +259,11 @@ void rows() {
     step(SettingRow::Subtitles, settings, 1);
     require(!settings.subtitles && describe(SettingRow::Subtitles, settings).value == "Off", "subtitles did not turn off");
     step(SettingRow::Subtitles, settings, 1);
-    require(seen == 15, "settings rows missing from the tabs");
+    require(seen == 16, "settings rows missing from the tabs");
     const auto graphics = settings_tabs().front().rows;
-    require(settings_tabs().size() == 4u && graphics.size() == 7u && graphics[0] == SettingRow::Fullscreen &&
-                graphics[1] == SettingRow::WindowSize && graphics[5] == SettingRow::CelShading &&
-                graphics[6] == SettingRow::Textures,
+    require(settings_tabs().size() == 4u && graphics.size() == 8u && graphics[0] == SettingRow::Fullscreen &&
+                graphics[1] == SettingRow::WindowSize && graphics[5] == SettingRow::DrawDistance &&
+                graphics[6] == SettingRow::CelShading && graphics[7] == SettingRow::Textures,
             "Graphics rows not in order: full screen and window size first, cel shading and textures last");
 }
 
