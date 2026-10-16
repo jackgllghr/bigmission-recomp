@@ -272,6 +272,10 @@ PpstFile read_ppst(const std::filesystem::path &path) {
 
 void write_ppst(const std::filesystem::path &path, const PpstFile &file) {
     const auto bytes = encode_ppst(file);
+    write_atomic_file(path, bytes);
+}
+
+void write_atomic_file(const std::filesystem::path &path, std::span<const std::uint8_t> bytes) {
     static std::atomic<std::uint64_t> sequence{};
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     auto temporary = path;

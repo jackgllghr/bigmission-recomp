@@ -84,6 +84,7 @@ struct Settings {
     // south one (cross) by default, or the east one (circle) as the game does.
     bool confirm_south{true};
     bool skip_intro_logos{false};
+    std::uint32_t state_slot{1};
     bool check_for_updates{true};
     std::int64_t last_update_check{};
     Language language{Language::Auto};

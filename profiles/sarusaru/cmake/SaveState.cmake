@@ -16,7 +16,7 @@ FetchContent_MakeAvailable(sarusaru_zstd)
 set_target_properties(libzstd_static PROPERTIES POSITION_INDEPENDENT_CODE ON)
 configure_file("${sarusaru_zstd_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/bin/resources/Zstandard-LICENSE.txt" COPYONLY)
 
-add_library(sarusaru_ppst STATIC host/save_state/ppst.cpp host/save_state/machine.cpp host/save_state/kernel_state.cpp
+add_library(sarusaru_ppst STATIC host/save_state/slots.cpp host/save_state/ppst.cpp host/save_state/machine.cpp host/save_state/kernel_state.cpp
     host/save_state/ppsspp_objects.cpp host/save_state/ppsspp_scheduler.cpp host/save_state/ppsspp_thread.cpp
     host/save_state/ppsspp_sync.cpp host/save_state/ppsspp_syscalls.cpp host/save_state/kernel_snapshot.cpp)
 target_include_directories(sarusaru_ppst PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")

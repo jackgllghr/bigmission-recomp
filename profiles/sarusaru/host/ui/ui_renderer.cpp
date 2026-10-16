@@ -1,4 +1,5 @@
 #include "ui/ui_renderer.hpp"
+#include <algorithm>
 
 #include "imgui_impl_vulkan.h"
 
@@ -144,6 +145,18 @@ void UiRenderer::set_backdrop(const shell::Image *source, std::uint32_t width, s
     backdrop_width_ = width;
     backdrop_height_ = height;
     if (backdrop_source_ == nullptr) backdrop_shown_ = false;
+}
+
+void UiRenderer::remove_texture(ImTextureID id) {
+    if (id==ImTextureID{}) return;
+    const auto found=std::find_if(textures_.begin(),textures_.end(),[id](const Texture &t) {
+        return reinterpret_cast<ImTextureID>(t.descriptor)==id;
+    });
+    if (found==textures_.end()) return;
+    vulkan_.vkDeviceWaitIdle(vulkan_.device);
+    if (backend_ && found->descriptor!=VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(found->descriptor);
+    vulkan_.destroy_image(found->image); vulkan_.destroy_buffer(found->staging);
+    textures_.erase(found);
 }
 
 ImTextureID UiRenderer::add_texture(const std::uint8_t *rgba, std::uint32_t width, std::uint32_t height) {

@@ -35,6 +35,7 @@ inline constexpr std::size_t kMaxPpstSize = 128u * 1024u * 1024u;
 [[nodiscard]] std::vector<std::uint8_t> encode_ppst(const PpstFile &file);
 [[nodiscard]] PpstFile read_ppst(const std::filesystem::path &path);
 // Atomically replaces the destination only after a complete, closed write.
+void write_atomic_file(const std::filesystem::path &path, std::span<const std::uint8_t> bytes);
 void write_ppst(const std::filesystem::path &path, const PpstFile &file);
 
 // PPSSPP sections carry a 16-byte name, an LE32 version, and an LE32 0x42

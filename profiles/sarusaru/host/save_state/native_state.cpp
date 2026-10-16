@@ -156,7 +156,7 @@ NativeState::~NativeState() = default;
 NativeState::NativeState(NativeState &&) noexcept = default;
 NativeState &NativeState::operator=(NativeState &&) noexcept = default;
 void NativeState::save(GameSession &g,const std::filesystem::path &path,const std::string &configuration,
-                       std::span<const std::uint8_t> renderer) {
+                       std::span<const std::uint8_t> renderer, const Thumbnail &thumbnail) {
     ready(g);
     // Serialize the live modules directly: the archive never mutates when writing.
     NativeArchive<false> a;
@@ -179,12 +179,12 @@ void NativeState::save(GameSession &g,const std::filesystem::path &path,const st
     const auto digest=psprecomp::sha256(file.payload);
     PayloadWriter checked; checked.string(digest); checked.bytes(file.payload); file.payload=checked.data();
     if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path());
-    write_ppst(path,file);
+    write_slot(path,file,thumbnail);
 }
 NativeState NativeState::prepare(GameSession &g,const std::filesystem::path &path,const std::string &configuration) {
     ready(g);
     if (!std::filesystem::is_regular_file(path)) throw FormatError("No saved state yet");
-    auto file=read_ppst(path);
+    auto file=read_slot(path);
     PayloadReader checked(file.payload); const auto digest=checked.string();
     auto payload=checked.bytes(checked.remaining());
     if (psprecomp::sha256(payload)!=digest) throw FormatError("Save state checksum mismatch");

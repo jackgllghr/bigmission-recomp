@@ -3,8 +3,11 @@
 // Where the port keeps things on the player's machine.
 #include <filesystem>
 #include <optional>
+#include <string>
 
 namespace sarusaru::platform {
+
+[[nodiscard]] std::string directory_url(const std::filesystem::path &path);
 
 // The per-user data directory: %APPDATA%\SaruSaruRecomp on Windows,
 // ~/Library/Application Support/SaruSaruRecomp on macOS and

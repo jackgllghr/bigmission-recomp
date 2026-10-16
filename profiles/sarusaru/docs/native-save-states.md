@@ -1,10 +1,16 @@
 # Native quick states
 
-Use **Save state** and **Load state** in the pause menu, or **Load state** in
-the launcher to resume after restarting the port. There is one quick slot per
-settings file. Saving replaces that slot atomically; a failed save keeps the
-previous file. Loading a missing, damaged, or incompatible file leaves the
-current game running and shows an error.
+Open **Saves** from the launcher or pause menu. All five state slots are
+shown with a thumbnail and local save time; empty slots are marked Empty.
+Select a slot, then choose **Save state** or **Load state**. Saving is enabled
+while a game is running; loading is also available from the launcher after
+restarting the port. The selected slot is remembered in `settings.ini` and is
+used by both shortcuts below.
+
+Each slot is replaced atomically, including its thumbnail. A failed save keeps
+the previous state and thumbnail. Loading a missing, damaged, or incompatible
+file leaves the current game running and shows an error. The slot list reads
+only small preview headers, without decompressing five guest-memory snapshots.
 
 Defaults:
 
@@ -19,10 +25,17 @@ the new defaults. Chord buttons are consumed as host shortcuts; holding a
 shortcut fires once, and its buttons must be released before guest input resumes.
 If both actions are pressed at once, load takes priority.
 
-The slot is `states/UCJS10060.quick.bmstate` beside `settings.ini`. It contains
-game memory and stays outside version control and release packages. PSP
-savedata on the memory stick remains separate; loading a state does not roll
-back files the game has already saved there.
+State files live in `states/` beside `settings.ini`. Slot 1 retains
+`UCJS10060.quick.bmstate`; slots 2–5 use `UCJS10060.slotN.bmstate`. Existing
+files without previews remain visible with a No preview placeholder. State
+files contain game memory and stay outside version control and release packages.
+
+**Open saves folder** opens the regular PSP saves directory in Finder, Explorer,
+or the system file manager: `memstick/PSP/SAVEDATA` under the application's user
+data directory, or `PSP/SAVEDATA` under `SARUSARU_MEMSTICK` when overridden. This
+button creates the folder if needed. It opens regular game saves, independently
+of the state slots. Loading a state does not roll back files the game has
+already saved there.
 
 Native states require the same host implementation, runtime ABI, game-text
 pack contents, and internal resolution. A state from another build or from
@@ -54,14 +67,22 @@ open-file position, controller/audio state, and rejection of corrupt or
 incompatible files. With bundled FFmpeg, it also compares the next H.264
 picture, movie audio, and ATRAC track PCM byte for byte after restoration.
 
-The macOS Release launcher suite passes all 49 tests with the optional native
-session fixture enabled; the Linux arm64 headless suite passes all 40 tests.
+The macOS Release launcher suite passed all 50 tests, with the optional native
+session fixture enabled; the Linux arm64 headless suite passed all 41 tests.
 Package/APK guard tests reject native and PPSSPP state files in release assets.
 Windows and Android builds have not been run for this change.
 
 The running-game checks exercise the default Select + R1 / Select + L1 chords,
-the pause-menu actions, and the launcher's Load state action after restarting
-the process. Screenshot checks cover the pause-menu layout and the restored
+the Saves screen actions, and the launcher's Saves screen after restarting
+the process. All five slots were saved in the running game, with thumbnails
+and timestamps inspected together. Slot 5 loaded after a full restart and with
+the default load chord. The folder button opened the regular PSP/SAVEDATA
+directory in Finder. Screenshot checks cover the Saves layout and restored
 picture. The locally generated diagnostic game module uses `-O0` and
 `PSPRECOMP_CHAIN_DEPTH=4` to fit its larger native frames on the macOS stack.
 Game data, snapshots, and captures stay in ignored local output directories.
+
+The five-slot tests cover independent slot contents, remembered selection,
+thumbnail/state round trips, legacy raw containers, rejection of invalid slot
+numbers and malformed preview sizes, failed-save preservation, and escaping
+folder paths containing spaces, `#`, and `%` for the OS file manager.

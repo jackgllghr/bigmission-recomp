@@ -49,10 +49,10 @@ if(SARUSARU_HAS_RENDERER)
     add_library(sarusaru_ui_logic STATIC host/ui/settings_rows.cpp host/ui/text.cpp
         host/ui/bindings.cpp)
     target_include_directories(sarusaru_ui_logic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
-    target_link_libraries(sarusaru_ui_logic PUBLIC sarusaru_controls)
+    target_link_libraries(sarusaru_ui_logic PUBLIC sarusaru_controls sarusaru_ppst)
     add_library(sarusaru_ui STATIC host/ui/layer.cpp host/ui/ui_renderer.cpp host/ui/theme.cpp host/ui/widgets.cpp
         host/ui/launcher.cpp host/ui/ui_script.cpp host/ui/subtitles.cpp)
-    target_link_libraries(sarusaru_ui PUBLIC sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install)
+    target_link_libraries(sarusaru_ui PUBLIC sarusaru_savedata sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install)
     # Texture dump mode and on-device HD texture packs (PNG through SDL).
     add_library(sarusaru_textures STATIC host/textures/texture_dump.cpp host/textures/hd_pack.cpp
         host/textures/disc_textures.cpp host/textures/recipe.cpp host/textures/image.cpp)
@@ -110,6 +110,9 @@ target_link_libraries(sarusaru_savedata PUBLIC psprecomp_runtime sarusaru_platfo
 
 if(PSPRECOMP_BUILD_PROFILE_TESTS)
     enable_testing()
+    add_executable(sarusaru_state_slots_tests tests/state_slots_tests.cpp)
+    target_link_libraries(sarusaru_state_slots_tests PRIVATE sarusaru_ppst sarusaru_platform)
+    add_test(NAME sarusaru_state_slots_tests COMMAND sarusaru_state_slots_tests)
     add_executable(sarusaru_translation_pack_tests tests/translation_pack_tests.cpp)
     target_link_libraries(sarusaru_translation_pack_tests PRIVATE sarusaru_translation)
     add_test(NAME sarusaru_translation_pack_tests COMMAND sarusaru_translation_pack_tests)

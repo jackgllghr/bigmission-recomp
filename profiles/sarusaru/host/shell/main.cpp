@@ -402,7 +402,6 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         bool save_held = false, load_held = false;
         std::string state_notice;
         std::uint64_t notice_until{};
-        const auto state_path = sarusaru::save_state::quick_state_path(settings_path);
         // Texture packs can change while playing, but game-text patches are
         // fixed at startup and must match the snapshot's executable memory.
         std::string text_identity = current.translation_language;
@@ -415,12 +414,14 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         const auto queue_state = [&](bool load) {
             game.runtime.set_dispatch_boundary_hook([&, load](psprecomp::Runtime &rt) {
                 rt.set_dispatch_boundary_hook({});
+                const auto state_path = sarusaru::save_state::slot_path(settings_path, settings.state_slot);
                 try {
                     if (translation_pack) translation_pack->flush_draws(render_draw);
                     const std::string configuration = text_identity + ":" + std::to_string(current.internal_resolution);
                     if (!load) {
+                        const auto preview = renderer->thumbnail(memory, game.display.framebuffer(1u,game.kernel.now_us()));
                         const auto gpu = renderer->save_state();
-                        sarusaru::save_state::NativeState::save(game, state_path, configuration, gpu);
+                        sarusaru::save_state::NativeState::save(game, state_path, configuration, gpu, preview);
                         state_notice = sarusaru::ui::tr(sarusaru::ui::Text::StateSaved);
                     } else {
                         auto saved = sarusaru::save_state::NativeState::prepare(game, state_path, configuration);

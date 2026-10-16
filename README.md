@@ -46,7 +46,8 @@ PSPRecomp is a static recompilation framework for PSP software. It reads an Alle
 
 The [PPSSPP save-state foundations](profiles/sarusaru/docs/ppsspp-save-states.md)
 include inspection and repacking tools. Native quick states can be saved from
-the pause menu and loaded there or from the launcher. Select + R1 saves and
+the launcher's **Saves** screen and its in-game counterpart, with five thumbnail
+slots. Select + R1 saves and
 Select + L1 loads; keyboard defaults are F5 and F8. PPSSPP gameplay-state
 interchange remains unfinished.
 

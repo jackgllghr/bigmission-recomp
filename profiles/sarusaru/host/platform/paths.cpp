@@ -29,6 +29,20 @@ std::optional<std::filesystem::path> from_environment(const char *name) {
 
 } // namespace
 
+std::string directory_url(const std::filesystem::path &path) {
+    const auto raw=std::filesystem::absolute(path).generic_u8string();
+    std::string encoded;
+    constexpr char hex[]="0123456789ABCDEF";
+    for (const auto c : raw) {
+        const auto byte=static_cast<unsigned char>(c);
+        if ((byte>='a' && byte<='z') || (byte>='A' && byte<='Z') || (byte>='0' && byte<='9') ||
+            byte=='/' || byte==':' || byte=='-' || byte=='_' || byte=='.' || byte=='~') encoded+=static_cast<char>(byte);
+        else { encoded+='%'; encoded+=hex[byte>>4]; encoded+=hex[byte&15]; }
+    }
+    if (encoded.starts_with("//")) return "file:"+encoded;
+    return (encoded.starts_with('/') ? "file://" : "file:///")+encoded;
+}
+
 std::optional<std::filesystem::path> user_data_directory() {
 #if defined(_WIN32)
     if (auto appdata = from_environment("APPDATA")) return *appdata / kName;

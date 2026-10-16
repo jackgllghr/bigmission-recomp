@@ -38,6 +38,7 @@ public:
 
     // An RGBA8 picture for ImGui::Image, uploaded with the next render().
     // Lives until destroy(). Null on failure.
+    void remove_texture(ImTextureID texture);
     ImTextureID add_texture(const std::uint8_t *rgba, std::uint32_t width, std::uint32_t height);
 
 private:

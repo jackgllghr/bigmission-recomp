@@ -1078,6 +1078,32 @@ const Image *GeRenderer::presentable(const psprecomp::GuestMemory &memory, const
     return &upload_;
 }
 
+save_state::Thumbnail GeRenderer::thumbnail(const psprecomp::GuestMemory &memory,
+                                            const display::Display::Framebuffer &framebuffer) {
+    std::uint32_t width{},height{};
+    const auto *image=presentable(memory,framebuffer,width,height,false);
+    if (!image || width==0 || height==0) return {};
+    Buffer buffer;
+    if (!vk_.create_buffer(static_cast<VkDeviceSize>(width)*height*4,VK_BUFFER_USAGE_TRANSFER_DST_BIT,buffer))
+        throw save_state::FormatError("Cannot capture state thumbnail");
+    try {
+        vk_.copy_to_buffer(*image,width,height,buffer);
+        flush();
+        save_state::Thumbnail result{save_state::kThumbnailWidth,save_state::kThumbnailHeight,{}};
+        result.rgba.resize(static_cast<std::size_t>(result.width)*result.height*4);
+        const auto *pixels=static_cast<const std::uint8_t *>(buffer.mapped);
+        for (std::uint32_t y=0;y<result.height;++y)
+            for (std::uint32_t x=0;x<result.width;++x) {
+                const auto source=(static_cast<std::size_t>(y*height/result.height)*width+x*width/result.width)*4;
+                const auto destination=(static_cast<std::size_t>(y)*result.width+x)*4;
+                std::memcpy(result.rgba.data()+destination,pixels+source,4);
+                result.rgba[destination+3]=255; // Scan-out ignores the target's alpha; previews must too.
+            }
+        vk_.destroy_buffer(buffer);
+        return result;
+    } catch (...) { vk_.destroy_buffer(buffer); throw; }
+}
+
 std::vector<std::uint8_t> GeRenderer::save_state() {
     using namespace save_state;
     end_pass();

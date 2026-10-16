@@ -15,6 +15,7 @@
 // resolved when a draw is queued, so later guest-memory changes cannot leak
 // into it; render-to-texture samples the in-between targets.
 #include "display/display.hpp"
+#include "save_state/slots.hpp"
 #include "shell/button_prompts.hpp"
 #include "gpu/ge_state.hpp"
 #include "shell/vulkan_context.hpp"
@@ -67,6 +68,7 @@ public:
 
     // Lossless native render-target snapshot, including depth. Calls require
     // an active command buffer and no guest frames running.
+    [[nodiscard]] save_state::Thumbnail thumbnail(const psprecomp::GuestMemory &, const display::Display::Framebuffer &);
     void finish_commands() { flush(); }
     [[nodiscard]] std::vector<std::uint8_t> save_state();
     void load_state(std::span<const std::uint8_t> bytes);

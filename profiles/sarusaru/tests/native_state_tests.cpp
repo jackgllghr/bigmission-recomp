@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
     try {
         sarusaru::SessionOptions options; options.game_module=argv[2]; options.memory_stick=dir/"memstick";
         const std::vector<std::uint8_t> gpu{1,2,3,4};
+        const ss::Thumbnail preview{ss::kThumbnailWidth,ss::kThumbnailHeight,std::vector<std::uint8_t>(ss::kThumbnailWidth*ss::kThumbnailHeight*4,42)};
         std::uint32_t entry{};
         std::vector<std::uint8_t> expected_video, expected_audio, expected_atrac;
         std::int32_t atrac_id=-1;
@@ -63,7 +64,8 @@ int main(int argc, char **argv) {
                 require(result==0,"open ATRAC fixture");
                 (void)next_media(*source); (void)next_media(*source);
             }
-            ss::NativeState::save(*source,path,"test",gpu);
+            ss::NativeState::save(*source,path,"test",gpu,preview);
+            require(ss::slot_info(path).thumbnail==preview,"native state thumbnail was not committed");
             if (media) std::tie(expected_video,expected_audio,expected_atrac)=next_media(*source);
         }
         // The source is gone: host bindings must belong to this fresh session.
@@ -89,7 +91,7 @@ int main(int argc, char **argv) {
         bool rejected=false;
         try { (void)ss::NativeState::prepare(*destination,path,"other settings"); } catch (const ss::FormatError &) { rejected=true; }
         require(rejected,"configuration mismatch accepted");
-        auto file=ss::read_ppst(path); file.payload.back()^=1; ss::write_ppst(path,file);
+        auto file=ss::read_slot(path); file.payload.back()^=1; ss::write_slot(path,file,preview);
         rejected=false;
         try { (void)ss::NativeState::prepare(*destination,path,"test"); } catch (const ss::FormatError &) { rejected=true; }
         require(rejected && destination->runtime.memory().load32(0x08105000)==baseline,"corrupt load changed live memory");
@@ -97,7 +99,7 @@ int main(int argc, char **argv) {
         std::vector<std::uint8_t> oversized(ss::kMaxPpstSize,0);
         rejected=false;
         try { ss::NativeState::save(*destination,path,"test",oversized); } catch (const ss::FormatError &) { rejected=true; }
-        require(rejected && ss::read_ppst(path).payload==file.payload,"failed save replaced the slot");
+        require(rejected && ss::read_slot(path).payload==file.payload,"failed save replaced the slot");
         std::filesystem::remove_all(dir);
         std::cout << "PASS: native state across fresh sessions, corruption and configuration rejection\n";
     } catch (const std::exception &e) { std::cerr<<e.what()<<'\n'; std::filesystem::remove_all(dir); return 1; }

@@ -24,6 +24,12 @@ int main() {
     using namespace sarusaru::shell;
     using namespace sarusaru::ctrl;
     const Settings defaults = default_settings();
+    require(defaults.state_slot==1,"default state slot changed");
+    for (unsigned slot=1;slot<=5;++slot) {
+        auto selected=parse_settings("[game]\nstate_slot = "+std::to_string(slot));
+        require(selected.state_slot==slot && parse_settings(serialize_settings(selected))==selected,"selected slot did not persist");
+    }
+    rejects("[game]\nstate_slot = 0"); rejects("[game]\nstate_slot = 6");
     require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
     require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
     require(defaults.prompt_style == PromptStyle::Auto, "controller prompts must default to auto");
