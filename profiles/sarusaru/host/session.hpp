@@ -15,6 +15,7 @@
 #include "game/camera_fov.hpp"
 #include "game/draw_distance.hpp"
 #include "game/gameplay_camera.hpp"
+#include "game/guest_collision.hpp"
 #include "game/intro_logos.hpp"
 #include "game/orbit_camera.hpp"
 #include "io/io_manager.hpp"
@@ -97,6 +98,7 @@ public:
     game::GameplayCamera gameplay_camera{display};
     game::IntroLogos intro_logos;
     game::OrbitCamera orbit_camera;
+    game::GuestCollision camera_collision{runtime};
     game::CameraFov camera_fov;
     game::DrawDistance draw_distance;
     ge::Ge ge{kernel};
