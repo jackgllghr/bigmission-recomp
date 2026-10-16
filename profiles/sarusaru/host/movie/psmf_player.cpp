@@ -12,6 +12,9 @@ namespace {
 
 constexpr std::uint32_t kConfigLoop = 0u;
 constexpr std::uint32_t kConfigPixelType = 1u;
+// Values for kConfigLoop, as in Sony's library: 0 loops, 1 plays once.
+constexpr std::int32_t kLoop = 0;
+constexpr std::int32_t kNoLoop = 1;
 constexpr std::uint8_t kVideoStreamId = 0xE0u;
 constexpr std::uint8_t kAudioStreamId = 0xBDu;
 
@@ -152,8 +155,8 @@ std::int32_t PsmfPlayer::info(std::uint32_t handle, PsmfInfo &info) const {
 std::int32_t PsmfPlayer::configure(std::uint32_t handle, std::uint32_t mode, std::int32_t value) {
     Player *player = find(handle);
     if (player == nullptr) return static_cast<std::int32_t>(psmf_error::kInvalidStatus);
-    if (mode == kConfigLoop && (value == 0 || value == 1)) {
-        player->loop = value == 1;
+    if (mode == kConfigLoop && (value == kLoop || value == kNoLoop)) {
+        player->loop = value == kLoop;
         return 0;
     }
     if (mode == kConfigPixelType && value >= -1 && value <= 3) {
