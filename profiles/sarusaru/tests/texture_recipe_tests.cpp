@@ -170,7 +170,7 @@ std::vector<std::uint32_t> palette(std::size_t count) {
 }
 
 std::string read(const std::filesystem::path &path) {
-    std::ifstream in(path);
+    std::ifstream in(path, std::ios::binary);
     std::stringstream text;
     text << in.rdbuf();
     return text.str();
