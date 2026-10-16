@@ -28,6 +28,9 @@ private:
     std::uint32_t object_{}, source_{};
     std::uint64_t last_update_us_{}, adjusted_frames_{};
     bool seen_{};
+    // Not saved: seconds since manual input, and the native angles last seen.
+    // While recent, native follow turns are cancelled so the chosen view holds.
+    float idle_{1e9f}, native_azimuth_{}, native_pitch_{};
 };
 
 } // namespace sarusaru::game
