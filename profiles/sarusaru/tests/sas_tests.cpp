@@ -1,7 +1,9 @@
 #include "sas/sas.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 namespace {
 using namespace sarusaru::sas;
@@ -112,5 +114,69 @@ int main() {
     require(sas.set_pause(1u, true) == 0 && sas.pause_flags() == 1u &&
                 static_cast<std::uint32_t>(sas.key_on(0)) == kVoicePaused,
             "pause");
+
+    // Reverb: echo and delay derive their taps from the delay parameter; at
+    // delay 255 that is the psx-spx Chaos Echo table, and feedback 127 its vWALL.
+    Reverb reverb;
+    reverb.set_type(Reverb::kEcho);
+    reverb.set_parameters(255, 127);
+    require(reverb.registers().mLSAME == 0x1FFF && reverb.registers().mRSAME == 0x0FFF &&
+                reverb.registers().mLCOMB1 == 0x1005 && reverb.registers().dLSAME == 0x1005 &&
+                reverb.registers().mLAPF1 == 0x1004 && reverb.registers().mRAPF1 == 0x1002 &&
+                reverb.registers().vWALL == 0x8100,
+            "echo registers at delay 255");
+
+    // Delay without feedback: one impulse comes back once, (16 * (delay + 1) - 4)
+    // * 4 steps later at 22050 Hz, so 96 output samples later at delay 0.
+    reverb.set_type(Reverb::kDelay);
+    reverb.set_parameters(0, 0);
+    std::vector<std::int64_t> left(256, 0), right(256, 0);
+    left[0] = left[1] = 0x4000;
+    reverb.process(left, right, 0x1000, 0x1000);
+    bool silent_before = true;
+    for (std::size_t i = 0; i < 95u; ++i) silent_before = silent_before && left[i] == 0 && right[i] == 0;
+    require(silent_before, "delay echoed early");
+    require(left[97] > 0x3F00 && left[97] <= 0x4000 && right[97] == 0, "delay echo missing or wrong channel");
+    bool silent_after = true;
+    for (std::size_t i = 99u; i < 256u; ++i) silent_after = silent_after && left[i] == 0;
+    require(silent_after, "delay without feedback repeated");
+    reverb.set_type(Reverb::kOff);
+    left.assign(64, 1000);
+    right.assign(64, 1000);
+    reverb.process(left, right, 0x1000, 0x1000);
+    require(left[0] == 0 && right[63] == 0, "reverb off produced output");
+
+    // Through SasCore: type and parameter validation, then a voice sending
+    // only to the effect is silent until the wet output is switched on.
+    require(static_cast<std::uint32_t>(sas.set_reverb_type(9)) == kInvalidReverbType &&
+                static_cast<std::uint32_t>(sas.set_reverb_type(-2)) == kInvalidReverbType &&
+                sas.set_reverb_type(8) == 0 && sas.reverb().type() == 8 &&
+                static_cast<std::uint32_t>(sas.set_reverb_parameters(128, 0)) == kInvalidReverbDelay &&
+                static_cast<std::uint32_t>(sas.set_reverb_parameters(0, 128)) == kInvalidReverbFeedback &&
+                static_cast<std::uint32_t>(sas.set_reverb_volume(0x1001, 0)) == kInvalidReverbVolume,
+            "reverb validation");
+    require(sas.set_pause(1u, false) == 0 && sas.set_reverb_type(Reverb::kDelay) == 0 &&
+                sas.set_reverb_parameters(0, 0) == 0 && sas.set_reverb_volume(0x1000, 0x1000) == 0 &&
+                sas.set_voice(0, 0x08811100u, 48, 0u, memory) == 0 && sas.set_volume(0, 0, 0, 0x1000, 0x1000) == 0 &&
+                sas.key_on(0) == 0,
+            "reverb voice setup");
+    const auto grain_peak = [&] {
+        std::int32_t peak = 0;
+        for (std::uint32_t i = 0; i < 64u; ++i) peak = std::max<std::int32_t>(peak, std::abs(sample(memory, out, i)));
+        return peak;
+    };
+    std::int32_t dry_peak = 0;
+    for (int grain = 0; grain < 4; ++grain) {
+        require(sas.render(memory, out, false, 0, 0) == 0, "dry-only grain");
+        dry_peak = std::max(dry_peak, grain_peak());
+    }
+    require(dry_peak == 0, "effect send leaked into the dry output");
+    require(sas.key_on(0) == 0 && sas.set_reverb_voice_on(0, 1) == 0, "wet on");
+    std::int32_t wet_peak = 0;
+    for (int grain = 0; grain < 4; ++grain) {
+        require(sas.render(memory, out, false, 0, 0) == 0, "wet grain");
+        wet_peak = std::max(wet_peak, grain_peak());
+    }
+    require(wet_peak > 1000, "wet output missing");
     return 0;
 }

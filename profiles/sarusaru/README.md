@@ -673,9 +673,19 @@ The pinned upstream is recorded in `config/supported_game.json`.
   including the packed `SetSimpleADSR` form, per-voice volumes, pause, end
   and envelope queries, and grain mixing for `__sceSasCore` and
   `__sceSasCoreWithMix`. The envelope curves follow the published reverse-
-  engineered descriptions and are not hardware-verified. Reverb settings are
-  validated and recorded but not applied (effect sends are dropped); the
-  multichannel output mode and the noise spectrum are not modeled.
+  engineered descriptions and are not hardware-verified. The multichannel
+  output mode and the noise spectrum are not modeled.
+- Applied SAS reverb (`sas::Reverb`): the voices' effect sends run through
+  the PlayStation SPU reverb at 22050 Hz, written from nocash's psx-spx
+  formula and preset table (PSP types 0-8: room, studio small/medium/large,
+  hall, space, echo, delay and pipe; type 8 was wrongly rejected before).
+  Echo and delay compute their taps and feedback from `sceSasRevParam`,
+  which at delay 255 reproduces the PS1 table. `sceSasRevVON` gates the dry
+  and wet outputs, `sceSasRevEVOL` scales the wet one, and `__sceSasInit`
+  resets them. The game selects Hall (type 4) with both outputs on and the
+  effect at half volume. Synthetic tests cover the echo registers, an
+  impulse through Delay and the dry/wet gates; the result has not been
+  compared against a PSP.
 - Added `scePsmfPlayer` (`movie/psmf_player.cpp`) and `sceMpegInit/Finish`:
   Create/Delete, SetPsmf/ReleasePsmf (the movie is read from the disc),
   GetPsmfInfo, ConfigPlayer (loop, pixel type), Start/Stop/Update,
@@ -757,7 +767,11 @@ The pinned upstream is recorded in `config/supported_game.json`.
   `SARUSARU_MEMSTICK` overrides). Saves are encrypted and signed as on a PSP
   with the public keys, in the mode the game's SDK selects (mode 3 here).
   List modes pick the first suitable entry; no dialog is drawn. Mode 3 has
-  not yet been verified against a save made by a PSP.
+  not yet been verified against a save made by a PSP. A save made outside
+  the recomp (mode 5, flags 0x41, console hash filled with 01h, apparently
+  from PPSSPP) auto-loads: the data file decrypts, its SAVEDATA_FILE_LIST
+  hash matches, and re-signing its PARAM.SFO reproduces the mode 1 and
+  mode 5 hashes byte for byte.
 - Added `sceUtilityLoadModule`/`UnloadModule` for the PSPSDK utility module
   IDs. The libraries they load are provided by HLE at their import interface,
   so this records state only, with bad-ID, already-loaded and not-loaded
