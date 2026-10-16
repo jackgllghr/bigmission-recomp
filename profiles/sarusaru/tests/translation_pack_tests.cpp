@@ -368,17 +368,17 @@ int main() {
     invalid_hd_run = hd_run_bytes; invalid_hd_run.pop_back(); rejects(invalid_hd_run);
 
     // Save dialogs expand the set of complete native text lines beyond 32.
-    auto many_runs = version2(); integer(many_runs, 0, 4); integer(many_runs, 40, 2);
-    for (unsigned i = 0; i < 40; ++i) {
+    auto many_runs = version2(); integer(many_runs, 0, 4); integer(many_runs, 256, 2);
+    for (unsigned i = 0; i < 256; ++i) {
         name(many_runs, "save.help." + std::to_string(i)); integer(many_runs, 100, 2); integer(many_runs, 16, 2);
         text(many_runs, psprecomp::sha256(Bytes(512 * 512 * 4, 0)));
         text(many_runs, psprecomp::sha256(Bytes{static_cast<std::uint8_t>(i)}));
         integer(many_runs, 1, 2); integer(many_runs, 512 * 16 * 4, 4);
         many_runs.resize(many_runs.size() + 512 * 16 * 4);
     }
-    require(load(many_runs).host_rgba(0xfff00000u + 39u * 0x1000u).size() == 512 * 16 * 4,
-            "expanded save help catalog rejected");
-    auto too_many_runs = version2(); integer(too_many_runs, 0, 4); integer(too_many_runs, 65, 2);
+    require(load(many_runs).host_rgba(0xfffff000u).size() == 512 * 16 * 4,
+            "expanded text catalog lost the final reserved host texture ID");
+    auto too_many_runs = version2(); integer(too_many_runs, 0, 4); integer(too_many_runs, 257, 2);
     rejects(too_many_runs);
 
     // Captions share the compact-message format with dialogue, beyond 88 entries.

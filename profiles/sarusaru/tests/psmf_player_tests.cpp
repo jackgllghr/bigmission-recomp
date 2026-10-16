@@ -96,7 +96,8 @@ int main() {
     require(static_cast<std::uint32_t>(player.set_psmf(handle, "disc0:/missing.pmf")) == psmf_error::kInvalidParam, "missing movie");
     require(player.set_psmf(handle, "disc0:/movie.pmf") == 0 && player.status(handle) == static_cast<std::int32_t>(psmf_status::kStandby),
             "SetPsmf");
-    require(player.configure(handle, 1u, 0) == 0 && static_cast<std::uint32_t>(player.configure(handle, 9u, 0)) == psmf_error::kInvalidConfig,
+    // The game configures every movie with loop mode 1, which plays it once.
+    require(player.configure(handle, 0u, 1) == 0 && player.configure(handle, 1u, 0) == 0 && static_cast<std::uint32_t>(player.configure(handle, 9u, 0)) == psmf_error::kInvalidConfig,
             "configuration");
     require(player.start(runtime, handle, 0u) == 0 && player.update(handle) == 0 &&
                 player.status(handle) == static_cast<std::int32_t>(psmf_status::kPlaying),

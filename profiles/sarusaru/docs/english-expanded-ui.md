@@ -104,12 +104,21 @@ The actual pause artwork is `common/b_drm_0.tm2`; its button widths differ by
 row, so each English label stays within that row's native sampling width.
 `common/e_tan_6.tm2` supplies the separate remaining-monkey label and unit.
 Resource icons and control icons remain outside those rectangles. The shared
-`c_num_s0`, `c_num_l1` and `c_num_l2` atlases now render their multiplier,
+`c_num_s0`, `c_num_m0`, `c_num_l1`, `c_num_l2` and menu `c_num_ml` atlases render their multiplier,
 digits and punctuation with the bundled rounded font, including HD layers.
 The save-data screen uses the same small atlas for time/resource counts and
-the large gold atlas for its completion percentage. Their cell positions
+the large gold atlas for its completion digits. Its percent sign instead samples
+the 32x48 cell at (416, 0) in `c_num_ml`; that cell has its own replacement.
+Their cell positions
 stay fixed, so battery, chip and remaining-monkey values continue to update
 through the guest's existing counter draws. Japanese unit cells remain untouched.
+The small remaining-count caption in `common00/e_tan_2b.tm2` now reads “Left”
+in the rounded font. Its ink stays inside the original 40-pixel caption width,
+while the full 64x24 tile is replaced to clear the source artwork.
+Captured-monkey names also generate native text runs from the exact translated
+compact lookup payloads. Matching names share one image; each replacement keeps
+the guest's original text width and centers the proportional lettering within
+it. Name images use a 4x layer, while help lines retain 8x layers.
 
 Pause help is a separate compact text path. The menu catalog's `compact_ui`
 records identify six source streams and their lookup pointers, and provide
