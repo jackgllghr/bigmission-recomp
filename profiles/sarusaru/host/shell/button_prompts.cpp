@@ -82,11 +82,23 @@ void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, uns
     const float cx = x + w * .5f, cy = y + h * .5f, r = std::min(w, h) * .45f;
     for (int py = y; py < y + h; ++py) for (int px = x; px < x + w; ++px) {
         const float dx = px + .5f - cx, dy = py + .5f - cy;
-        const bool inside = face ? dx * dx + dy * dy < r * r :
-            std::abs(dx) < w * .48f && std::abs(dy) < h * .43f;
-        if (inside) put(px, py, xbox ? ui::colors::kXboxFace : 0xff30251cu);
-        if (inside && (face ? dx * dx + dy * dy > (r - scale) * (r - scale) :
-            std::abs(dx) > w * .48f - scale || std::abs(dy) > h * .43f - scale)) put(px, py, 0xffc7d6e6u);
+        // Signed distance gives circles and rounded keycaps a one-texel
+        // antialiased edge at any atlas resolution.
+        const float corner = std::min(w, h) * .18f;
+        const float qx = std::abs(dx) - (w * .48f - corner);
+        const float qy = std::abs(dy) - (h * .43f - corner);
+        const float distance = face ? std::sqrt(dx * dx + dy * dy) - r :
+            std::hypot(std::max(qx, 0.f), std::max(qy, 0.f)) + std::min(std::max(qx, qy), 0.f) - corner;
+        const float coverage = std::clamp(.5f - distance, 0.f, 1.f);
+        if (coverage == 0.f) continue;
+        const float border = std::clamp(distance + scale + .5f, 0.f, 1.f);
+        const std::uint32_t fill = xbox ? ui::colors::kXboxFace : 0xff30251cu;
+        constexpr std::uint32_t outline = 0xffc7d6e6u;
+        std::uint32_t color = static_cast<std::uint32_t>(std::lround(coverage * 255.f)) << 24;
+        for (unsigned shift = 0; shift < 24; shift += 8)
+            color |= static_cast<std::uint32_t>(std::lround(
+                ((fill >> shift) & 255u) * (1.f - border) + ((outline >> shift) & 255u) * border)) << shift;
+        put(px, py, color);
     }
     if (face && ps) {
         const float a = r * .52f, stroke = std::max(1.f, scale * .75f);

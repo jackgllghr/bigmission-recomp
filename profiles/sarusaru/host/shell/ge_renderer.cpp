@@ -528,7 +528,26 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
                 texels = std::move(scaled);
             }
     }
-    if (prompt_atlas) button_prompts_->apply(prompt_atlas, texels, width, width / texture.width);
+    if (prompt_atlas) {
+        // Host glyphs need their own resolution even without a translation or
+        // HD pack. Keep normalized UVs and nearest-scale the surrounding art.
+        const unsigned current_scale = width / texture.width;
+        const unsigned prompt_scale = std::max({4u, scale_, current_scale});
+        if (prompt_scale > current_scale) {
+            const unsigned new_width = texture.width * prompt_scale;
+            const unsigned new_height = texture.height * prompt_scale;
+            std::vector<std::uint32_t> scaled(static_cast<std::size_t>(new_width) * new_height);
+            for (unsigned y = 0; y < new_height; ++y)
+                for (unsigned x = 0; x < new_width; ++x)
+                    scaled[static_cast<std::size_t>(y) * new_width + x] =
+                        texels[static_cast<std::size_t>(y * current_scale / prompt_scale) * width +
+                               x * current_scale / prompt_scale];
+            texels = std::move(scaled);
+            width = new_width;
+            height = new_height;
+        }
+        button_prompts_->apply(prompt_atlas, texels, width, prompt_scale);
+    }
     Texture entry;
     if (!vk_.create_image(width, height, kColorFormat,
                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, entry.image))
