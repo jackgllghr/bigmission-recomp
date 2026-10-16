@@ -285,7 +285,7 @@ void registers() {
     DrawCall draw;
     ge.set_draw_sink([&](const DrawCall &d) { draw = d; });
     auto words = setup();
-    for (auto op : {0x17u, 0x18u, 0x19u, 0x1au, 0x1bu, 0x1du, 0x1eu, 0x1fu, 0x21u, 0x22u, 0x23u, 0x51u, 0x9bu, 0xe7u})
+    for (auto op : {0x17u, 0x18u, 0x19u, 0x1au, 0x1bu, 0x1du, 0x1eu, 0x1fu, 0x21u, 0x22u, 0x23u, 0x24u, 0x51u, 0x9bu, 0xe7u})
         words.push_back(command(op, 1));
     for (auto op : {0x48u, 0x49u, 0x4au, 0x4bu, 0x42u, 0x43u, 0x44u, 0x45u, 0x46u, 0x47u, 0x5bu, 0xcdu, 0xceu})
         words.push_back(command(op, f24(2.5f)));
@@ -298,7 +298,8 @@ void registers() {
             command(0xc4, 1), command(0xc4, 0), command(0xc6, 0x0103), command(0xc7, 0x0101), command(0xc9, 0x0102),
             command(0xd3, 0x701), command(0xd4, 2 | (3 << 10)), command(0xd5, 470 | (260 << 10)),
             command(0x4c, 0xff0030), command(0x4d, 0xff0040), command(0xd6, 10), command(0xd7, 500),
-            command(0xdb, 0xabcd06), command(0xde, 5), command(0xdf, 0x321)});
+            command(0xdb, 0xabcd06), command(0xde, 5), command(0xdf, 0x321), command(0xdc, 0x7f0a02),
+            command(0xdd, 0x020103), command(0xe8, 0xff00ff), command(0xe9, 0x0f)});
     for (std::uint32_t light = 0; light < 4; ++light) {
         words.push_back(command(0x5f + light, 0x0201));
         for (std::uint32_t axis = 0; axis < 3; ++axis) {
@@ -339,6 +340,10 @@ void registers() {
     expect(draw.alpha_test.enabled && draw.alpha_test.function == 6 && draw.alpha_test.reference == 0xcd &&
             draw.alpha_test.mask == 0xab,
         "alpha-test bitfields");
+    expect(draw.stencil.test_enabled && draw.stencil.function == 2 && draw.stencil.reference == 0x0a &&
+            draw.stencil.mask == 0x7f && draw.stencil.fail == 3 && draw.stencil.depth_fail == 1 &&
+            draw.stencil.pass == 2 && draw.stencil.color_write_mask == 0xff00ff && draw.stencil.alpha_write_mask == 0x0f,
+        "stencil test, operations and write masks");
     expect(draw.culling_enabled && draw.cull_clockwise && draw.clear_mode && draw.clear_flags == 7, "cull/clear flags");
     expect(draw.viewport.x_scale == 2.5f && draw.viewport.y_scale == 2.5f && draw.viewport.z_scale == 2.5f &&
             draw.viewport.x_offset == 2.5f && draw.viewport.y_offset == 2.5f && draw.viewport.z_offset == 2.5f,
@@ -517,6 +522,9 @@ int main() {
         cutout.alpha_test.enabled = true;
         cutout.alpha_test.function = 6u;
         expect(!geometry_outline(cutout), "alpha cutouts do not acquire a solid hull");
+        auto stencil_only = character;
+        stencil_only.stencil.color_write_mask = 0xFFFFFFu;
+        expect(!geometry_outline(stencil_only), "draws that only mark the stencil are not outlined");
         character.clear_mode = true;
         expect(!geometry_outline(character), "framebuffer clears are not outlined");
     }

@@ -32,7 +32,7 @@
     X(vkDestroyDescriptorPool) X(vkResetDescriptorPool) X(vkAllocateDescriptorSets) X(vkUpdateDescriptorSets) \
     X(vkCreateSampler) X(vkDestroySampler) X(vkCmdBindPipeline) X(vkCmdBindDescriptorSets) \
     X(vkCmdBindVertexBuffers) X(vkCmdPushConstants) X(vkCmdSetViewport) X(vkCmdSetScissor) \
-    X(vkCmdSetBlendConstants) X(vkCmdDraw) X(vkCmdClearDepthStencilImage) X(vkCmdCopyImageToBuffer)
+    X(vkCmdSetBlendConstants) X(vkCmdSetStencilReference) X(vkCmdDraw) X(vkCmdClearDepthStencilImage) X(vkCmdCopyImageToBuffer)
 
 namespace sarusaru::shell {
 
@@ -70,7 +70,10 @@ public:
     VkDevice device{VK_NULL_HANDLE};
     std::uint32_t queue_family{};
     VkQueue queue{VK_NULL_HANDLE};
+    // The GE targets' depth buffer, with a stencil aspect when the device has
+    // a depth/stencil attachment format (the GE's stencil test needs one).
     VkFormat depth_format{VK_FORMAT_D32_SFLOAT};
+    VkImageAspectFlags depth_aspect{VK_IMAGE_ASPECT_DEPTH_BIT};
 
     // Creates everything for `window`; false with `error` set on failure.
     bool create(SDL_Window *window, std::string &error);

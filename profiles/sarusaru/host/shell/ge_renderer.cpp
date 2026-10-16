@@ -111,6 +111,8 @@ bool GeRenderer::create(std::string &error) {
     attachments[0].initialLayout = attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     attachments[1] = attachments[0];
     attachments[1].format = vk_.depth_format;
+    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachments[1].initialLayout = attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     VkAttachmentReference color_ref{0u, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkAttachmentReference depth_ref{1u, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
@@ -310,7 +312,7 @@ GeRenderer::Target *GeRenderer::target(std::size_t layer, std::uint32_t address)
                           VK_IMAGE_ASPECT_COLOR_BIT, target->color) ||
         !vk_.create_image(width, height, vk_.depth_format,
                           VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                          VK_IMAGE_ASPECT_DEPTH_BIT, target->depth))
+                          vk_.depth_aspect, target->depth))
         return nullptr;
     const VkImageView views[2] = {target->color.view, target->depth.view};
     VkFramebufferCreateInfo info{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
@@ -321,7 +323,8 @@ GeRenderer::Target *GeRenderer::target(std::size_t layer, std::uint32_t address)
     info.height = height;
     info.layers = 1u;
     vk_.vkCreateFramebuffer(vk_.device, &info, nullptr, &target->framebuffer);
-    // New targets start black with depth 0 (the farthest, as the GE counts).
+    // New targets start black with depth 0 (the farthest, as the GE counts)
+    // and stencil 0.
     vk_.transition(commands_, target->color.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     const VkClearColorValue black{};
@@ -330,12 +333,12 @@ GeRenderer::Target *GeRenderer::target(std::size_t layer, std::uint32_t address)
     vk_.transition(commands_, target->color.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     target->color_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    vk_.transition(commands_, target->depth.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+    vk_.transition(commands_, target->depth.image, vk_.depth_aspect, VK_IMAGE_LAYOUT_UNDEFINED,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     const VkClearDepthStencilValue far{0.0f, 0u};
-    const VkImageSubresourceRange depth_range{VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 1u, 0u, 1u};
+    const VkImageSubresourceRange depth_range{vk_.depth_aspect, 0u, 1u, 0u, 1u};
     vk_.vkCmdClearDepthStencilImage(commands_, target->depth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &far, 1u, &depth_range);
-    vk_.transition(commands_, target->depth.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    vk_.transition(commands_, target->depth.image, vk_.depth_aspect, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     Target *raw = target.get();
     targets_[layer].emplace(key, std::move(target));
@@ -604,6 +607,14 @@ VkPipeline GeRenderer::pipeline(const PipelineKey &key) {
     depth.depthTestEnable = (key.depth & 1u) != 0u;
     depth.depthCompareOp = static_cast<VkCompareOp>((key.depth >> 1u) & 7u);
     depth.depthWriteEnable = (key.depth & 16u) != 0u;
+    depth.stencilTestEnable = (key.stencil & 1u) != 0u;
+    depth.front.compareOp = static_cast<VkCompareOp>((key.stencil >> 1u) & 7u);
+    depth.front.failOp = static_cast<VkStencilOp>((key.stencil >> 4u) & 7u);
+    depth.front.passOp = static_cast<VkStencilOp>((key.stencil >> 7u) & 7u);
+    depth.front.depthFailOp = static_cast<VkStencilOp>((key.stencil >> 10u) & 7u);
+    depth.front.compareMask = (key.stencil >> 13u) & 0xFFu;
+    depth.front.writeMask = (key.stencil >> 21u) & 0xFFu;
+    depth.back = depth.front;
     VkPipelineColorBlendAttachmentState attachment{};
     attachment.blendEnable = (key.blend & 1u) != 0u;
     attachment.srcColorBlendFactor = static_cast<VkBlendFactor>((key.blend >> 1u) & 31u);
@@ -617,9 +628,10 @@ VkPipeline GeRenderer::pipeline(const PipelineKey &key) {
     VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     blend.attachmentCount = 1u;
     blend.pAttachments = &attachment;
-    const VkDynamicState dynamic_states[3] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_BLEND_CONSTANTS};
+    const VkDynamicState dynamic_states[4] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+                                              VK_DYNAMIC_STATE_BLEND_CONSTANTS, VK_DYNAMIC_STATE_STENCIL_REFERENCE};
     VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-    dynamic.dynamicStateCount = 3u;
+    dynamic.dynamicStateCount = 4u;
     dynamic.pDynamicStates = dynamic_states;
     VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
     info.stageCount = 2u;
@@ -682,7 +694,7 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
         std::fprintf(stderr,
             "draw prim=%u n=%zu idx=%zu through=%d target=%08x tex=%d %08x %ux%u fmt=%u tfx=%u tcc=%d clear=%d/%u "
             "blend=%d %u/%u eq%u depth=%d f%u w%d alpha=%d f%u ref%u cull=%d/%d light=%d fog=%d color=%d mat=%08x "
-            "vtype=%08x outline=%d vp=%.0f,%.0f,%.0f s=%.0f,%.0f,%.0f off=%.0f,%.0f sc=%u,%u-%u,%u cmd=%08x\n",
+            "vtype=%08x stencil=%d f%u ref%02x m%02x op%u/%u/%u pmsk=%06x/%02x outline=%d vp=%.0f,%.0f,%.0f s=%.0f,%.0f,%.0f off=%.0f,%.0f sc=%u,%u-%u,%u cmd=%08x\n",
             static_cast<unsigned>(call.primitive), call.vertices.size(), call.indices.size(), call.through,
             call.target.color_address, call.texture.enabled, call.texture.address, call.texture.width, call.texture.height,
             static_cast<unsigned>(call.texture.format), call.texture.function, call.texture.alpha_from_texture,
@@ -690,6 +702,8 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
             call.blend.equation, call.depth.test_enabled, call.depth.function, call.depth.write_enabled,
             call.alpha_test.enabled, call.alpha_test.function, call.alpha_test.reference, call.culling_enabled,
             call.cull_clockwise, call.lighting_enabled, call.fog.enabled, call.has_vertex_color, call.material_color, call.vertex_type,
+            call.stencil.test_enabled, call.stencil.function, call.stencil.reference, call.stencil.mask, call.stencil.fail,
+            call.stencil.depth_fail, call.stencil.pass, call.stencil.color_write_mask, call.stencil.alpha_write_mask,
             cel_shading_ == 2u && gpu::geometry_outline(call), v.x_offset, v.y_offset, v.z_offset, v.x_scale, v.y_scale, v.z_scale, v.offset_x, v.offset_y, v.scissor_x1,
             v.scissor_y1, v.scissor_x2, v.scissor_y2, call.command_address);
         const auto &t = call.texture;
@@ -880,12 +894,47 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
     const auto &b = call.blend;
     std::uint32_t write_mask = 0xFu;
     float constants[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    // The stencil buffer mirrors the GE's stencil, which is the framebuffer
+    // alpha: clears that write alpha set it, and draws under the stencil
+    // test update it with their operations. Draws without the test write
+    // their fragment alpha to the colour target only, so a later stencil
+    // test does not see it.
+    const bool has_stencil = (vk_.depth_aspect & VK_IMAGE_ASPECT_STENCIL_BIT) != 0u;
+    std::uint32_t stencil_reference = 0u;
     if (call.clear_mode) {
         // clear_flags: bit 0 colour, 1 alpha (stencil), 2 depth.
         write_mask = ((call.clear_flags & 1u) != 0u ? 7u : 0u) | ((call.clear_flags & 2u) != 0u ? 8u : 0u);
         key.blend = write_mask << 14u;
         key.depth = 1u | (static_cast<std::uint32_t>(VK_COMPARE_OP_ALWAYS) << 1u) | ((call.clear_flags & 4u) != 0u ? 16u : 0u);
+        if (has_stencil && (call.clear_flags & 2u) != 0u) {
+            // The stencil is cleared to the clear colour's alpha (a sprite's
+            // colour is its second vertex's).
+            key.stencil = 1u | (static_cast<std::uint32_t>(VK_COMPARE_OP_ALWAYS) << 1u) |
+                          (static_cast<std::uint32_t>(VK_STENCIL_OP_REPLACE) << 7u) | (0xFFu << 21u);
+            if (!call.vertices.empty()) stencil_reference = call.vertices.back().color >> 24u;
+        }
     } else {
+        // A write mask bit set keeps the framebuffer's bit; a channel is
+        // written unless its whole byte is kept.
+        const auto &st = call.stencil;
+        write_mask = ((st.color_write_mask & 0xFFu) != 0xFFu ? 1u : 0u) |
+                     (((st.color_write_mask >> 8u) & 0xFFu) != 0xFFu ? 2u : 0u) |
+                     (((st.color_write_mask >> 16u) & 0xFFu) != 0xFFu ? 4u : 0u) |
+                     (st.alpha_write_mask != 0xFFu ? 8u : 0u);
+        // Under the stencil test the alpha is the stencil: a fragment that
+        // keeps it leaves the alpha as it was.
+        if (st.test_enabled && st.pass == 0u) write_mask &= 7u;
+        if (has_stencil && st.test_enabled) {
+            static constexpr VkStencilOp ops[8] = {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_REPLACE,
+                VK_STENCIL_OP_INVERT, VK_STENCIL_OP_INCREMENT_AND_CLAMP, VK_STENCIL_OP_DECREMENT_AND_CLAMP,
+                VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP};
+            key.stencil = 1u | (static_cast<std::uint32_t>(compare_op(st.function)) << 1u) |
+                          (static_cast<std::uint32_t>(ops[st.fail & 7u]) << 4u) |
+                          (static_cast<std::uint32_t>(ops[st.pass & 7u]) << 7u) |
+                          (static_cast<std::uint32_t>(ops[st.depth_fail & 7u]) << 10u) | ((st.mask & 0xFFu) << 13u) |
+                          ((~st.alpha_write_mask & 0xFFu) << 21u);
+            stencil_reference = st.reference & 0xFFu;
+        }
         std::uint32_t source = blend_factor(b.source_factor, true), destination = blend_factor(b.destination_factor, false);
         // A fixed colour of white or black is just one or zero; otherwise the
         // blend constant carries it (one per draw: the source's, if both are fixed).
@@ -972,6 +1021,7 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
     vk_.vkCmdSetViewport(commands_, 0u, 1u, &vp);
     vk_.vkCmdSetScissor(commands_, 0u, 1u, &scissor);
     vk_.vkCmdSetBlendConstants(commands_, constants);
+    vk_.vkCmdSetStencilReference(commands_, VK_STENCIL_FACE_FRONT_AND_BACK, stencil_reference);
     const VkDeviceSize vertex_buffer_offset = vertex_offset;
     vk_.vkCmdBindVertexBuffers(commands_, 0u, 1u, &vertices_.buffer, &vertex_buffer_offset);
     vk_.vkCmdDraw(commands_, static_cast<std::uint32_t>(out.size()), 1u, 0u, 0u);
@@ -986,6 +1036,7 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
         world.key.raster = 0u;
         world.key.blend = 7u << 14u;
         world.key.depth &= ~16u;
+        world.key.stencil = 0u;
         world.viewport = vp;
         world.scissor = scissor;
         const std::size_t first = world.vertices.size();
@@ -1019,6 +1070,7 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
         outline_key.raster = static_cast<std::uint32_t>(VK_CULL_MODE_FRONT_BIT) | (key.raster & 4u);
         outline_key.blend = (key.blend & ~(15u << 14u)) | (7u << 14u);
         outline_key.depth = key.depth & ~16u;
+        outline_key.stencil = 0u;
         Push outline_push = push;
         outline_push.viewport = {vp.width / scale, vp.height / scale, 0.0f, 8.0f};
         vk_.vkCmdBindPipeline(commands_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline(outline_key));

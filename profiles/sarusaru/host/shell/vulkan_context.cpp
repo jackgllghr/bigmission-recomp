@@ -59,6 +59,17 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
         return false;
     }
     vk.vkGetPhysicalDeviceProperties(physical, &properties);
+    // A depth format with stencil, D32S8 or else D24S8 (both hold the GE's
+    // 16-bit depth exactly). Without either the stencil test is not emulated.
+    for (const VkFormat format : {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT}) {
+        VkFormatProperties format_properties{};
+        vk.vkGetPhysicalDeviceFormatProperties(physical, format, &format_properties);
+        if ((format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0u) {
+            depth_format = format;
+            depth_aspect = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            break;
+        }
+    }
 
     std::uint32_t available_count = 0;
     vk.vkEnumerateDeviceExtensionProperties(physical, nullptr, &available_count, nullptr);
