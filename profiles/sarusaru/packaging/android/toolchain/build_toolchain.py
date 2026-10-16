@@ -32,6 +32,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[5]
@@ -68,6 +69,20 @@ def run(*command, **options):
     subprocess.run([str(part) for part in command], check=True, **options)
 
 
+def retried(action, attempts=5):
+    """`action()`, tried again with a growing wait when the network fails (googlesource.com
+    answers 503 now and then)."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return action()
+        except (subprocess.CalledProcessError, OSError) as error:
+            if attempt == attempts:
+                raise
+            wait = 15 * attempt
+            print(f"build_toolchain: {error}; trying again in {wait}s ({attempt}/{attempts})", flush=True)
+            time.sleep(wait)
+
+
 def option_name(tool):
     return tool.upper().replace("-", "_")
 
@@ -96,8 +111,11 @@ def llvm_source():
         archive.parent.mkdir(parents=True, exist_ok=True)
         partial = archive.with_suffix(".part")
         print(f"Downloading {LLVM_URL}", flush=True)
-        with urllib.request.urlopen(LLVM_URL) as response, partial.open("wb") as out:
-            shutil.copyfileobj(response, out)
+
+        def download():
+            with urllib.request.urlopen(LLVM_URL) as response, partial.open("wb") as out:
+                shutil.copyfileobj(response, out)
+        retried(download)
         actual = hashlib.sha256(partial.read_bytes()).hexdigest()
         if actual != LLVM_SHA256:
             partial.unlink()
@@ -116,7 +134,7 @@ def git_checkout(url, revision, directory):
     shutil.rmtree(directory, ignore_errors=True)
     directory.mkdir(parents=True)
     run("git", "-C", directory, "init", "-q")
-    run("git", "-C", directory, "fetch", "-q", "--depth", "1", url, revision)
+    retried(lambda: run("git", "-C", directory, "fetch", "-q", "--depth", "1", url, revision))
     run("git", "-C", directory, "checkout", "-q", "FETCH_HEAD")
     return directory
 
