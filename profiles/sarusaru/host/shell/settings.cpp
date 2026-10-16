@@ -187,6 +187,8 @@ Settings parse_settings(std::string_view text) {
     std::set<std::string> seen;
     std::size_t line_number = 0;
     std::optional<bool> legacy_interpolation;
+    // Only a file that says so still offers Modern's downloads.
+    settings.modern_downloads_pending = false;
     std::array<std::optional<std::vector<Binding>>, 2> legacy_quit;  // keyboard, gamepad
     while (std::getline(in, line)) {
         ++line_number;
@@ -248,6 +250,8 @@ Settings parse_settings(std::string_view text) {
                 settings.controls.dead_zone = number(value, 0.0f, 0.95f);
             } else if (full == "game.skip_intro_logos") {
                 settings.skip_intro_logos = integer(value, 0, 1) != 0;
+            } else if (full == "game.modern_downloads") {
+                settings.modern_downloads_pending = integer(value, 0, 1) != 0;
             } else if (full == "game.state_slot") {
                 settings.state_slot = static_cast<std::uint32_t>(integer(value, 1, 5));
             } else if (full == "game.disc") {
@@ -319,6 +323,8 @@ std::string serialize_settings(const Settings &settings) {
         << "disc = " << encode_path(settings.game_disc) << '\n'
         << "# 1 = skip the opening logos. Start also skips them with this off.\nskip_intro_logos = "
         << (settings.skip_intro_logos ? 1 : 0) << '\n'
+        << "# 1 = the next Play offers the Modern preset's English text and HD textures (a new file's default).\n"
+        << "modern_downloads = " << (settings.modern_downloads_pending ? 1 : 0) << '\n'
         << "# Selected state slot for shortcuts (1-5).\nstate_slot = " << settings.state_slot << '\n'
         << "\n[interface]\n# The gamepad button that confirms in the launcher: south (cross) or east (circle, as in the game).\n"
         << "confirm = " << (settings.confirm_south ? "south" : "east") << '\n'

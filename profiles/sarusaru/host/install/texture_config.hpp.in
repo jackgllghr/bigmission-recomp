@@ -8,4 +8,9 @@ namespace sarusaru::install {
 inline constexpr std::string_view kTextureRecipeUrl = "@SARUSARU_TEXTURE_RECIPE_URL@";
 inline constexpr std::string_view kTextureRecipeSha256 = "@SARUSARU_TEXTURE_RECIPE_SHA256@";
 inline constexpr std::string_view kTextureRecipeSize = "@SARUSARU_TEXTURE_RECIPE_SIZE@";
+// The prebuilt HD texture pack (SARUSARU_HD_PACK_*): a zip of a pack
+// directory (textures/hd_pack.hpp). Empty: HD is made on the device.
+inline constexpr std::string_view kPrebuiltPackUrl = "@SARUSARU_HD_PACK_URL@";
+inline constexpr std::string_view kPrebuiltPackSha256 = "@SARUSARU_HD_PACK_SHA256@";
+inline constexpr std::string_view kPrebuiltPackSize = "@SARUSARU_HD_PACK_SIZE@";
 } // namespace sarusaru::install

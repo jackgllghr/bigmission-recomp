@@ -268,6 +268,41 @@ are drawn, and upscaled the next time the pack is chosen.
 dumps and the maintainer's disc. `--texture-pack DIR` (or `none`) overrides
 the pack for one run. See [`docs/hd-textures.md`](docs/hd-textures.md).
 
+A build can instead offer a **prebuilt HD pack** for the menus, icons,
+backgrounds and game textures, published apart from the port in
+[`sarusaru-hd-textures`](https://github.com/jackgllghr/sarusaru-hd-textures) (`SARUSARU_HD_PACK_URL/SHA256/SIZE`, pinned to its current release). HD (4×)
+then downloads that zip once, checks its SHA-256 and that its `pack.ini`
+names the player's disc, and unpacks it to
+`<user data>/textures/4x-prebuilt-<hash>/`; 4K (8×) is still made on the
+device. `tools/package_hd_pack.py PACK_DIR -o pack.zip` makes the zip and
+prints the three values:
+
+```sh
+cmake -S . -B out/macos-arm64 -DSARUSARU_HD_PACK_URL=https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/<tag>/sarusaru-hd-4x.zip \
+  -DSARUSARU_HD_PACK_SHA256=<sha256> -DSARUSARU_HD_PACK_SIZE=<bytes>
+```
+
+### Presets
+
+**Preset**, first on the Graphics tab, sets several rows at once:
+
+| Preset | Resolution | Textures | Game text | Draw distance | Intro logos |
+| --- | --- | --- | --- | --- | --- |
+| Native | 1× (480×272) | Original | Japanese | Native | Shown |
+| Modern | 4× (1920×1088) | HD (4×) | English | 8× | Skipped |
+
+Modern is the default. A new `settings.ini` starts with its resolution, draw
+distance and logo skip, and the first **Play** opens the English and HD
+texture download screens in turn (Back skips one) before the game starts;
+`[game] modern_downloads` records that this has happened. Settings files from
+earlier versions keep their values and are not offered the downloads.
+
+Choosing Modern later opens the same screens for whatever is not downloaded
+yet. The preset is read from those rows, not stored: changing any of them (or
+skipping one of Modern's downloads) shows **Custom**. A download the build
+does not offer (no HD pack or recipe, say) is left out of Modern. Other rows,
+such as frame rate and FOV, are left alone.
+
 `SARUSARU_UI_SCRIPT` drives the launcher (and, once the game runs, its pause
 menu: `pad guide` or `padchord leftstick rightstick` opens it) without a person, for checks with
 each device: keys through SDL, buttons through an SDL virtual gamepad (which

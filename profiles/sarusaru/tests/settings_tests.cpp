@@ -31,7 +31,19 @@ int main() {
     }
     rejects("[game]\nstate_slot = 0"); rejects("[game]\nstate_slot = 6");
     require(parse_settings(serialize_settings(defaults)) == defaults, "default settings do not round-trip");
-    require(parse_settings("# empty file inherits defaults\n") == defaults, "defaults not inherited");
+    // A file from before modern_downloads inherits every other default, but is never offered Modern's downloads.
+    require(defaults.modern_downloads_pending, "a new settings file must offer Modern's downloads");
+    auto inherited = parse_settings("# empty file inherits defaults\n");
+    require(!inherited.modern_downloads_pending, "an earlier file was offered Modern's downloads");
+    inherited.modern_downloads_pending = true;
+    require(inherited == defaults, "defaults not inherited");
+    require(defaults.internal_resolution == 4u && defaults.draw_distance == 8.0f && defaults.skip_intro_logos &&
+                defaults.translation_language == "ja" && defaults.texture_pack.empty(),
+            "defaults are not Modern's rows that need no download");
+    const auto offered = parse_settings("[game]\nmodern_downloads = 0\n");
+    require(!offered.modern_downloads_pending && parse_settings(serialize_settings(offered)) == offered,
+            "modern_downloads does not round-trip");
+    rejects("[game]\nmodern_downloads = 2");
     require(defaults.prompt_style == PromptStyle::Auto, "controller prompts must default to auto");
     for (std::size_t i = 0; i < kPromptStyleNames.size(); ++i) {
         const auto settings = parse_settings(std::string("[interface]\ncontroller_buttons = ") + std::string(kPromptStyleNames[i]));
@@ -56,7 +68,7 @@ int main() {
     rejects("[interface]\ncheck_for_updates = 2");
     rejects("[interface]\nlast_update_check = -1");
     rejects("[interface]\nlast_update_check = 9223372036854775808");
-    require(!defaults.skip_intro_logos, "intro logos must play by default");
+    require(defaults.skip_intro_logos, "intro logos must be skipped by default (Modern)");
     require(defaults.subtitles, "movie subtitles must default to on");
     const auto unsubtitled = parse_settings("[translation]\nsubtitles = 0\n");
     require(!unsubtitled.subtitles && parse_settings(serialize_settings(unsubtitled)) == unsubtitled,

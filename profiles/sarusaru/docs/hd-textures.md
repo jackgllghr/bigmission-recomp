@@ -1,7 +1,8 @@
 # HD textures
 
 HD (4x, for about 1080p) and 4K (8x) textures are made **on the player's
-device** from their own disc. The port never ships pixels derived from the
+device** from their own disc, unless the build offers a prebuilt HD pack
+(see "Prebuilt pack" below). The port never ships pixels derived from the
 game: what is distributed is a *recipe* (which textures to upscale, with which
 model and settings), and the launcher runs a pinned upscaler locally. This
 keeps the rule that applies to the generated game code (see
@@ -221,6 +222,29 @@ in for the model.
 - The developer logo's background, white under zero alpha and drawn with
   texture alpha ignored, stays white, so the planes stay straight.
 - 8x makes 4096x4096 images for 512x512 textures, up to 33 MB of PNG each.
+
+## Prebuilt pack (`install::PrebuiltPackDownload`)
+
+A build configured with `SARUSARU_HD_PACK_URL`, `_SHA256` and `_SIZE` offers
+a finished pack instead of making HD on the device. Unlike the recipe, this
+**is** game-derived pixels (upscaled menus, icons, backgrounds and game
+textures), so it is published apart from the port, in its own repository,
+the way the English pack (which also carries translated images) is; the port
+and its packages still contain none.
+
+- The zip holds `pack.ini` and `<hash>.png`, at its top or in its only
+  folder. `tools/package_hd_pack.py PACK_DIR -o pack.zip` writes one (stored,
+  `pack.ini` and hash-named images only) and prints its SHA-256 and size.
+- Choosing HD (4×), from the Textures row or the Modern preset, opens the
+  HD Textures screen with a download button. The launcher downloads the zip
+  with curl, keeps it only if the SHA-256 matches, unpacks it with the
+  system's tools (`unpack_zip`, shared with the upscaler), and installs it as
+  `<user data>/textures/4x-prebuilt-<sha16>/` only if its `pack.ini` loads
+  for the supported disc. A refused or cancelled download leaves nothing.
+- The pack has no `wanted.txt`, so nothing is collected while playing.
+- 4K (8×) still uses the recipe and the device's upscaler.
+- `sarusaru_texture_recipe_tests` installs a zip of an invented pack and
+  refuses one for another disc. Checked in the launcher with a `file://` pack.
 
 ## Next
 

@@ -106,6 +106,8 @@ private:
     std::uint32_t texture_scale_{4};
     std::unique_ptr<install::TextureBuild> texture_build_;
     std::string texture_error_;
+    // Or downloading the prebuilt HD pack, when the build offers one.
+    std::unique_ptr<install::PrebuiltPackDownload> prebuilt_download_;
 
     std::unique_ptr<install::UpdateCheck> update_check_;
     void check_updates();
@@ -134,7 +136,22 @@ private:
     // Picks the Textures row's next choice: the original textures, a pack
     // already made, or the screen that makes one.
     void choose_textures(int direction);
+    // The same for a scale: 0 (original), 4 or 8.
+    void select_textures(std::uint32_t scale);
     void choose_game_text(int direction);
+    // The Preset row: sets its rows, then turns on Modern's English and HD
+    // textures one after the other, through their download screens if need be.
+    void choose_preset(int direction);
+    std::vector<SettingRow> preset_pending_;
+    // A preset is being applied: its screens come back to the Preset row.
+    bool preset_active_{};
+    // The first Play's downloads are under way: the game starts after them.
+    bool play_after_preset_{};
+    // Whether the build offers HD textures: a prebuilt pack, or a recipe and an upscaler.
+    [[nodiscard]] static bool hd_offered();
+    void continue_preset();
+    // The Textures screen when HD is the prebuilt pack's download.
+    void prebuilt_textures();
     // Pack setup returns to the screen that opened it, including installation.
     Screen pack_return_screen_{Screen::Settings};
     void return_from_pack(SettingRow row);

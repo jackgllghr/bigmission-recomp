@@ -24,4 +24,10 @@ namespace sarusaru::install {
                                      const std::filesystem::path &destination,
                                      const std::function<void(std::uint64_t)> &downloaded, std::string &error);
 
+// Unpacks the zip at `archive` into `directory` (which must exist) with the
+// system's own tools: tar on Windows and macOS, unzip, bsdtar or Python on
+// Linux. False with `error` set (what the tool printed) on failure.
+[[nodiscard]] bool unpack_zip(ProcessGroup &processes, const std::filesystem::path &archive,
+                              const std::filesystem::path &directory, std::string &error);
+
 } // namespace sarusaru::install

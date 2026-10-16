@@ -20,6 +20,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
+#include <vector>
 
 namespace sarusaru::install {
 namespace {
@@ -140,6 +141,18 @@ std::optional<std::filesystem::path> texture_pack_directory(const PackSource &re
     const auto data = platform::user_data_directory();
     if (!data || recipe.sha256.size() < 16u) return std::nullopt;
     return *data / "textures" / (std::to_string(scale) + "x-" + recipe.sha256.substr(0u, 16u));
+}
+
+std::optional<PackSource> prebuilt_pack_source() {
+    if (kPrebuiltPackUrl.empty() || kPrebuiltPackSha256.size() != 64u) return std::nullopt;
+    return PackSource{std::string(kPrebuiltPackUrl), std::string(kPrebuiltPackSha256),
+                      std::strtoull(std::string(kPrebuiltPackSize).c_str(), nullptr, 10)};
+}
+
+std::optional<std::filesystem::path> prebuilt_pack_directory(const PackSource &pack) {
+    const auto data = platform::user_data_directory();
+    if (!data || pack.sha256.size() < 16u) return std::nullopt;
+    return *data / "textures" / ("4x-prebuilt-" + pack.sha256.substr(0u, 16u));
 }
 
 TexturePackState texture_pack_state(const std::filesystem::path &directory) {
@@ -338,6 +351,91 @@ void build_texture_pack(const PackInputs &inputs, ProcessGroup &processes,
     report(progress);
 }
 
+void install_prebuilt_pack(const std::filesystem::path &archive, std::string_view disc_id,
+                           const std::filesystem::path &destination, ProcessGroup &processes) {
+    std::error_code ignored;
+    auto partial = destination;
+    partial += ".partial";
+    std::filesystem::remove_all(partial, ignored);
+    std::filesystem::create_directories(partial);
+    std::string error;
+    if (!unpack_zip(processes, archive, partial, error)) {
+        std::filesystem::remove_all(partial, ignored);
+        fail(processes.cancelled() ? "cancelled" : "cannot unpack the texture pack: " + error);
+    }
+    // pack.ini at the top, or in the zip's only folder.
+    auto root = partial;
+    if (!std::filesystem::is_regular_file(root / textures::HdTexturePack::kManifestName, ignored)) {
+        std::vector<std::filesystem::path> folders;
+        for (const auto &entry : std::filesystem::directory_iterator(partial, ignored))
+            if (entry.is_directory()) folders.push_back(entry.path());
+        if (folders.size() == 1u) root = folders.front();
+    }
+    try {
+        (void)textures::HdTexturePack::load(root, disc_id);
+    } catch (const std::exception &bad) {
+        std::filesystem::remove_all(partial, ignored);
+        fail(std::string("the downloaded texture pack is not usable: ") + bad.what());
+    }
+    std::filesystem::remove_all(destination, ignored);
+    std::filesystem::create_directories(destination.parent_path(), ignored);
+    std::filesystem::rename(root, destination, ignored);
+    std::filesystem::remove_all(partial, ignored);
+    if (ignored) fail("cannot install the texture pack in " + path_argument(destination));
+}
+
+PrebuiltPackDownload::PrebuiltPackDownload(PackSource pack, std::string disc_id, std::filesystem::path destination)
+    : pack_(std::move(pack)), disc_id_(std::move(disc_id)), destination_(std::move(destination)) {
+    progress_.total = pack_.bytes;
+    thread_ = std::thread([this] { run(); });
+}
+
+PrebuiltPackDownload::~PrebuiltPackDownload() {
+    cancel();
+    if (thread_.joinable()) thread_.join();
+}
+
+void PrebuiltPackDownload::cancel() {
+    cancelled_ = true;
+    processes_.cancel();
+}
+
+TextureProgress PrebuiltPackDownload::progress() const {
+    std::lock_guard lock(mutex_);
+    return progress_;
+}
+
+void PrebuiltPackDownload::run() {
+    using Step = TextureProgress::Step;
+    std::error_code ignored;
+    auto archive = destination_;
+    archive += ".zip";
+    try {
+        std::string error;
+        if (!download_verified(processes_, pack_.url, pack_.sha256, archive,
+                               [this](std::uint64_t bytes) {
+                                   std::lock_guard lock(mutex_);
+                                   progress_.done = bytes;
+                               },
+                               error))
+            fail(error);
+        {
+            std::lock_guard lock(mutex_);
+            progress_.step = Step::Unpacking;
+        }
+        install_prebuilt_pack(archive, disc_id_, destination_, processes_);
+        std::filesystem::remove(archive, ignored);
+        std::lock_guard lock(mutex_);
+        progress_.step = Step::Done;
+        progress_.done = progress_.total;
+    } catch (const std::exception &failure) {
+        std::filesystem::remove(archive, ignored);
+        std::lock_guard lock(mutex_);
+        progress_.step = cancelled_ ? Step::Cancelled : Step::Failed;
+        progress_.error = failure.what();
+    }
+}
+
 TextureBuild::TextureBuild(PackSource recipe, UpscalerSource upscaler, std::filesystem::path disc, std::string disc_id,
                            std::uint32_t scale, std::filesystem::path destination)
     : recipe_(std::move(recipe)), upscaler_(std::move(upscaler)), disc_(std::move(disc)), disc_id_(std::move(disc_id)),
@@ -408,25 +506,9 @@ void TextureBuild::run() {
             partial += ".partial";
             std::filesystem::remove_all(partial, ignored);
             std::filesystem::create_directories(partial);
-#if defined(_WIN32)
-            const std::vector<std::string> unpack = {path_argument(system_tool("tar.exe")), "-xf", path_argument(archive),
-                                                     "-C", path_argument(partial)};
-#elif defined(__APPLE__)
-            const std::vector<std::string> unpack = {"/usr/bin/tar", "-xf", path_argument(archive), "-C", path_argument(partial)};
-#else
-            std::vector<std::string> unpack;
-            if (const auto unzip = on_path("unzip"))
-                unpack = {path_argument(*unzip), "-q", path_argument(archive), "-d", path_argument(partial)};
-            else if (const auto bsdtar = on_path("bsdtar"))
-                unpack = {path_argument(*bsdtar), "-xf", path_argument(archive), "-C", path_argument(partial)};
-            else if (const auto python = on_path("python3"))
-                unpack = {path_argument(*python), "-m", "zipfile", "-e", path_argument(archive), path_argument(partial)};
-            else
-                fail("unpacking the upscaler needs unzip, bsdtar or python3");
-#endif
-            const auto unpacked = processes_.run(unpack);
-            if (!unpacked.ok() || !std::filesystem::is_regular_file(partial / upscaler_.executable, ignored))
-                fail("cannot unpack the upscaler: " + unpacked.output);
+            if (!unpack_zip(processes_, archive, partial, error) ||
+                !std::filesystem::is_regular_file(partial / upscaler_.executable, ignored))
+                fail("cannot unpack the upscaler: " + error);
             std::filesystem::permissions(partial / upscaler_.executable,
                                          std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec |
                                              std::filesystem::perms::others_exec,

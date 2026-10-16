@@ -6,6 +6,7 @@
 #include <chrono>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 namespace sarusaru::install {
 
@@ -66,6 +67,31 @@ bool download_verified(ProcessGroup &processes, std::string_view url, std::strin
         return false;
     }
     return true;
+}
+
+bool unpack_zip(ProcessGroup &processes, const std::filesystem::path &archive, const std::filesystem::path &directory,
+                std::string &error) {
+#if defined(_WIN32)
+    const std::vector<std::string> unpack = {path_argument(system_tool("tar.exe")), "-xf", path_argument(archive), "-C",
+                                             path_argument(directory)};
+#elif defined(__APPLE__)
+    const std::vector<std::string> unpack = {"/usr/bin/tar", "-xf", path_argument(archive), "-C", path_argument(directory)};
+#else
+    std::vector<std::string> unpack;
+    if (const auto unzip = on_path("unzip"))
+        unpack = {path_argument(*unzip), "-q", path_argument(archive), "-d", path_argument(directory)};
+    else if (const auto bsdtar = on_path("bsdtar"))
+        unpack = {path_argument(*bsdtar), "-xf", path_argument(archive), "-C", path_argument(directory)};
+    else if (const auto python = on_path("python3"))
+        unpack = {path_argument(*python), "-m", "zipfile", "-e", path_argument(archive), path_argument(directory)};
+    if (unpack.empty()) {
+        error = "unpacking needs unzip, bsdtar or python3";
+        return false;
+    }
+#endif
+    const auto unpacked = processes.run(unpack);
+    if (!unpacked.ok()) error = unpacked.output;
+    return unpacked.ok();
 }
 
 } // namespace sarusaru::install

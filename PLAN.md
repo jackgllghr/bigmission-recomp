@@ -86,6 +86,15 @@ is distributed, never game pixels. Notes: `profiles/sarusaru/docs/hd-textures.md
 - [x] Launcher: Textures setting (Original / HD 4× / 4K 8×), recipe and pinned
       Real-ESRGAN download, on-device upscaling with progress and cancellation;
       verified on macOS.
+- [x] Prebuilt HD pack as an alternative (`SARUSARU_HD_PACK_*`): a zip of a
+      finished pack published apart from the port, downloaded, SHA-256 and
+      disc checked, and unpacked by the launcher in place of making HD on the
+      device; `tools/package_hd_pack.py` packages one. Verified on macOS with
+      a `file://` pack.
+- [x] Publish the first prebuilt HD pack in [`sarusaru-hd-textures`](https://github.com/jackgllghr/sarusaru-hd-textures)
+      (103 textures from the boot, title, menus, name entry and the start of
+      stage 1-1, upscaled with 4x-HDCube) and pin it in the build's defaults.
+- [ ] Grow the HD pack from texture dumps of a full play-through.
 - [ ] Publish a first recipe from a full play-through; try the Windows and
       Linux download and unpacking paths.
 - [ ] Off-thread image decoding, CPU cache across eviction, BC7 for 8x.
@@ -118,6 +127,11 @@ chunk).
       title, other 3D menus and cutscenes stay native. The game's own camera frustum widens,
       so its culling matches the view; other stage types are unverified.
 - [x] Window size at startup and fullscreen (Alt+Enter/F11 toggle).
+- [x] Presets: Native (1×, original textures, Japanese, native draw distance,
+      intro logos) and Modern (4× for 1080p, HD textures, English, 8× draw
+      distance, logos skipped), read from those rows (Custom otherwise);
+      Modern chains the English and HD downloads. Modern is the default: new
+      settings files start with its rows, and the first Play offers its downloads.
 - [ ] Verify interpolation in stages, cutscenes and dialogs; higher simulation
       rates remain uncompensated; the presentation cap does not change simulation speed.
 - [x] Expose settings and binding capture in the launcher's in-game screen.

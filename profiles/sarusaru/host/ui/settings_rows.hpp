@@ -16,7 +16,7 @@
 namespace sarusaru::ui {
 
 enum class SettingRow {
-    InternalResolution, Textures, FrameRate, Fov, DrawDistance, CelShading, Fullscreen,
+    Preset, InternalResolution, Textures, FrameRate, Fov, DrawDistance, CelShading, Fullscreen,
     WindowSize,
     DeadZone,
     Language, GameText, Subtitles, ConfirmButton, ControllerButtons, SkipIntroLogos, AutomaticUpdates,
@@ -59,6 +59,30 @@ void step(SettingRow row, shell::Settings &settings, int direction);
 [[nodiscard]] std::optional<std::uint32_t> texture_scale(const shell::Settings &settings);
 // The next of original (0), 4x and 8x in `direction`.
 [[nodiscard]] std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direction);
+
+// The Preset row: Native (the game as the PSP drew it) and Modern set the
+// rows below together; any other mix of them is Custom. Derived from the
+// settings, never stored, so changing one of those rows makes it Custom.
+//
+//              resolution    textures  game text  draw distance  intro logos
+//   Native     1x (480x272)  original  Japanese   native         shown
+//   Modern     4x (1080p)    HD (4x)   English    8x (most)      skipped
+enum class Preset { Native, Modern, Custom };
+// Which of Modern's downloads this build offers (both, until the launcher
+// says otherwise). Modern asks only for those: a build without an HD pack or
+// recipe is Modern with the original textures.
+void set_offered_downloads(bool english, bool hd_textures);
+[[nodiscard]] Preset preset_of(const shell::Settings &settings);
+// The next of Native and Modern in `direction` (Custom is never chosen; it is
+// what is left when the rows are set one by one).
+[[nodiscard]] Preset next_preset(Preset current, int direction);
+// Sets the preset's rows that need nothing downloaded: resolution, draw
+// distance and intro logos, and for Native the original textures and
+// Japanese text too. The launcher turns on Modern's HD textures and English,
+// downloading them first if need be.
+void apply_preset(shell::Settings &settings, Preset preset);
+inline constexpr std::uint32_t kModernResolution = 4u;  // 1920x1088
+inline constexpr float kModernDrawDistance = 8.0f;
 
 // The general rule step() follows, for a sorted list of values.
 [[nodiscard]] double step_value(std::span<const double> values, double current, int direction);

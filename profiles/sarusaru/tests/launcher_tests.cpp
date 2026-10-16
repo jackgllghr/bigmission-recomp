@@ -149,7 +149,9 @@ void rows() {
     step(SettingRow::Fov, settings, 1);
     require(settings.fov_degrees == 30.0f, "FOV after native is not 30");
 
-    require(describe(SettingRow::DrawDistance, settings).value == "Native", "draw distance must start native");
+    require(describe(SettingRow::DrawDistance, settings).value == "8\u00D7", "draw distance must start at 8x (Modern)");
+    settings.draw_distance = 1.0f;
+    require(describe(SettingRow::DrawDistance, settings).value == "Native", "native draw distance not named");
     step(SettingRow::DrawDistance, settings, 1);
     require(settings.draw_distance == 1.5f && describe(SettingRow::DrawDistance, settings).value == "1.5\u00D7",
             "draw distance after native is not 1.5x");
@@ -248,7 +250,8 @@ void rows() {
                 !restart_only(SettingRow::FrameRate) && !restart_only(SettingRow::Fov) &&
                 !restart_only(SettingRow::DrawDistance),
             "rows applied live or at the next start changed");
-    require(describe(SettingRow::SkipIntroLogos, settings).value == "Off", "logo skip must start off");
+    settings.skip_intro_logos = false;
+    require(describe(SettingRow::SkipIntroLogos, settings).value == "Off", "logo skip off not named");
     step(SettingRow::SkipIntroLogos, settings, 1);
     require(settings.skip_intro_logos && describe(SettingRow::SkipIntroLogos, settings).value == "On",
             "logo skip did not turn on");
@@ -259,12 +262,69 @@ void rows() {
     step(SettingRow::Subtitles, settings, 1);
     require(!settings.subtitles && describe(SettingRow::Subtitles, settings).value == "Off", "subtitles did not turn off");
     step(SettingRow::Subtitles, settings, 1);
-    require(seen == 16, "settings rows missing from the tabs");
+    require(seen == 17, "settings rows missing from the tabs");
     const auto graphics = settings_tabs().front().rows;
-    require(settings_tabs().size() == 4u && graphics.size() == 8u && graphics[0] == SettingRow::Fullscreen &&
-                graphics[1] == SettingRow::WindowSize && graphics[5] == SettingRow::DrawDistance &&
-                graphics[6] == SettingRow::CelShading && graphics[7] == SettingRow::Textures,
-            "Graphics rows not in order: full screen and window size first, cel shading and textures last");
+    require(settings_tabs().size() == 4u && graphics.size() == 9u && graphics[0] == SettingRow::Preset &&
+                graphics[1] == SettingRow::Fullscreen && graphics[2] == SettingRow::WindowSize &&
+                graphics[6] == SettingRow::DrawDistance && graphics[7] == SettingRow::CelShading &&
+                graphics[8] == SettingRow::Textures,
+            "Graphics rows not in order: preset, then full screen and window size, cel shading and textures last");
+}
+
+// Native and Modern set their rows together; anything else reads Custom.
+void presets() {
+    using namespace sarusaru::ui;
+    using sarusaru::shell::Settings;
+    Settings settings = sarusaru::shell::default_settings();
+    // The defaults are Modern without its downloads: Modern once a build offers neither.
+    require(preset_of(settings) == Preset::Custom, "the defaults are Modern before its downloads");
+    set_offered_downloads(false, false);
+    require(preset_of(settings) == Preset::Modern, "the defaults are not Modern when nothing is offered to download");
+    set_offered_downloads(true, false);
+    settings.translation_language = "en";
+    require(preset_of(settings) == Preset::Modern, "Modern without an HD offer still asks for HD textures");
+    settings.texture_pack = "/data/textures/4x-0123456789abcdef";
+    require(preset_of(settings) == Preset::Custom, "an HD pack the build does not offer reads as Modern");
+    set_offered_downloads(true, true);
+    settings = sarusaru::shell::default_settings();
+    require(next_preset(Preset::Custom, 1) == Preset::Native && next_preset(Preset::Custom, -1) == Preset::Modern &&
+                next_preset(Preset::Native, 1) == Preset::Modern && next_preset(Preset::Modern, 1) == Preset::Native &&
+                next_preset(Preset::Native, -1) == Preset::Modern,
+            "presets do not cycle between Native and Modern");
+
+    settings.texture_pack = "/data/textures/8x-0123456789abcdef";
+    settings.translation_language = "en";
+    settings.translation_pack = "/data/translations/english.sstp";
+    step(SettingRow::Preset, settings, 1);
+    require(preset_of(settings) == Preset::Native && settings.internal_resolution == 1u && settings.texture_pack.empty() &&
+                settings.translation_language == "ja" && settings.draw_distance == 1.0f && !settings.skip_intro_logos,
+            "Native did not set its rows");
+    require(settings.translation_pack == "/data/translations/english.sstp", "Native forgot the downloaded English pack");
+    require(describe(SettingRow::Preset, settings).value == "Native", "Native not named");
+
+    // Modern's own step sets what needs no download; the launcher adds English and HD.
+    step(SettingRow::Preset, settings, 1);
+    require(settings.internal_resolution == kModernResolution && settings.draw_distance == kModernDrawDistance &&
+                settings.skip_intro_logos && settings.translation_language == "ja" && settings.texture_pack.empty(),
+            "Modern did not set its rows without downloads");
+    require(describe(SettingRow::InternalResolution, settings).value == "4× (1920×1088)", "Modern is not 1080p");
+    require(preset_of(settings) == Preset::Custom, "Modern without English and HD is not Custom");
+    settings.translation_language = "en";
+    settings.texture_pack = "/data/textures/4x-prebuilt-0123456789abcdef";
+    require(preset_of(settings) == Preset::Modern && describe(SettingRow::Preset, settings).value == "Modern",
+            "Modern with the prebuilt HD pack not recognised");
+    settings.texture_pack = "/data/textures/4x-0123456789abcdef";
+    require(preset_of(settings) == Preset::Modern, "Modern with an HD pack made on the device not recognised");
+
+    // Changing any one of its rows makes it Custom.
+    step(SettingRow::DrawDistance, settings, -1);
+    require(preset_of(settings) == Preset::Custom && describe(SettingRow::Preset, settings).value == "Custom",
+            "a changed row did not make the preset Custom");
+    // Rows outside the preset leave it alone.
+    step(SettingRow::DrawDistance, settings, 1);
+    step(SettingRow::Fov, settings, 1);
+    step(SettingRow::FrameRate, settings, 1);
+    require(preset_of(settings) == Preset::Modern, "rows outside the preset changed it");
 }
 
 void bindings() {
@@ -437,6 +497,7 @@ int main() {
     std::filesystem::create_directories(directory);
     texts();
     rows();
+    presets();
     bindings();
     discs(directory);
     std::filesystem::remove_all(directory);

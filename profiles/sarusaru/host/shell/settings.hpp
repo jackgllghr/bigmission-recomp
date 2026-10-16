@@ -59,7 +59,10 @@ struct Settings {
     // Subtitles over the movies, where there are subtitle files for them
     // (movie/subtitles.hpp).
     bool subtitles{true};
-    std::uint32_t internal_resolution{2};
+    // The defaults are the Modern preset's (ui/settings_rows.hpp): 4x, 8x draw
+    // distance and no intro logos; its English and HD textures are offered
+    // on the first Play (modern_downloads_pending).
+    std::uint32_t internal_resolution{4};
     // 0 = original, 1 = banded, 2 = banded with black world and character silhouettes.
     std::uint32_t cel_shading{0};
     // The window's size at startup, in points (it stays resizable), and
@@ -75,7 +78,7 @@ struct Settings {
     // 0 = native; otherwise the gameplay camera's vertical FOV (game/camera_fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
     // 1 = native; otherwise how much farther actors stay drawn (game/draw_distance.hpp), 1-8.
-    float draw_distance{1.0f};
+    float draw_distance{8.0f};
     // An HD texture pack directory (textures/hd_pack.hpp), or empty for the
     // original textures. Relative paths resolve beside the settings file.
     std::filesystem::path texture_pack;
@@ -85,7 +88,11 @@ struct Settings {
     // Which face button confirms in the launcher and the port's screens: the
     // south one (cross) by default, or the east one (circle) as the game does.
     bool confirm_south{true};
-    bool skip_intro_logos{false};
+    bool skip_intro_logos{true};
+    // A new settings file: the launcher's first Play offers the Modern
+    // preset's downloads (English, HD textures), then clears this. Files
+    // from earlier versions, without the key, never offer them.
+    bool modern_downloads_pending{true};
     std::uint32_t state_slot{1};
     bool check_for_updates{true};
     std::int64_t last_update_check{};
