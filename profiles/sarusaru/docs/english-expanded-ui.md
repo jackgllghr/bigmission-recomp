@@ -228,3 +228,10 @@ Xbox 360/One faces share the launcher's palette: black faces with green A,
 red B, blue X and yellow Y letters. Letter coverage is blended into that face
 at the active render scale. Prompt tests check both Xbox types at 1x/4x,
 including the colored letters in the small diagonal pairs.
+
+Host prompt cleanup reconstructs the navy hint bars from unobscured atlas
+ends before drawing replacement buttons. This preserves native and translated
+bar colors, rounded caps and HD coverage without retaining the original PSP
+icons. Button rims and letters composite with straight alpha over those bars
+and overlapping buttons. Pixel regressions cover shortcut and dialog bars at
+1x, 4x and 8x with keyboard, Xbox, Nintendo and PlayStation prompts.
