@@ -19,8 +19,10 @@
 //            with a second KIRK key in CBC mode; the result is XORed with the
 //            data, so encryption and decryption are the same operation.
 //
-// Three modes exist; this game (SDK 3.03, with a key) uses mode 3 (SAVEDATA_PARAMS
-// flag 0x21), which has not yet been checked against a save made by a PSP.
+// Three modes exist; this game (SDK 3.03, with a key) is written in mode 3
+// (SAVEDATA_PARAMS flag 0x21), which has not yet been checked against a save
+// made by a PSP. A mode 5 save of this game from outside the recomp decrypts
+// and verifies.
 #include "save_data/aes128.hpp"
 
 #include <cstdint>
