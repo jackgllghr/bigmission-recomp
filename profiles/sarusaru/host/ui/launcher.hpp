@@ -18,6 +18,7 @@
 #include "install/toolchain.hpp"
 #include "install/update_check.hpp"
 #include "ui/bindings.hpp"
+#include "ui/settings_rows.hpp"
 #include "shell/settings.hpp"
 #include "ui/layer.hpp"
 
@@ -124,6 +125,10 @@ private:
     // Picks the Textures row's next choice: the original textures, a pack
     // already made, or the screen that makes one.
     void choose_textures(int direction);
+    void choose_game_text(int direction);
+    // Pack setup returns to the screen that opened it, including installation.
+    Screen pack_return_screen_{Screen::Settings};
+    void return_from_pack(SettingRow row);
     void capture_overlay();
     bool capture_event(const SDL_Event &event);
 

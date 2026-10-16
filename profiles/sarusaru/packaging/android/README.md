@@ -24,6 +24,12 @@ compiler the APK ships (below).
 Settings and the port's data live in the app's private `files/` directory.
 `stdout` and `stderr` go to the system log under the tag `sarusaru`.
 
+After a release update, Play opens the install screen to rebuild the game
+for the new release. That screen keeps the current texture and game-text
+choices visible and editable before installation. Pack setup returns there
+when completed or dismissed; the saved choices carry over from the previous
+release.
+
 ## Build
 
 Needs a JDK 17 or newer, the Android SDK (platform 36), NDK 29.0.14206865 and

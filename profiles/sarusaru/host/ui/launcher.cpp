@@ -491,6 +491,20 @@ void Launcher::install() {
         ImGui::Dummy(ImVec2(0, 8.0f * u));
         if (action_row(layer_, "install_cancel", tr(Text::InstallCancel), "", width)) builder_->cancel();
     } else {
+        paragraph(layer_, tr(Text::InstallOptions), width, colors::kInkDim);
+        for (const auto row : {SettingRow::Textures, SettingRow::GameText}) {
+            const auto id = row == SettingRow::Textures ? "install_textures" : "install_game_text";
+            const int change = setting_row(layer_, id, describe(row, settings_), width);
+            if (ImGui::IsItemFocused())
+                paragraph(layer_, describe(row, settings_).description, width, colors::kInkDim);
+            if (change != 0) {
+                pack_return_screen_ = Screen::Install;
+                if (row == SettingRow::Textures) choose_textures(change);
+                else choose_game_text(change);
+            }
+        }
+        ImGui::Dummy(ImVec2(0, 8.0f * u));
+        if (!settings_error_.empty()) paragraph(layer_, settings_error_, width, colors::kRed);
         if (!toolchain_) {
             install::ProcessGroup probe;
             toolchain_ = install::check_toolchain(probe);
@@ -542,8 +556,11 @@ void Launcher::install() {
         else
             go(Screen::Home, "play");
     }
-    hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
-                   {Control::Back, tr(builder_ ? Text::HintCancel : Text::HintBack)}});
+    if (builder_)
+        hints(layer_, {{Control::Back, tr(Text::HintCancel)}});
+    else
+        hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Change, tr(Text::HintChange)},
+                       {Control::Back, tr(Text::HintBack)}});
 }
 
 // --- Settings ----------------------------------------------------------------
@@ -571,22 +588,11 @@ void Launcher::settings() {
         const RowView view = describe(rows[i], settings_, in_game());
         const int change = setting_row(layer_, "row" + std::to_string(i), view, row_width);
         if (change != 0 && rows[i] == SettingRow::Textures) {
+            pack_return_screen_ = Screen::Settings;
             choose_textures(change);
-        } else if (change != 0 && rows[i] == SettingRow::GameText && settings_.translation_language != "en" && !pack_ready()) {
-            // English needs its pack: the one downloaded before, or the download screen.
-            const auto source = install::english_pack_source();
-            const auto kept = source ? install::english_pack_path(*source) : std::nullopt;
-            std::error_code missing;
-            if (kept && std::filesystem::is_regular_file(*kept, missing)) {
-                settings_.translation_pack = *kept;
-                settings_.translation_language = "en";
-                save();
-            } else if (in_game()) {
-                settings_error_ = tr(Text::GameTextInLauncher);
-            } else {
-                pack_error_.clear();
-                go(Screen::Pack, "pack_download");
-            }
+        } else if (change != 0 && rows[i] == SettingRow::GameText) {
+            pack_return_screen_ = Screen::Settings;
+            choose_game_text(change);
         } else if (change != 0) {
             const shell::Settings before = settings_;
             step(rows[i], settings_, change);
@@ -636,6 +642,34 @@ std::string url_host(std::string_view url) {
 
 } // namespace
 
+void Launcher::return_from_pack(SettingRow row) {
+    go(pack_return_screen_, pack_return_screen_ == Screen::Install
+                                ? (row == SettingRow::Textures ? "install_textures" : "install_game_text")
+                                : row_id(row));
+}
+
+void Launcher::choose_game_text(int direction) {
+    if (settings_.translation_language != "en" && !pack_ready()) {
+        // English needs its pack: one downloaded before, or the download screen.
+        const auto source = install::english_pack_source();
+        const auto kept = source ? install::english_pack_path(*source) : std::nullopt;
+        std::error_code missing;
+        if (kept && std::filesystem::is_regular_file(*kept, missing)) {
+            settings_.translation_pack = *kept;
+            settings_.translation_language = "en";
+            save();
+        } else if (in_game()) {
+            settings_error_ = tr(Text::GameTextInLauncher);
+        } else {
+            pack_error_.clear();
+            go(Screen::Pack, "pack_download");
+        }
+    } else {
+        step(SettingRow::GameText, settings_, direction);
+        save();
+    }
+}
+
 void Launcher::choose_textures(int direction) {
     const auto scale = next_texture_scale(texture_scale(settings_), direction);
     if (scale == 0u) {
@@ -681,7 +715,7 @@ void Launcher::textures() {
             settings_.texture_pack = texture_build_->destination();
             texture_build_.reset();
             save();
-            go(Screen::Settings, row_id(SettingRow::Textures));
+            return_from_pack(SettingRow::Textures);
             return;
         }
         if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
@@ -752,7 +786,7 @@ void Launcher::textures() {
         if (texture_build_)
             texture_build_->cancel();
         else
-            go(Screen::Settings, row_id(SettingRow::Textures));
+            return_from_pack(SettingRow::Textures);
     }
     hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
                    {Control::Back, tr(texture_build_ ? Text::HintCancel : Text::HintBack)}});
@@ -782,7 +816,7 @@ void Launcher::pack() {
             settings_.translation_pack = pack_download_->destination();
             pack_download_.reset();
             save();
-            go(Screen::Settings, row_id(SettingRow::GameText));
+            return_from_pack(SettingRow::GameText);
             return;
         }
         if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
@@ -831,7 +865,7 @@ void Launcher::pack() {
         if (pack_download_)
             pack_download_->cancel();
         else
-            go(Screen::Settings, row_id(SettingRow::GameText));
+            return_from_pack(SettingRow::GameText);
     }
     if (source)
         hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},

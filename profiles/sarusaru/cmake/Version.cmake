@@ -1,5 +1,4 @@
-# Release identity is deliberately separate from PROJECT_VERSION, which is
-# part of the generated game module's compatibility hash.
+# Release identity also invalidates the installed game module on updates.
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/../VERSION" _sarusaru_default_version LIMIT_COUNT 1)
 set(SARUSARU_RELEASE_VERSION "${_sarusaru_default_version}" CACHE STRING "SaruSaru release version (X.Y.Z)")
 if(NOT SARUSARU_RELEASE_VERSION MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
