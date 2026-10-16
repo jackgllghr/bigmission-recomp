@@ -103,8 +103,25 @@ def label_font(size, *, controls=False):
     return ImageFont.truetype(str(PROFILE / f'tools/fonts/MPLUSRounded1c-{weight}-ASCII.ttf'), size=size)
 
 
+def dialog_hint_background(width, height, origin, *, top, scale):
+    """Continue the original 111px navy bar through a text replacement slot."""
+    from PIL import Image, ImageDraw
+    x, y = origin
+    bar_y = 1 if top else 15
+    mask = Image.new('L', (width * scale, height * scale))
+    ImageDraw.Draw(mask).rounded_rectangle(
+        ((1 - x) * scale, (bar_y - y) * scale,
+         (111 - x) * scale - 1, (bar_y + 8 - y) * scale - 1),
+        radius=3.5 * scale, fill=255)
+    background = Image.new('RGBA', mask.size, (11, 19, 71, 255))
+    ImageDraw.Draw(background).rectangle(
+        (0, (bar_y + 4 - y) * scale, width * scale, height * scale), fill=(2, 18, 103, 255))
+    background.putalpha(mask)
+    return background
+
+
 def render_ui_label(text, size, width, height, alignment='center', *, controls=False,
-                    header=False, top_hint_bar=False, output_scale=1):
+                    header=False, top_hint_bar=False, output_scale=1, hint_origin=None):
     """Render UI styles in logical pixels, retaining detail at output_scale."""
     from PIL import Image, ImageDraw, ImageFont
     if alignment not in ('left', 'center'):
@@ -167,11 +184,11 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
             if old_width <= layer.width - 2 * margin and old_height <= layer.height - 2 * margin:
                 return render_ui_label(text, size - .25, width, height, alignment,
                                        controls=controls, header=header, top_hint_bar=top_hint_bar,
-                                       output_scale=output_scale)
+                                       output_scale=output_scale, hint_origin=hint_origin)
         raise ValueError('Text exceeds pixel budget; shorten it or reduce font_size')
     x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
     y = (layer.height - th) / 2 - bounds[1]
-    if controls:
+    if controls and hint_origin is None:
         if top_hint_bar:
             # Dialog hints sample the middle of a longer top bar. Its rounded
             # ends and controller artwork live outside this replacement slot.
@@ -184,7 +201,15 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
         for char, advance in glyphs:
             draw.text((x + advance + shift, y + shift), char, font=font,
                       fill=color, stroke_width=stroke, stroke_fill=color)
-    return layer.resize((width * output_scale, height * output_scale), Image.Resampling.LANCZOS)
+    lettering = layer.resize((width * output_scale, height * output_scale), Image.Resampling.LANCZOS)
+    if hint_origin is not None:
+        # Resample the transparent lettering first, then composite it onto
+        # the native bar. Glyph fringe pixels must not replace its opacity.
+        background = dialog_hint_background(width, height, hint_origin,
+                                            top=top_hint_bar, scale=output_scale)
+        background.alpha_composite(lettering)
+        return background
+    return lettering
 
 
 def render_labels(catalog, images, require_title=True, *, output_scale=1):
@@ -227,7 +252,8 @@ def render_labels(catalog, images, require_title=True, *, output_scale=1):
                                     header=(asset.startswith('tenso/e_s_title_') or asset in (
                                         'common/e_nabi_a4.tm2', 'common/e_nabi_a2.tm2')),
                                     top_hint_bar=asset == 'e_but_1.lzs' and y // 24 in (0, 1, 6),
-                                    output_scale=output_scale)
+                                    output_scale=output_scale,
+                                    hint_origin=(x + tx, (y + ty) % 24) if asset == 'e_but_1.lzs' else None)
         except ValueError as exc:
             raise ValueError(f'{key}: {exc}') from exc
         image.alpha_composite(layer, ((x + tx) * output_scale, (y + ty) * output_scale))

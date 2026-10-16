@@ -247,8 +247,32 @@ class MenuCatalogTests(unittest.TestCase):
                 top = row in (0, 1, 6)
                 sample_y = y + (1 if top else h - 4)
                 pixel = images['e_but_1.lzs'].getpixel(((x + 4) * scale, sample_y * scale))
-                navy = (11, 19, 71, 255) if top else (0, 12, 100, 255)
+                navy = (2, 18, 103, 255)  # Lower half of the native two-tone bar.
                 self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, navy)), 2)
+
+    def test_cancel_text_keeps_native_navy_bar_opaque(self):
+        from PIL import Image
+        # Both native Cancel layouts: the text region cuts through a top
+        # bar at y=4 and a footer bar at y=100 in the same atlas.
+        labels = [{'id': f'cancel.{row}', 'asset': 'e_but_1.lzs', 'text': 'Cancel',
+                   'font_size': 13, 'rect': [x, row * 24 + 4, width, 20]}
+                  for row, x, width in ((1, 16, 72), (4, 26, 86))]
+        for scale in (1, 4, 8):
+            images = {'e_but_1.lzs': Image.new('RGBA', (128 * scale, 240 * scale))}
+            render_labels({'schema': 1, 'locale': 'en', 'labels': labels}, images,
+                          require_title=False, output_scale=scale)
+            atlas = images['e_but_1.lzs']
+            for y, left, right in ((28, 16, 88), (29, 16, 88), (32, 16, 88),
+                                   (111, 26, 104), (118, 26, 104)):
+                for py in range(y * scale, (y + 1) * scale):
+                    for px in range(left * scale, right * scale):
+                        self.assertEqual(atlas.getpixel((px, py))[3], 255,
+                                         f'Cancel text leaves a hole in the navy bar at {(px, py, scale)}')
+            # Uncovered portions retain the two native navy shades and join
+            # the untouched atlas immediately outside the text rectangles.
+            for x, y, color in ((20, 28, (11, 19, 71, 255)), (20, 32, (2, 18, 103, 255)),
+                                 (28, 111, (11, 19, 71, 255)), (28, 118, (2, 18, 103, 255))):
+                self.assertEqual(atlas.getpixel((x * scale, y * scale)), color)
 
     def test_rejects_missing_labels_overlap_overflow_and_uncovered_glyphs(self):
         variants = []
