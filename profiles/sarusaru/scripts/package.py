@@ -3,6 +3,12 @@
 .tar.gz, an AppImage (--format appimage) or an installed prefix (--format prefix,
 which the Flatpak in packaging/linux uses).
 
+On macOS the app is signed ad hoc, or, with SARUSARU_MACOS_SIGN_IDENTITY set to a
+Developer ID Application identity, with that identity and the hardened runtime;
+SARUSARU_MACOS_NOTARY_PROFILE (a `xcrun notarytool store-credentials` profile)
+then also has Apple notarise it and staples the ticket. SARUSARU_MACOS_KEYCHAIN
+names the keychain holding both, when it is not the default one.
+
 The package holds the launcher, its libraries and resources, and what it needs
 to build the game on the player's machine from their own disc: the code
 generator and the runtime's headers (sdk/). It never holds anything derived
@@ -14,6 +20,7 @@ dumps and HD packs are the game's art, made on the player's device.
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -38,6 +45,7 @@ BUNDLE_ID = "io.github.sarusaru-recomp.launcher"
 # The Linux desktop ID, which is also the Flatpak's.
 APP_ID = "io.github.sarusaru_recomp.SaruSaruRecomp"
 LINUX = PROFILE / "packaging/linux"
+ENTITLEMENTS = PROFILE / "packaging/macos/sarusaru.entitlements"
 
 # appimagetool and the AppImage runtime it puts in front of the image, pinned.
 # The runtime is static (needs no libfuse2 on the player's system).
@@ -82,6 +90,7 @@ RUN = {
     "macos": ("Open SaruSaru Recomp.app. It is not notarised by Apple, so the first time\n"
               "right-click it and choose Open, or run:\n"
               "  xattr -dr com.apple.quarantine \"SaruSaru Recomp.app\""),
+    "macos-notarised": "Open SaruSaru Recomp.app.",
     "linux": "Run ./sarusaru from this folder. Vulkan drivers are needed (Mesa or your GPU vendor's).",
     "windows": "Run sarusaru.exe from this folder.",
 }
@@ -155,11 +164,13 @@ def stage(build, version, host, out_dir):
             target.symlink_to(os.readlink(source))
         else:
             shutil.copy2(source, target, follow_symlinks=True)
+    notarised = False
     if macos:
         bundle(app, version)
+        notarised = notarise(app)
     shutil.copy2(ROOT / "LICENSE", top / "LICENSE.txt")
     shutil.copy2(PROFILE / "THIRD_PARTY.md", top / "THIRD_PARTY.md")
-    family = "macos" if macos else "windows" if windows else "linux"
+    family = ("macos-notarised" if notarised else "macos") if macos else "windows" if windows else "linux"
     readme = PLAYER_README.format(version=version, host=host, run=RUN[family])
     (top / "README.txt").write_text(readme.replace("\n", "\r\n") if windows else readme, encoding="utf-8")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -178,10 +189,7 @@ def bundle_path(relative):
 
 
 def bundle(app, version):
-    """Info.plist and icon for the macOS app, then an ad-hoc signature over the whole bundle.
-
-    The signature is not Apple's (the app is not notarised), but without one
-    macOS calls a downloaded app damaged rather than offering to open it."""
+    """Info.plist and icon for the macOS app, then a signature over the whole bundle (sign)."""
     contents = app / "Contents"
     (contents / "Resources").mkdir(parents=True, exist_ok=True)
     icon = make_icns(contents / "Resources")
@@ -201,9 +209,79 @@ def bundle(app, version):
         info["CFBundleIconFile"] = icon
     with (contents / "Info.plist").open("wb") as out:
         plistlib.dump(info, out)
-    if shutil.which("codesign") is not None:
+    sign(app)
+
+
+MACHO_MAGIC = (b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe",
+               b"\xca\xfe\xba\xbe")
+
+
+def is_macho(path):
+    with path.open("rb") as file:
+        return file.read(4) in MACHO_MAGIC
+
+
+def keychain_args():
+    keychain = os.environ.get("SARUSARU_MACOS_KEYCHAIN")
+    return ["--keychain", keychain] if keychain else []
+
+
+def signing_order(app):
+    """The app's code, innermost first, ending with the bundle itself: each signature
+    seals what is inside it, so nested code must be signed before what contains it."""
+    main = app / "Contents/MacOS/sarusaru"
+    nested = [path for path in app.rglob("*")
+              if path.is_file() and not path.is_symlink() and path != main and is_macho(path)]
+    return sorted(nested, key=lambda path: (-len(path.parts), path.as_posix())) + [app]
+
+
+def sign(app):
+    """Sign the app with SARUSARU_MACOS_SIGN_IDENTITY (a Developer ID, with the hardened
+    runtime and a secure timestamp, as notarisation needs), or else ad hoc.
+
+    An ad-hoc signature is not Apple's, but without one macOS calls a downloaded
+    app damaged rather than offering to open it."""
+    if shutil.which("codesign") is None:
+        return
+    identity = os.environ.get("SARUSARU_MACOS_SIGN_IDENTITY")
+    if not identity:
         subprocess.run(["codesign", "--force", "--deep", "--sign", "-", "--timestamp=none", str(app)], check=True)
-        subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
+    else:
+        command = ["codesign", "--force", "--sign", identity, "--timestamp", "--options", "runtime", *keychain_args()]
+        for path in signing_order(app):
+            # The bundle's signature covers its main executable, which takes the entitlements.
+            extra = ["--entitlements", str(ENTITLEMENTS)] if path == app else []
+            subprocess.run([*command, *extra, str(path)], check=True)
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
+
+
+def notarise(app):
+    """Have Apple notarise the signed app and staple its ticket, if SARUSARU_MACOS_NOTARY_PROFILE
+    is set. Whether it was."""
+    profile = os.environ.get("SARUSARU_MACOS_NOTARY_PROFILE")
+    if not profile:
+        return False
+    if not os.environ.get("SARUSARU_MACOS_SIGN_IDENTITY"):
+        raise ValueError("SARUSARU_MACOS_NOTARY_PROFILE needs SARUSARU_MACOS_SIGN_IDENTITY: only a Developer ID app is notarised")
+    credentials = ["--keychain-profile", profile, *keychain_args()]
+    with tempfile.TemporaryDirectory(prefix="sarusaru-notarise-") as work:
+        upload = Path(work) / f"{app.stem}.zip"
+        subprocess.run(["ditto", "-c", "-k", "--keepParent", str(app), str(upload)], check=True)
+        submitted = subprocess.run(["xcrun", "notarytool", "submit", str(upload), *credentials,
+                                    "--wait", "--output-format", "json"], capture_output=True, text=True)
+    try:
+        result = json.loads(submitted.stdout)
+    except json.JSONDecodeError:
+        raise ValueError(f"notarytool submit failed: {submitted.stderr.strip() or submitted.stdout.strip()}")
+    if result.get("status") != "Accepted":
+        if result.get("id"):
+            # Apple's log says which file was rejected and why.
+            subprocess.run(["xcrun", "notarytool", "log", result["id"], *credentials])
+        raise ValueError(f"notarisation finished as {result.get('status')!r}, not 'Accepted'")
+    subprocess.run(["xcrun", "stapler", "staple", str(app)], check=True)
+    subprocess.run(["xcrun", "stapler", "validate", str(app)], check=True)
+    subprocess.run(["spctl", "--assess", "--type", "execute", "--verbose", str(app)], check=True)
+    return True
 
 
 def ico_images(path):

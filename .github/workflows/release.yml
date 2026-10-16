@@ -1,6 +1,7 @@
 # Builds the launcher for every desktop host, tests it, packages it
 # (profiles/sarusaru/scripts/package.py; on Linux also as an AppImage, and as a
-# Flatpak with profiles/sarusaru/packaging/linux/build_flatpak.sh) and, for a
+# Flatpak with profiles/sarusaru/packaging/linux/build_flatpak.sh; on macOS
+# signed with a Developer ID and notarised) and, for a
 # version tag, attaches the packages to a draft GitHub release to review and
 # publish by hand.
 #
@@ -100,6 +101,46 @@ jobs:
       - name: Test
         run: ctest --test-dir out/${{ matrix.host }} --output-on-failure
 
+      # A Developer ID certificate and an App Store Connect API key, in a
+      # keychain of this run's own (profiles/sarusaru/docs/auto-updates.md).
+      - name: Prepare macOS signing
+        if: runner.os == 'macOS'
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        shell: bash
+        run: |
+          for name in CERTIFICATE_BASE64 CERTIFICATE_PASSWORD SIGN_IDENTITY NOTARY_KEY_BASE64 NOTARY_KEY_ID NOTARY_ISSUER_ID; do
+            test -n "${!name}" || { echo "Configure the six macOS signing secrets documented in profiles/sarusaru/docs/auto-updates.md (MACOS_$name is missing)"; exit 1; }
+          done
+          umask 077
+          keychain="$RUNNER_TEMP/sarusaru-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/sarusaru-signing.p12"
+          printf '%s' "$NOTARY_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/sarusaru-notary.p8"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/sarusaru-signing.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          # codesign finds the identity only in a keychain on the search list.
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$keychain" | grep -F "$SIGN_IDENTITY" >/dev/null || {
+            echo "The certificate holds no valid codesigning identity named MACOS_SIGN_IDENTITY"; exit 1;
+          }
+          xcrun notarytool store-credentials sarusaru-notary --key "$RUNNER_TEMP/sarusaru-notary.p8" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --keychain "$keychain"
+          rm -f "$RUNNER_TEMP/sarusaru-signing.p12" "$RUNNER_TEMP/sarusaru-notary.p8"
+          {
+            echo "SARUSARU_MACOS_SIGN_IDENTITY=$SIGN_IDENTITY"
+            echo "SARUSARU_MACOS_KEYCHAIN=$keychain"
+            echo "SARUSARU_MACOS_NOTARY_PROFILE=sarusaru-notary"
+          } >> "$GITHUB_ENV"
+
       - name: Package
         shell: bash
         run: |
@@ -110,6 +151,13 @@ jobs:
             python3 profiles/sarusaru/scripts/package.py --build out/${{ matrix.host }} \
               --host ${{ matrix.host }} --version "$version" --out out/dist --format appimage
           fi
+
+      - name: Remove macOS signing material
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/sarusaru-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/sarusaru-signing.p12" "$RUNNER_TEMP/sarusaru-notary.p8"
 
       - uses: actions/upload-artifact@v4
         with:

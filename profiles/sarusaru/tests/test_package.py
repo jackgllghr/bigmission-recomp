@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -80,6 +81,33 @@ class PlayerFilesTests(unittest.TestCase):
         (self.bin / "sdk/include/game_abi.hpp").unlink()
         with self.assertRaisesRegex(ValueError, "sdk"):
             self.packaged()
+
+
+class MacSigningTests(unittest.TestCase):
+    def test_signs_nested_code_innermost_first_and_the_bundle_last(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / "SaruSaru Recomp.app"
+            macho = b"\xcf\xfa\xed\xfe" + b"\0" * 28
+            for name, data in (("Contents/MacOS/sarusaru", macho), ("Contents/MacOS/psp_recomp", macho),
+                               ("Contents/Frameworks/libSDL3.0.dylib", macho),
+                               ("Contents/Resources/sdk/include/game_abi.hpp", b"#pragma once\n"),
+                               ("Contents/Info.plist", b"<plist/>")):
+                path = app / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            (app / "Contents/Frameworks/libSDL3.dylib").symlink_to("libSDL3.0.dylib")
+            order = [path.relative_to(app.parent).as_posix() for path in package.signing_order(app)]
+            self.assertEqual(order, ["SaruSaru Recomp.app/Contents/Frameworks/libSDL3.0.dylib",
+                                     "SaruSaru Recomp.app/Contents/MacOS/psp_recomp", "SaruSaru Recomp.app"])
+
+    def test_notarising_needs_a_developer_id(self):
+        with unittest.mock.patch.dict(package.os.environ, {"SARUSARU_MACOS_NOTARY_PROFILE": "notary"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "SARUSARU_MACOS_SIGN_IDENTITY"):
+                package.notarise(Path("SaruSaru Recomp.app"))
+
+    def test_does_not_notarise_without_a_profile(self):
+        with unittest.mock.patch.dict(package.os.environ, {}, clear=True):
+            self.assertFalse(package.notarise(Path("SaruSaru Recomp.app")))
 
 
 @unittest.skipIf(sys.platform == "win32", "the Linux install layout is built on Linux")

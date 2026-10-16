@@ -75,6 +75,40 @@ installation signed with a different debug key. Export saves/settings before
 uninstalling such a build; reinstalling loses Android private app data. Test this
 migration on a device before distributing the first production release.
 
+## Configure macOS signing before the first release
+
+Release CI signs the macOS app with a Developer ID Application certificate and
+the hardened runtime, has Apple notarise it, and staples the ticket, so players
+open it without Gatekeeper's warning. The launcher's only entitlement is
+`com.apple.security.cs.disable-library-validation`
+([packaging/macos/sarusaru.entitlements](../packaging/macos/sarusaru.entitlements)):
+it loads the game module compiled on the player's Mac, which our Team ID did
+not sign. See [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
+
+Export the Developer ID Application certificate with its private key from
+Keychain Access as a .p12, and create an App Store Connect API key (Users and
+Access → Integrations, *Developer* access) for notarisation. Configure these
+GitHub Actions repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `MACOS_CERTIFICATE_BASE64` | Base64 encoding of the .p12 (`base64 -i cert.p12`) |
+| `MACOS_CERTIFICATE_PASSWORD` | The .p12's export password |
+| `MACOS_SIGN_IDENTITY` | The identity's name, e.g. `Developer ID Application: Name (TEAMID)` |
+| `MACOS_NOTARY_KEY_BASE64` | Base64 encoding of the API key's `AuthKey_<id>.p8` |
+| `MACOS_NOTARY_KEY_ID` | The API key's ID |
+| `MACOS_NOTARY_ISSUER_ID` | The API keys' issuer ID |
+
+The job imports the certificate into a temporary keychain of its own, stores
+the notary credentials there, and deletes it afterward. Missing credentials
+fail the release job, as for Android; an unsigned or un-notarised macOS app is
+never substituted. The weekly Build workflow's macOS package stays ad-hoc signed.
+
+Local release packages use the same signing through environment variables:
+`SARUSARU_MACOS_SIGN_IDENTITY`, `SARUSARU_MACOS_NOTARY_PROFILE` (a profile made
+with `xcrun notarytool store-credentials`) and, if those are not in the default
+keychain, `SARUSARU_MACOS_KEYCHAIN`. Without them, `package.py` signs ad hoc.
+
 ## Obtainium onboarding
 
 Install the signed release APK, then use **Settings → Updates → Add to Obtainium**,
@@ -86,7 +120,8 @@ assets. See [Obtainium deep links](https://wiki.obtainium.imranr.dev/deep_links/
 
 ## Publishing a stable update
 
-1. Configure signing secrets and verify a release build on an Android device.
+1. Configure the Android and macOS signing secrets and verify a release build on an
+   Android device and a Mac.
 2. Choose a new `X.Y.Z`; update `profiles/sarusaru/VERSION` for development builds.
 3. Push tag `vX.Y.Z`. Release CI builds/tests the desktop packages and signed APK.
    The Android compiler is built from the existing pinned sources on a cold cache;

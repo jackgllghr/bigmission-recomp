@@ -95,8 +95,8 @@ archive signatures. [WinSparkle publishing](https://winsparkle.org/guides/publis
 Sparkle's programmatic controller fits a native launcher through an Objective-C++
 bridge. Configure an HTTPS appcast and `SUPublicEDKey`, sign the update archive
 with Sparkle's EdDSA key, and ship its correctly signed helpers. Developer ID
-signing/notarization is recommended by Sparkle; this is additional work beyond
-the current ad-hoc signature. Set monotonically increasing bundle/build versions.
+signing/notarization is recommended by Sparkle; release CI now does both
+(auto-updates.md). Set monotonically increasing bundle/build versions.
 [Sparkle documentation](https://sparkle-project.org/documentation/)
 
 The launcher loads a locally compiled `sarusaru_game.dylib`. Apple's hardened
