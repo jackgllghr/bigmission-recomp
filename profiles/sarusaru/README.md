@@ -269,8 +269,8 @@ dumps and the maintainer's disc. `--texture-pack DIR` (or `none`) overrides
 the pack for one run. See [`docs/hd-textures.md`](docs/hd-textures.md).
 
 A build can instead offer a **prebuilt HD pack** for the menus, icons,
-backgrounds and game textures, published apart from the port in its own
-repository (`SARUSARU_HD_PACK_URL/SHA256/SIZE`, empty by default). HD (4×)
+backgrounds and game textures, published apart from the port in
+[`sarusaru-hd-textures`](https://github.com/jackgllghr/sarusaru-hd-textures) (`SARUSARU_HD_PACK_URL/SHA256/SIZE`, empty by default). HD (4×)
 then downloads that zip once, checks its SHA-256 and that its `pack.ini`
 names the player's disc, and unpacks it to
 `<user data>/textures/4x-prebuilt-<hash>/`; 4K (8×) is still made on the
@@ -278,7 +278,7 @@ device. `tools/package_hd_pack.py PACK_DIR -o pack.zip` makes the zip and
 prints the three values:
 
 ```sh
-cmake -S . -B out/macos-arm64 -DSARUSARU_HD_PACK_URL=https://github.com/<owner>/<repo>/releases/download/<tag>/sarusaru-hd.zip \
+cmake -S . -B out/macos-arm64 -DSARUSARU_HD_PACK_URL=https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/<tag>/sarusaru-hd-4x.zip \
   -DSARUSARU_HD_PACK_SHA256=<sha256> -DSARUSARU_HD_PACK_SIZE=<bytes>
 ```
 

@@ -92,7 +92,7 @@ is distributed, never game pixels. Notes: `profiles/sarusaru/docs/hd-textures.md
       device; `tools/package_hd_pack.py` packages one. Verified on macOS with
       a `file://` pack.
 - [ ] Publish the first prebuilt HD pack (menus, icons, backgrounds, game
-      textures) in its own repository and configure release builds with it.
+      textures) in [`sarusaru-hd-textures`](https://github.com/jackgllghr/sarusaru-hd-textures) and configure release builds with it.
 - [ ] Publish a first recipe from a full play-through; try the Windows and
       Linux download and unpacking paths.
 - [ ] Off-thread image decoding, CPU cache across eviction, BC7 for 8x.
