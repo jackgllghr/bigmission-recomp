@@ -28,10 +28,17 @@ public:
     // Unmatched images retain their Japanese pixels. Only the logical source
     // rectangle is hashed: PSP power-of-two extents can contain unrelated bytes.
     bool apply(const gpu::TextureState &texture, std::vector<std::uint32_t> &pixels) const;
+    // HD art for the untranslated texture (an HD pack image): its logical
+    // rectangle, width x height texels, at `scale` times that size.
+    struct BaseArt {
+        std::span<const std::uint32_t> texels;
+        std::uint32_t width{}, height{}, scale{};
+    };
     // Returns the output pixel scale (zero on no match). Only authored regions
-    // gain HD lettering; source pixels and guest UV/layout remain unchanged.
+    // gain HD lettering; guest UV/layout remain unchanged. Outside the regions
+    // the source pixels are enlarged, or sampled from `base` when given.
     std::uint32_t apply_scaled(const gpu::TextureState &texture, std::vector<std::uint32_t> &pixels,
-                               std::uint32_t requested_scale) const;
+                               std::uint32_t requested_scale, const BaseArt *base = nullptr) const;
     // Validates every read-only string slot before modifying any guest data.
     // Called once after executable verification/relocation and before execution.
     void apply_strings(psprecomp::GuestMemory &memory, const psprecomp::Elf32Image &elf,

@@ -539,9 +539,13 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         if original.width > 8192 or original.height > 8192:
             raise ValueError('Oversized logo')
         original.load()
-        logo = ImageOps.contain(original.convert('RGBA'), ASSETS['i_g_titl_l.lzs'][1], Image.Resampling.LANCZOS)
-    canvas = images['i_g_titl_l.lzs']
-    canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
+        source_logo = original.convert('RGBA')
+
+    def place_logo(canvas):
+        logo = ImageOps.contain(source_logo, canvas.size, Image.Resampling.LANCZOS)
+        canvas.alpha_composite(logo, ((canvas.width - logo.width) // 2, (canvas.height - logo.height) // 2))
+
+    place_logo(images['i_g_titl_l.lzs'])
     regions = render_labels(catalog, images)
     regions.update(render_numeric_atlases(images))
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
@@ -625,15 +629,19 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     result += dialogue_bytes or struct.pack('<H', 0)
     # Keep base-resolution pixels for native rendering and software consumers.
     # An optional high-resolution layer is rasterized from lettering, never
-    # enlarged from that base bitmap. The supplied title logo stays on its path.
-    hd_assets = [asset for asset in selected if asset != 'i_g_titl_l.lzs']
+    # enlarged from that base bitmap; the title logo's is resampled from the
+    # supplied logo, which is drawn at least 8x (1152 pixels) tall.
+    hd_assets = list(selected)
     result += struct.pack('<H', len(hd_assets))
     for asset in hd_assets:
         key, (width, height), _ = ASSETS[asset]
         hd = Image.new('RGBA', (width * 8, height * 8))
-        labels = dict(catalog, labels=[label for label in catalog['labels'] if label['asset'] == asset])
-        render_labels(labels, {asset: hd}, require_title=False, output_scale=8)
-        render_numeric_atlases({asset: hd}, output_scale=8)
+        if asset == 'i_g_titl_l.lzs':
+            place_logo(hd)
+        else:
+            labels = dict(catalog, labels=[label for label in catalog['labels'] if label['asset'] == asset])
+            render_labels(labels, {asset: hd}, require_title=False, output_scale=8)
+            render_numeric_atlases({asset: hd}, output_scale=8)
         pixel_runs = encode_pixel_runs(hd.tobytes())
         result += name(key) + struct.pack('<HI', 8, len(pixel_runs)) + pixel_runs
     result += subtitle_bytes

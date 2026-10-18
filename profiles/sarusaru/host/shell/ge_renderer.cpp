@@ -502,34 +502,38 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
         key = source_key ^ prompt_revision;
     }
     std::uint32_t width = texture.width, height = texture.height;
+    // Dumps and HD art identify the texture as the game drew it, before any
+    // translation, so a translated menu's art comes from the original's HD
+    // image and the translation letters its authored regions over it.
+    gpu::TextureIdentity identity;
+    std::optional<std::vector<std::uint32_t>> hd;
+    if (hd_pack_ != nullptr || texture_dump_ != nullptr) {
+        identity = gpu::identify_texture(texture, texels);
+        if (texture_dump_ != nullptr) texture_dump_->record(texture, identity, texels);
+        if (hd_pack_ != nullptr) hd = hd_pack_->find(identity);
+    }
+    const translation::TexturePack::BaseArt base{hd ? std::span<const std::uint32_t>(*hd) : std::span<const std::uint32_t>(),
+                                                  identity.width, identity.height, hd ? hd_pack_->scale() : 0u};
     const auto translation_scale = translation_pack_ != nullptr
-        ? translation_pack_->apply_scaled(texture, texels, scale_) : 0u;
+        ? translation_pack_->apply_scaled(texture, texels, scale_, hd ? &base : nullptr) : 0u;
     if (translation_scale) {
         width *= translation_scale;
         height *= translation_scale;
-    }
-    // Translation layers own their authored regions. Generic HD art must not
-    // replace their lettering, and dumps retain native texture dimensions.
-    if (!translation_scale && (hd_pack_ != nullptr || texture_dump_ != nullptr)) {
-        const auto identity = gpu::identify_texture(texture, texels);
-        if (texture_dump_ != nullptr) texture_dump_->record(texture, identity, texels);
-        if (hd_pack_ != nullptr)
-            if (auto hd = hd_pack_->find(identity)) {
-                // The UVs are normalized, so the larger image samples in place
-                // of the original. Columns past the logical width (a row
-                // stride narrower than the GE extent) keep the original texels.
-                const std::uint32_t scale = hd_pack_->scale();
-                width = texture.width * scale;
-                height = texture.height * scale;
-                const std::uint32_t hd_width = identity.width * scale;
-                std::vector<std::uint32_t> scaled(static_cast<std::size_t>(width) * height);
-                for (std::uint32_t y = 0; y < height; ++y)
-                    for (std::uint32_t x = 0; x < width; ++x)
-                        scaled[static_cast<std::size_t>(y) * width + x] =
-                            x < hd_width ? (*hd)[static_cast<std::size_t>(y) * hd_width + x]
-                                         : texels[static_cast<std::size_t>(y / scale) * texture.width + x / scale];
-                texels = std::move(scaled);
-            }
+    } else if (hd) {
+        // The UVs are normalized, so the larger image samples in place
+        // of the original. Columns past the logical width (a row
+        // stride narrower than the GE extent) keep the original texels.
+        const std::uint32_t scale = hd_pack_->scale();
+        width = texture.width * scale;
+        height = texture.height * scale;
+        const std::uint32_t hd_width = identity.width * scale;
+        std::vector<std::uint32_t> scaled(static_cast<std::size_t>(width) * height);
+        for (std::uint32_t y = 0; y < height; ++y)
+            for (std::uint32_t x = 0; x < width; ++x)
+                scaled[static_cast<std::size_t>(y) * width + x] =
+                    x < hd_width ? (*hd)[static_cast<std::size_t>(y) * hd_width + x]
+                                 : texels[static_cast<std::size_t>(y / scale) * texture.width + x / scale];
+        texels = std::move(scaled);
     }
     if (prompt_atlas && prompt_atlas != 4) {
         // Host glyphs need their own resolution even without a translation or

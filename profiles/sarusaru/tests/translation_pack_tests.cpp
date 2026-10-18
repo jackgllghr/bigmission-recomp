@@ -154,6 +154,23 @@ int main() {
                         "HD text lost subpixel detail or changed icons/padding");
             }
     }
+    // HD art for the untranslated texture replaces the enlarged source pixels
+    // outside the authored regions; the lettering still wins inside them.
+    std::vector<std::uint32_t> art(4u * 2u * 4u * 4u);
+    for (std::size_t i = 0; i < art.size(); ++i) art[i] = 0xaa000000u | static_cast<std::uint32_t>(i);
+    const sarusaru::translation::TexturePack::BaseArt base{art, 4, 2, 4};
+    for (const unsigned requested : {2u, 4u, 8u}) {
+        actual = native;
+        const auto scale = hd_pack.apply_scaled(texture, actual, requested, &base);
+        require(scale == requested, "HD art changed the lettering scale");
+        for (unsigned y = 0; y < texture.height * scale; ++y)
+            for (unsigned x = 0; x < texture.width * scale; ++x) {
+                const bool replaced = y < scale && x >= scale && x < 2 * scale;
+                const auto expected = replaced ? (x < scale + scale / 2 ? 0xff0000ffu : 0xff00ff00u)
+                                               : art[(y * 4 / scale) * 16 + x * 4 / scale];
+                require(actual[y * texture.width * scale + x] == expected, "HD art missing around the lettering");
+            }
+    }
     actual = native; actual[0] ^= 1; const auto unmatched_hd = actual;
     require(hd_pack.apply_scaled(texture, actual, 8) == 0 && actual == unmatched_hd,
             "HD replacement skipped source verification");
