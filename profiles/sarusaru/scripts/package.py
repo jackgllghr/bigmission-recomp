@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -251,12 +252,36 @@ def copy_file(source, target):
         shutil.copy2(source, target, follow_symlinks=True)
 
 
-def install_linux(build, prefix):
+def release_time():
+    """When the release was made, for AppStream: SOURCE_DATE_EPOCH (which build_flatpak.sh
+    sets, as the Flatpak's source has no git), else the commit's time, else now."""
+    if os.environ.get("SOURCE_DATE_EPOCH", "").isdigit():
+        return int(os.environ["SOURCE_DATE_EPOCH"])
+    try:
+        return int(subprocess.run(["git", "log", "-1", "--format=%ct"], cwd=ROOT, check=True,
+                                  capture_output=True, text=True).stdout.strip())
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        return int(time.time())
+
+
+def metainfo(version):
+    """The AppStream metadata with this release in it. Software centres and
+    `flatpak install` read the version from it; without one, every bundle looks
+    like the version already installed."""
+    text = (LINUX / f"{APP_ID}.metainfo.xml").read_text(encoding="utf-8")
+    date = time.strftime("%Y-%m-%d", time.gmtime(release_time()))
+    releases = f'  <releases>\n    <release version="{version.removeprefix("v")}" date="{date}"/>\n  </releases>\n'
+    if "<releases>" in text or text.count("</component>") != 1:
+        raise ValueError("the metainfo template must have one component and no releases of its own")
+    return text.replace("</component>", releases + "</component>")
+
+
+def install_linux(build, prefix, version):
     """The launcher installed under a Linux prefix (/app in the Flatpak, usr/ in the AppImage).
 
     Its files stay together in lib/sarusaru/, where platform/paths.cpp looks for
     them beside the executable, with bin/sarusaru linking to it; the desktop
-    entry, icons, AppStream metadata and licences go under share/."""
+    entry, icons, AppStream metadata (naming this version) and licences go under share/."""
     home = prefix / "lib/sarusaru"
     for source, relative in player_files(build / "bin", windows=False):
         copy_file(source, home / relative)
@@ -267,7 +292,8 @@ def install_linux(build, prefix):
     launcher.symlink_to("../lib/sarusaru/sarusaru")
     share = prefix / "share"
     copy_file(LINUX / f"{APP_ID}.desktop", share / "applications" / f"{APP_ID}.desktop")
-    copy_file(LINUX / f"{APP_ID}.metainfo.xml", share / "metainfo" / f"{APP_ID}.metainfo.xml")
+    (share / "metainfo").mkdir(parents=True, exist_ok=True)
+    (share / "metainfo" / f"{APP_ID}.metainfo.xml").write_text(metainfo(version), encoding="utf-8")
     for pixels, png in sorted(ico_images(PROFILE / "resources/sarusaru.ico").items()):
         icon = share / f"icons/hicolor/{pixels}x{pixels}/apps/{APP_ID}.png"
         icon.parent.mkdir(parents=True, exist_ok=True)
@@ -303,9 +329,12 @@ def make_appimage(build, version, host, out_dir):
     path = out_dir / f"{NAME}-{version}-{host}.AppImage"
     with tempfile.TemporaryDirectory(prefix="sarusaru-appimage-") as work:
         appdir = Path(work) / "AppDir"
-        install_linux(build, appdir / "usr")
+        install_linux(build, appdir / "usr", version)
         (appdir / "AppRun").symlink_to("usr/bin/sarusaru")
-        shutil.copy2(LINUX / f"{APP_ID}.desktop", appdir / f"{APP_ID}.desktop")
+        # AppImage managers (AppImageLauncher, Gear Lever) read the version from the desktop entry.
+        desktop = (LINUX / f"{APP_ID}.desktop").read_text(encoding="utf-8")
+        (appdir / f"{APP_ID}.desktop").write_text(
+            desktop.rstrip("\n") + f"\nX-AppImage-Version={version.removeprefix('v')}\n", encoding="utf-8")
         (appdir / f"{APP_ID}.png").symlink_to(f"usr/share/icons/hicolor/256x256/apps/{APP_ID}.png")
         (appdir / ".DirIcon").symlink_to(f"{APP_ID}.png")
         # appimagetool is an AppImage itself; extracting it needs no FUSE (containers, CI).
@@ -363,7 +392,7 @@ def main():
         if args.format == "prefix":
             if args.prefix is None:
                 raise ValueError("--format prefix needs --prefix")
-            install_linux(args.build.resolve(), args.prefix)
+            install_linux(args.build.resolve(), args.prefix, version)
             path = args.prefix
         elif args.format == "appimage":
             path = make_appimage(args.build.resolve(), version, host, args.out.resolve())
