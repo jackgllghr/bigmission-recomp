@@ -461,6 +461,69 @@ void patches() {
         expect(near(calls[1].vertices.front().position[0], 7), "patch consumes its control points");
     }
 }
+// The glider canopy uses seven interleaved shapes (VTYPE 0x1801bf).
+// Exercise the display-list path, including weights changing between draws.
+void morph_draws() {
+    psprecomp::GuestMemory memory;
+    constexpr std::uint32_t type = 0x1801bfu, target_stride = 28u, stride = target_stride * 7u;
+    for (unsigned vertex = 0; vertex < 2; ++vertex) {
+        for (unsigned target = 0; target < 7; ++target) {
+            const auto at = vertices + vertex * stride + target * target_stride;
+            floats(memory, at, float(target), float(target * 2), 0);
+            memory.store32(at + 8, 0xff000000u | (target * 32u));
+            memory.store8(at + 12, target * 16u);
+            memory.store8(at + 13, 0);
+            memory.store8(at + 14, 0);
+            floats(memory, at + 16, float(target * 10 + vertex), 2, 3);
+        }
+    }
+    GeState ge;
+    ge.set_raw_vertices(true); // Multi-target draws must still use the CPU decoder.
+    std::vector<DrawCall> draws;
+    ge.set_draw_sink([&](const DrawCall &draw) { draws.push_back(draw); });
+    auto words = setup(type);
+    words.push_back(command(0x2c, f24(0)));
+    words.push_back(command(0x2d, f24(1)));
+    words.push_back(command(4, (3u << 16) | 1));
+    // VADDR advances by all seven targets, not by one target's size.
+    words.push_back(command(0x2d, f24(0.25f)));
+    words.push_back(command(0x32, f24(0.75f)));
+    words.push_back(command(4, (3u << 16) | 1));
+    execute(ge, memory, words);
+    expect(draws.size() == 2 && draws[0].vertices.size() == 1 && draws[1].vertices.size() == 1,
+        "morphed display lists submit both draws");
+    if (draws.size() != 2 || draws[0].vertices.empty() || draws[1].vertices.empty()) return;
+    expect(draws[0].raw_vertices == nullptr && near(draws[0].vertices[0].position[0], 10),
+        "glider mesh selects the commanded shape instead of the folded first target");
+    const auto &v = draws[1].vertices[0];
+    expect(near(v.position[0], 48.5f) && near(v.position[1], 2) && near(v.position[3], 1),
+        "morph blends shapes and advances the complete interleaved vertex");
+    expect(near(v.texcoord[0], 4.75f) && near(v.texcoord[1], 9.5f) && near(v.normal[0], 0.59375f),
+        "morph blends UVs and normalized integer normals");
+    expect(v.color == 0xff000098u, "morph blends expanded color channels");
+    expect(ge.unhandled_command_count() == 0, "morph registers are supported GE commands");
+    // A single-target mesh ignores stale morph registers.
+    execute(ge, memory, {command(0x12, 3u << 7), command(1, (vertices + 16) & 0xffffff),
+        command(4, 1)});
+    expect(near(draws.back().vertices[0].position[0], 0), "single-target draw ignores morph weights");
+    constexpr std::uint32_t skinned_type = (1u << 18) | (3u << 9) | (1u << 14) | (3u << 7);
+    // Each target has two float bone weights followed by a float XYZ.
+    memory.store32(vertices, std::bit_cast<std::uint32_t>(1.0f));
+    memory.store32(vertices + 4, 0);
+    floats(memory, vertices + 8, 2, 0, 0);
+    memory.store32(vertices + 20, 0);
+    memory.store32(vertices + 24, std::bit_cast<std::uint32_t>(1.0f));
+    floats(memory, vertices + 28, 6, 0, 0);
+    std::array<float, 96> bones{};
+    bones[0] = bones[4] = bones[8] = 1;
+    bones[12] = bones[16] = bones[20] = 2;
+    std::array<float, 8> weights{0.5f, 0.5f};
+    std::vector<Vertex> decoded;
+    decode_vertices(memory, vertices, skinned_type, 1, decoded, bones.data(), weights.data());
+    expect(near(decoded[0].position[0], 6), "morph blends positions and bone weights before skinning");
+
+}
+
 int main() {
     const bool checked = std::getenv("SARUSARU_CHECK_DECODE") != nullptr;
     std::ostringstream diagnostics;
@@ -468,6 +531,7 @@ int main() {
     control_flow();
     bounded_list_and_offset_contracts();
     vertex_formats();
+    morph_draws();
     mirrored_vram_vertices_and_indices();
     draws();
     registers();

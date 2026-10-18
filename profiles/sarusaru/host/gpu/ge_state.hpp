@@ -384,10 +384,12 @@ void note_vram_copy(std::uint32_t destination, std::uint32_t source, std::uint32
 bool find_vram_copy(std::uint32_t address, std::uint32_t &source, std::uint32_t &destination);
 
 // Decodes `count` vertices of the given vertex type starting at `address`.
-// Returns the number of bytes each vertex occupies.
+// Returns the number of bytes each vertex occupies, including every morph target.
+// `morph_weights` supplies eight GE weights for multi-target transformed meshes;
+// without it the first target is decoded. Morphing precedes bone skinning.
 // `bone_matrices`, when given, points at 8 consecutive 3x4 matrices (96 floats)
 // and skinned vertices are blended into their bones' space by their weights.
 std::uint32_t decode_vertices(const GuestMemory &memory, std::uint32_t address, std::uint32_t vertex_type,
-    std::uint32_t count, std::vector<Vertex> &out, const float *bone_matrices = nullptr);
+    std::uint32_t count, std::vector<Vertex> &out, const float *bone_matrices = nullptr, const float *morph_weights = nullptr);
 
 } // namespace sarusaru::gpu
