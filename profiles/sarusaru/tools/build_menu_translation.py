@@ -106,12 +106,12 @@ def encode_pixel_runs(rgba):
 def label_font(size, *, controls=False):
     """The bundled rounded face keeps offline pack builds reproducible."""
     from PIL import ImageFont
-    weight = 'Bold' if controls else 'ExtraBold'
+    weight = 'Bold'
     return ImageFont.truetype(str(PROFILE / f'tools/fonts/MPLUSRounded1c-{weight}-ASCII.ttf'), size=size)
 
 
 def dialog_hint_background(width, height, origin, *, top, scale):
-    """Continue the original 111px navy bar through a text replacement slot."""
+    """Draw the same translucent, rounded 111px bar for either hint layout."""
     from PIL import Image, ImageDraw
     x, y = origin
     bar_y = 1 if top else 15
@@ -119,7 +119,7 @@ def dialog_hint_background(width, height, origin, *, top, scale):
     ImageDraw.Draw(mask).rounded_rectangle(
         ((1 - x) * scale, (bar_y - y) * scale,
          (111 - x) * scale - 1, (bar_y + 8 - y) * scale - 1),
-        radius=3.5 * scale, fill=255)
+        radius=3.5 * scale, fill=128)
     background = Image.new('RGBA', mask.size, (11, 19, 71, 255))
     ImageDraw.Draw(background).rectangle(
         (0, (bar_y + 4 - y) * scale, width * scale, height * scale), fill=(2, 18, 103, 255))
@@ -137,9 +137,9 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     font = label_font(size * scale, controls=controls)
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
-    body, outline, offset = scale / 2, 3 * scale, 3 * scale / 4
+    body, outline, offset = 0, 2.5 * scale, 3 * scale / 4
     if controls:
-        # Halve the colored border beyond the thickened yellow face.
+        # Keep the border lighter on the small control captions.
         outline = body + (outline - body) / 2
     body, outline, offset = int(body), int(outline), int(offset)
     fill = (249, 206, 0, 255)
@@ -199,11 +199,11 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
         if top_hint_bar:
             # Dialog hints sample the middle of a longer top bar. Its rounded
             # ends and controller artwork live outside this replacement slot.
-            draw.rectangle((0, 0, width * scale, 4 * scale - 1), fill=(11, 19, 71, 255))
+            draw.rectangle((0, 0, width * scale, 4 * scale - 1), fill=(11, 19, 71, 128))
         else:
             draw.rounded_rectangle((scale, (height - 8) * scale,
                                     (width - 1) * scale, (height - 1) * scale),
-                                   radius=3.5 * scale, fill=(0, 12, 100, 255))
+                                   radius=3.5 * scale, fill=(0, 12, 100, 128))
     for shift, stroke, color in layers:
         for char, advance in glyphs:
             draw.text((x + advance + shift, y + shift), char, font=font,
@@ -276,7 +276,19 @@ def render_labels(catalog, images, require_title=True, *, output_scale=1):
                                     hint_origin=(x + tx, (y + ty) % 24) if asset == 'e_but_1.lzs' else None))
         except ValueError as exc:
             raise ValueError(f'{key}: {exc}') from exc
-        image.alpha_composite(layer, ((x + tx) * output_scale, (y + ty) * output_scale))
+        if asset == 'e_but_1.lzs':
+            # Replace the whole row so both bar caps have the same shape and
+            # alpha. The runtime draws the current controller bindings on top.
+            row_y = y // 24 * 24
+            top = y // 24 in (0, 1, 6)
+            row = dialog_hint_background(128, 24, (0, 0), top=top, scale=output_scale)
+            # The label already includes its section of the bar; paste rather
+            # than composite to avoid doubling the translucent background.
+            row.paste(layer, ((x + tx) * output_scale, (y + ty - row_y) * output_scale))
+            image.paste(row, (0, row_y * output_scale))
+            rectangles[asset][-1] = [0, row_y, 128, 24]
+        else:
+            image.alpha_composite(layer, ((x + tx) * output_scale, (y + ty) * output_scale))
     expected = {'title.press_start', 'menu.new_game', 'menu.continue', 'menu.options', 'menu.gachi_king'}
     if require_title and not expected.issubset(seen):
         raise ValueError('The five title/main-menu labels are required')

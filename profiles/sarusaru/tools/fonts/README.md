@@ -1,8 +1,8 @@
 # In-game replacement label font
 
 The `MPLUSRounded1c-{Bold,ExtraBold}-ASCII.ttf` files are printable-ASCII
-subsets of M PLUS Rounded 1c. Control hints use Bold; other image labels
-use ExtraBold. The fonts are licensed under SIL OFL 1.1; see [OFL.txt](OFL.txt).
+subsets of M PLUS Rounded 1c. Control hints and yellow/orange image labels use Bold. ExtraBold remains
+available for older pack builds. The fonts are licensed under SIL OFL 1.1; see [OFL.txt](OFL.txt).
 
 Source: google/fonts commit `e9678a5385322c63730122ba464765baad83cfd8`,
 `ofl/mplusrounded1c/MPLUSRounded1c-ExtraBold.ttf` (the same pinned source as

@@ -368,7 +368,8 @@ void Launcher::paused() {
     const ImVec2 button(300.0f * u, 48.0f * u);
     const float gap = 12.0f * u;
     const float x = (size.x - button.x) * 0.5f;
-    const float y = std::max(top + 10.0f * u, (size.y - 88.0f * u - 4.0f * button.y - 3.0f * gap) * 0.5f);
+    const float buttons_height = 4.0f * button.y + 3.0f * gap;
+    const float y = std::max(top + 10.0f * u, (size.y - buttons_height) * 0.5f);
     const auto place = [&](int index) { ImGui::SetCursorScreenPos(ImVec2(x, y + static_cast<float>(index) * (button.y + gap))); };
     place(0);
     if (menu_button(layer_, "resume", tr(Text::Resume), button, true)) outcome_ = Outcome::Resume;

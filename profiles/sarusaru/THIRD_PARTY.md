@@ -92,14 +92,13 @@ notices.
 
 `cmake/Ui.cmake` downloads each of these at a pinned version and checks its
 SHA-256. Dear ImGui is compiled unmodified into the executable; the fonts and
-all three licences are placed in `bin/resources/` beside it. Releases must
+both licences are placed in `bin/resources/` beside it. Releases must
 carry those notices.
 
 | Component | Version | Licence | Use |
 | --- | --- | --- | --- |
 | [Dear ImGui](https://github.com/ocornut/imgui) | 1.92.9b | MIT (`DearImGui-LICENSE.txt`) | launcher widgets, SDL3 and Vulkan backends |
-| [Luckiest Guy](https://github.com/google/fonts/tree/main/apache/luckiestguy) | google/fonts `e9678a5` | Apache-2.0 (`fonts/LuckiestGuy-LICENSE.txt`) | titles and big buttons |
-| [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS) Bold, ExtraBold, Black | google/fonts `e9678a5` | SIL OFL 1.1 (`fonts/MPLUSRounded1c-OFL.txt`, from the M+ project at `eb60490`) | text, and Japanese titles |
+| [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS) Bold | google/fonts `e9678a5` | SIL OFL 1.1 (`fonts/MPLUSRounded1c-OFL.txt`, from the M+ project at `eb60490`) | all launcher text, titles and buttons, including Japanese |
 
 The launcher's own code (`host/ui/`) is new. Yakumo's Dear ImGui layer was
 read as a reference for its device handling (see `YAKUMO_REUSE.md`), not copied.
@@ -107,7 +106,7 @@ read as a reference for its device handling (see `YAKUMO_REUSE.md`), not copied.
 ## In-game replacement label font (SIL OFL 1.1)
 
 `tools/fonts/MPLUSRounded1c-{Bold,ExtraBold}-ASCII.ttf` are printable-ASCII
-subsets of the same pinned M PLUS Rounded 1c fonts used by the launcher.
+subsets of the pinned M PLUS Rounded 1c family; the launcher uses the full Bold face.
 The subsets are checked in for reproducible offline translation-pack authoring.
 Their license and regeneration instructions are in `tools/fonts/OFL.txt` and
 `tools/fonts/README.md`. Generated label images do not embed the font file.
