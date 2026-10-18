@@ -373,11 +373,11 @@ configure_file(host/install/game_build_config.hpp.in install/game_build_config.h
 # defaults pin its current release, which every build (Android's Gradle one
 # included) offers. An empty URL builds one that offers none.
 set(SARUSARU_ENGLISH_PACK_URL
-    "https://github.com/jackgllghr/sarusaru-translations/releases/download/english-66065e342ef5/english-66065e342ef5.sstp"
+    "https://github.com/jackgllghr/sarusaru-translations/releases/download/english-2026-10-18-ui/english-2026-10-18-ui.sstp"
     CACHE STRING "URL of the English translation pack the launcher offers (empty: none)")
-set(SARUSARU_ENGLISH_PACK_SHA256 "b19ab6b63c109c722c3f1af94aeb506c31e196b7534955daf84fabb12760cb11"
+set(SARUSARU_ENGLISH_PACK_SHA256 "c89a9d7cd6dd2eef506e02d34ec5228aa70ad01e6d734afbbd1cd54ff3d38a90"
     CACHE STRING "SHA-256 of the English translation pack")
-set(SARUSARU_ENGLISH_PACK_SIZE "84363099" CACHE STRING "Size in bytes of the English translation pack")
+set(SARUSARU_ENGLISH_PACK_SIZE "78923983" CACHE STRING "Size in bytes of the English translation pack")
 if(NOT SARUSARU_ENGLISH_PACK_URL STREQUAL "")
     if(NOT SARUSARU_ENGLISH_PACK_URL MATCHES "^https://" OR NOT SARUSARU_ENGLISH_PACK_SHA256 MATCHES "^[0-9a-f]+$"
        OR NOT SARUSARU_ENGLISH_PACK_SIZE MATCHES "^[1-9][0-9]*$")
@@ -411,11 +411,11 @@ endif()
 # upscaling on the device, and 4K (8x) still needs the recipe. An empty URL
 # builds one that offers none.
 set(SARUSARU_HD_PACK_URL
-    "https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/hd-2026-10-18/sarusaru-hd-4x.zip"
+    "https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/hd-2026-10-18-ui/sarusaru-hd-4x.zip"
     CACHE STRING "URL of the prebuilt HD texture pack zip the launcher offers (empty: none)")
-set(SARUSARU_HD_PACK_SHA256 "13a1dc35159d3123ffbe09b1e722d7987c23df82d797009d6ab46d3136a70ed1"
+set(SARUSARU_HD_PACK_SHA256 "012ccc8fe4aee4221e71e7dea6665c8c70671b046b5c59a25835751aa49f01dd"
     CACHE STRING "SHA-256 of the prebuilt HD texture pack zip")
-set(SARUSARU_HD_PACK_SIZE "44562453" CACHE STRING "Size in bytes of the prebuilt HD texture pack zip")
+set(SARUSARU_HD_PACK_SIZE "44614494" CACHE STRING "Size in bytes of the prebuilt HD texture pack zip")
 if(NOT SARUSARU_HD_PACK_URL STREQUAL "")
     string(LENGTH "${SARUSARU_HD_PACK_SHA256}" _sarusaru_hd_pack_hash_length)
     if(NOT SARUSARU_HD_PACK_URL MATCHES "^(https|file)://" OR NOT SARUSARU_HD_PACK_SHA256 MATCHES "^[0-9a-f]+$"

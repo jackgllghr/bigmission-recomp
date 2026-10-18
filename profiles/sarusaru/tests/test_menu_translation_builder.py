@@ -95,13 +95,39 @@ class MenuCatalogTests(unittest.TestCase):
                     x, y = (index % columns) * cell, (index // columns) * height
                     self.assertIsNotNone(image.crop((x * scale, y * scale,
                         (x + cell) * scale, (y + height) * scale)).getbbox())
-                # Preserve Japanese units in small fonts and spare large cells.
+                # Preserve Japanese units and spare large cells.
                 untouched = 11 if cell == 16 else 14
                 x, y = (untouched % columns) * cell, (untouched // columns) * height
                 self.assertIsNone(image.crop((x * scale, y * scale,
                     (x + cell) * scale, (y + height) * scale)).getbbox())
                 self.assertTrue(all(x + w <= image.width // scale and y + h <= image.height // scale
                                     for x, y, w, h in regions[asset]))
+
+    def test_stage_select_time_marks_replace_the_actual_guest_sampled_tiles(self):
+        from PIL import Image
+        # Observed stage-select sprites use a separate 128x32 atlas, not the
+        # small number atlas: UV (32,0)..(48,16) and (80,0)..(96,16).
+        asset = 'common/e_tan_5.tm2'
+        for scale in (1, 8):
+            image = Image.new('RGBA', (128 * scale, 32 * scale))
+            regions = render_numeric_atlases({asset: image}, output_scale=scale)
+            self.assertIn(asset, regions)
+            self.assertEqual(regions[asset], [[32, 0, 16, 16], [80, 0, 16, 16]])
+            for x, text in ((32, "'"), (80, '"')):
+                cell = image.crop((x * scale, 0, (x + 16) * scale, 16 * scale))
+                expected = render_ui_label(text, 12, 16, 16, output_scale=scale, stage_select=True)
+                self.assertEqual(cell.getchannel('A').tobytes(), expected.getchannel('A').tobytes())
+                self.assertIsNotNone(cell.getbbox())
+            self.assertIsNone(image.crop((0, 16 * scale, 128 * scale, 32 * scale)).getbbox())
+
+    def test_cancel_caption_starts_halfway_down_the_top_bar(self):
+        for scale in (1, 8):
+            image = render_ui_label('Cancel', 13, 72, 20, controls=True,
+                                    top_hint_bar=True, hint_origin=(16, 4), output_scale=scale)
+            ys = [y for y in range(image.height) for x in range(image.width)
+                  if (lambda p: p[3] > 128 and p[0] > 120)(image.getpixel((x, y)))]
+            # Atlas y=4 is this label's origin; the 8px bar begins at y=1.
+            self.assertAlmostEqual(min(ys) / scale + 4, 5, delta=1 / scale)
 
     def test_pause_help_matches_compact_glyph_lines_and_keeps_hd_detail(self):
         import hashlib
@@ -204,31 +230,14 @@ class MenuCatalogTests(unittest.TestCase):
                         self.assertTrue(0 <= sx < 480 and 0 <= sy < 272,
                                         f'stamp {top}: ink at {x},{y} clips screen at {sx},{sy}')
 
-    def test_yellow_ink_is_heavier_and_red_edge_is_offset_down_and_right(self):
-        from PIL import Image, ImageDraw, ImageFont
-        label = render_ui_label('H', 24, 80, 40)
-        regular = Image.new('RGBA', label.size)
-        ImageDraw.Draw(regular).text((10, 2), 'H', font=label_font(24), fill=(249, 206, 0, 255))
-        def points(image, red=False):
-            return [(x, y) for y in range(image.height) for x in range(image.width)
-                    if (lambda p: p[3] > 128 and p[0] > 120 and p[2] < 80 and
-                        (p[1] < 100 if red else p[0] > 240 and p[1] > 180))(image.getpixel((x, y)))]
-        gold, edge = points(label), points(label, True)
-        self.assertGreater(len(gold), len(points(regular)))
-        for axis in (0, 1):
-            self.assertGreaterEqual(max(p[axis] for p in edge) - min(p[axis] for p in edge),
-                                    max(p[axis] for p in gold) - min(p[axis] for p in gold) + 2)
-            self.assertGreater(sum(p[axis] for p in edge) / len(edge),
-                               sum(p[axis] for p in gold) / len(gold))
-
     def test_small_label_letters_have_extra_separation(self):
         from PIL import Image, ImageDraw, ImageFont
         text = 'IIIIIIII'
         tracked = render_ui_label(text, 10, 100, 20)
         untracked = Image.new('RGBA', (400, 80))
         ImageDraw.Draw(untracked).text((20, 8), text,
-            font=label_font(40), fill=(249, 206, 0, 255),
-            stroke_width=2, stroke_fill=(249, 206, 0, 255))
+            font=label_font(40), fill=(247, 211, 16, 255),
+            stroke_width=0, stroke_fill=(247, 211, 16, 255))
         untracked = untracked.resize((100, 20), Image.Resampling.LANCZOS)
         def gold_span(image):
             xs = [x for y in range(image.height) for x in range(image.width)
@@ -244,7 +253,7 @@ class MenuCatalogTests(unittest.TestCase):
             with self.subTest(style=style):
                 image = render_ui_label('H', 24, 80, 40, output_scale=8, **style)
                 pixels = set(image.get_flattened_data())
-                self.assertIn((249, 206, 0, 255), pixels)
+                self.assertIn((247, 211, 16, 255), pixels)
                 self.assertNotIn((135, 49, 35, 255), pixels)
                 self.assertIn((179, 55, 22, 255), pixels)
                 self.assertIn((255, 148, 3, 255), pixels)
@@ -263,6 +272,22 @@ class MenuCatalogTests(unittest.TestCase):
         composited.alpha_composite(image)
         self.assertEqual(self.images['common00/action_name.tm2'].crop((0, 0, 80, 40)).tobytes(),
                          composited.tobytes())
+
+    def test_stage_select_palette_and_thinner_outlines(self):
+        for style in ({}, {'controls': True}, {'header': True}):
+            with self.subTest(style=style):
+                old = render_ui_label('H', 24, 80, 48, output_scale=8, **style)
+                image = render_ui_label('H', 24, 80, 48, output_scale=8, stage_select=True, **style)
+                pixels = set(image.get_flattened_data())
+                self.assertIn((255, 231, 10, 255), pixels)
+                self.assertIn((214, 67, 8, 255), pixels)
+                self.assertNotIn((247, 211, 16, 255), pixels)
+                self.assertNotIn((179, 55, 22, 255), pixels)
+                # Ignore faint resampling fringe when measuring the silhouette.
+                old_box = old.getchannel('A').point(lambda a: 255 if a > 128 else 0).getbbox()
+                box = image.getchannel('A').point(lambda a: 255 if a > 128 else 0).getbbox()
+                for axis in (0, 1):
+                    self.assertLess(box[axis + 2] - box[axis], old_box[axis + 2] - old_box[axis])
 
     def test_control_hint_outlines_are_half_the_regular_width(self):
         for scale in (1, 8):
@@ -294,7 +319,7 @@ class MenuCatalogTests(unittest.TestCase):
                     'asset': asset, 'text': 'OK', 'font_size': 12, 'rect': [0, 0, 64, 20]}]}
                 render_labels(authored, self.images, require_title=False)
                 bar_y = 2 if asset == 'e_but_1.lzs' else 16
-                navy = (11, 19, 71, 255) if asset == 'e_but_1.lzs' else (0, 12, 100, 255)
+                navy = (11, 19, 71, 128) if asset == 'e_but_1.lzs' else (0, 12, 100, 128)
                 pixel = self.images[asset].getpixel((6, bar_y))
                 self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, navy)), 1)
                 if asset == 'e_but_1.lzs':
@@ -322,7 +347,7 @@ class MenuCatalogTests(unittest.TestCase):
                               require_title=False, output_scale=scale)
                 self.assertIsNotNone(active.crop((0, 16 * scale, 64 * scale, 32 * scale)).getbbox())
                 pixel = active.getpixel((6 * scale, 29 * scale))
-                self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, (0, 12, 100, 255))), 1)
+                self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, (0, 12, 100, 128))), 1)
 
     def test_header_has_thick_white_border_and_hd_contains_finer_detail(self):
         from PIL import Image
@@ -337,60 +362,31 @@ class MenuCatalogTests(unittest.TestCase):
         self.assertFalse(any(p[3] > 200 and min(p[:3]) > 235 for p in plain.get_flattened_data()))
 
     @unittest.skipUnless(catalog('english-menu.json').is_file(), 'English catalog is not checked out')
-    def test_footer_text_keeps_diagonal_button_pairs_and_clears_original_ink(self):
+    def test_dialog_hints_replace_complete_rows_with_matching_translucent_caps(self):
         from PIL import Image
         authored = json.loads(catalog('english-menu.json').read_text())
-        authored['labels'] = [l for l in authored['labels'] if l['asset'] == 'e_but_1.lzs']
+        authored['labels'] = [label for label in authored['labels'] if label['asset'] == 'e_but_1.lzs']
         self.assertEqual(len(authored['labels']), 9)
-        # Observed Japanese text bounds and protected controller artwork. The
-        # square at x=88 was previously erased by the Cancel text rectangle.
-        ink = [(45, 83), (18, 84), (28, 80), (29, 104), (27, 93),
-               (28, 80), (29, 67), (29, 67), (28, 68)]
-        for scale in (1, 8):
-            images = {'e_but_1.lzs': Image.new('RGBA', (128 * scale, 240 * scale))}
-            regions = render_labels(authored, images, require_title=False, output_scale=scale)
-            for label in authored['labels']:
-                x, y, w, h = label['rect']
-                row = y // 24
-                first, last = ink[row]
-                self.assertLessEqual(x, first)
-                self.assertGreater(x + w, last)
-                protected = (88, row * 24, 24, 24) if row in (0, 1) else (0, row * 24, 26, 24)
-                bx, by, bw, bh = protected
-                for rx, ry, rw, rh in regions['e_but_1.lzs']:
-                    self.assertFalse(rx < bx + bw and bx < rx + rw and ry < by + bh and by < ry + rh,
-                                     f'{label["id"]} erases a controller button')
-                # Both bar orientations occur within this atlas, independently
-                # of whether its controller buttons sit on the left or right.
-                top = row in (0, 1, 6)
-                sample_y = y + (1 if top else h - 4)
-                pixel = images['e_but_1.lzs'].getpixel(((x + 4) * scale, sample_y * scale))
-                navy = (2, 18, 103, 255)  # Lower half of the native two-tone bar.
-                self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, navy)), 2)
-
-    def test_cancel_text_keeps_native_navy_bar_opaque(self):
-        from PIL import Image
-        # Both native Cancel layouts: the text region cuts through a top
-        # bar at y=4 and a footer bar at y=100 in the same atlas.
-        labels = [{'id': f'cancel.{row}', 'asset': 'e_but_1.lzs', 'text': 'Cancel',
-                   'font_size': 13, 'rect': [x, row * 24 + 4, width, 20]}
-                  for row, x, width in ((1, 16, 72), (4, 26, 86))]
         for scale in (1, 4, 8):
-            images = {'e_but_1.lzs': Image.new('RGBA', (128 * scale, 240 * scale))}
-            render_labels({'schema': 1, 'locale': 'en', 'labels': labels}, images,
-                          require_title=False, output_scale=scale)
-            atlas = images['e_but_1.lzs']
-            for y, left, right in ((28, 16, 88), (29, 16, 88), (32, 16, 88),
-                                   (111, 26, 104), (118, 26, 104)):
-                for py in range(y * scale, (y + 1) * scale):
-                    for px in range(left * scale, right * scale):
-                        self.assertEqual(atlas.getpixel((px, py))[3], 255,
-                                         f'Cancel text leaves a hole in the navy bar at {(px, py, scale)}')
-            # Uncovered portions retain the two native navy shades and join
-            # the untouched atlas immediately outside the text rectangles.
-            for x, y, color in ((20, 28, (11, 19, 71, 255)), (20, 32, (2, 18, 103, 255)),
-                                 (28, 111, (11, 19, 71, 255)), (28, 118, (2, 18, 103, 255))):
-                self.assertEqual(atlas.getpixel((x * scale, y * scale)), color)
+            atlas = Image.new('RGBA', (128 * scale, 240 * scale))
+            regions = render_labels(authored, {'e_but_1.lzs': atlas},
+                                    require_title=False, output_scale=scale)
+            # Full rows erase the old opaque bar, including both rounded caps.
+            self.assertEqual(regions['e_but_1.lzs'], [[0, 0, 128, 216]])
+            caps = []
+            for row in range(9):
+                bar_y = row * 24 + (1 if row in (0, 1, 6) else 15)
+                # Text is inset from both ends of the bar. Compare all caps
+                # across Confirm, Cancel and the other native hint layouts.
+                caps.append(atlas.crop((scale, bar_y * scale, 6 * scale, (bar_y + 8) * scale)).tobytes())
+                for x in (6, 105):
+                    self.assertEqual(atlas.getpixel((x * scale, (bar_y + 2) * scale)), (11, 19, 71, 128))
+                self.assertEqual(atlas.getpixel((scale, bar_y * scale))[3], 0)
+                # Symmetric silhouettes at the left and right ends.
+                left = atlas.getchannel('A').crop((scale, bar_y * scale, 6 * scale, (bar_y + 8) * scale))
+                right = atlas.getchannel('A').crop((106 * scale, bar_y * scale, 111 * scale, (bar_y + 8) * scale))
+                self.assertEqual(left.tobytes(), right.transpose(Image.Transpose.FLIP_LEFT_RIGHT).tobytes())
+            self.assertTrue(all(cap == caps[0] for cap in caps))
 
     def test_rejects_missing_labels_overlap_overflow_and_uncovered_glyphs(self):
         variants = []

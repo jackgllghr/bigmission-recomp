@@ -107,11 +107,20 @@ Resource icons and control icons remain outside those rectangles. The shared
 `c_num_s0`, `c_num_m0`, `c_num_l1`, `c_num_l2` and menu `c_num_ml` atlases render their multiplier,
 digits and punctuation with the bundled rounded font, including HD layers.
 The save-data screen uses the same small atlas for time/resource counts and
-the large gold atlas for its completion digits. Its percent sign instead samples
+the large gold atlas for its completion digits. With translated gold lettering,
+the renderer tightens only the save-screen completion digits to a 36-pixel
+advance, keeping the rightmost digit and percent sign fixed. It identifies the
+original logical atlas by hash and matches the save-screen position and UVs;
+other large counters retain their guest layout. Its percent sign instead samples
 the 32x48 cell at (416, 0) in `c_num_ml`; that cell has its own replacement.
-Their cell positions
-stay fixed, so battery, chip and remaining-monkey values continue to update
-through the guest's existing counter draws. Japanese unit cells remain untouched.
+Their atlas cell positions stay fixed, so battery, chip and remaining-monkey
+values continue to update through the guest's existing counter draws. The
+stage-select minute and second marks come from a separate `common/e_tan_5.tm2`
+atlas: the actual guest samples are `(32,0)..(48,16)` and `(80,0)..(96,16)`.
+Those tiles use font-rendered single and double apostrophes, aligned to the
+top of the time digits, with native and 8× layers. Japanese counter-unit cells
+in the small and medium numeric atlases stay untouched. Top-bar dialog
+captions start halfway down the translucent bar, including Cancel.
 The small remaining-count caption in `common00/e_tan_2b.tm2` now reads “Left”
 in the rounded font. Its ink stays inside the original 40-pixel caption width,
 while the full 64x24 tile is replaced to clear the source artwork.
@@ -172,6 +181,13 @@ Large stage titles (`tenso/e_s_title_*.tm2`) and warp introduction banners
 with an additional four-pixel white outer stroke. One long title uses a
 one-point smaller font to accommodate the extra border. Other UI labels keep
 the offset red treatment.
+
+Stage-selection titles, clear badges, Current Best Time, shared menu hints,
+and small/medium numeric cells use yellow `#ffe70a` with a solid `#d64308`
+outline. Their outline, offset shadow and title's white outer border are
+60% of the previous dimensions, preserving their relative proportions.
+Shared hint and numeric atlases carry that treatment into other menus that
+reuse them; the large completion digits retain their separate palette.
 
 The clipping regression projects authored badge pixels through four actual
 GE triangle transforms and checks that the visible ink remains inside the

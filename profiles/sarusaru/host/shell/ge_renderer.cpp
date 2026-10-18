@@ -232,6 +232,7 @@ void GeRenderer::destroy() {
     }
     textures_.clear();
     action_hint_views_.clear();
+    completion_number_views_.clear();
     prompt_atlases_.clear();
     for (auto &[key, texture] : host_textures_) vk_.destroy_image(texture.image);
     host_textures_.clear();
@@ -271,6 +272,7 @@ void GeRenderer::begin_frame(VkCommandBuffer commands) {
     for (auto it = textures_.begin(); it != textures_.end();) {
         if (frame_ - it->second.last_frame > kTextureLifetimeFrames) {
             action_hint_views_.erase(it->second.image.view);
+            completion_number_views_.erase(it->second.image.view);
             vk_.destroy_image(it->second.image);
             it = textures_.erase(it);
         } else {
@@ -507,6 +509,14 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     // image and the translation letters its authored regions over it.
     gpu::TextureIdentity identity;
     std::optional<std::vector<std::uint32_t>> hd;
+    bool completion_numbers = false;
+    if (translation_pack_ != nullptr && texture.width == 512 && texture.height == 128 && texture.buffer_width == 480) {
+        // Ignore the unused power-of-two padding, which can change as other
+        // assets are loaded beside the 480x96 gold atlas.
+        auto logical = texture;
+        logical.height = 96;
+        completion_numbers = gpu::identify_texture(logical, texels).hash == "48109b51873459127a82bcca79469cd0";
+    }
     if (hd_pack_ != nullptr || texture_dump_ != nullptr) {
         identity = gpu::identify_texture(texture, texels);
         if (texture_dump_ != nullptr) texture_dump_->record(texture, identity, texels);
@@ -563,6 +573,8 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     entry.last_frame = frame_;
     const VkImageView view = entry.image.view;
     if (prompt_atlas == 4) action_hint_views_.insert(view);
+    if (translation_scale && completion_numbers)
+        completion_number_views_.insert(view);
     textures_.emplace(key, std::move(entry));
     return view;
 }
@@ -846,6 +858,20 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
         };
         for (std::size_t i = 0; i + 1u < count; i += 2u) {
             GpuVertex a = screen(vertex_at(i)), b = screen(vertex_at(i + 1u));
+            // The save-screen completion is right-aligned at x=312. Keep
+            // its last digit and percent sign fixed, but use a 36px advance
+            // for preceding digits instead of the original 48px cells.
+            if (completion_number_views_.contains(view) && call.through &&
+                a.position[1] == 96.0f && b.position[1] == 144.0f &&
+                (a.position[0] == 168.0f || a.position[0] == 216.0f) &&
+                b.position[0] - a.position[0] == 48.0f &&
+                a.texcoord[1] == 0.0f && b.texcoord[1] == 48.0f &&
+                a.texcoord[0] >= 48.0f && b.texcoord[0] <= 480.0f &&
+                b.texcoord[0] - a.texcoord[0] == 48.0f) {
+                const float offset = (264.0f - a.position[0]) * 0.25f;
+                a.position[0] += offset;
+                b.position[0] += offset;
+            }
             // The south action caption starts close to the larger host button
             // rim. Move its whole tile (lettering and bar) down four PSP pixels.
             // The other three captions use this atlas too; only the bottom

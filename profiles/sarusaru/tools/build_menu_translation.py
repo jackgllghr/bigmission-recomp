@@ -50,6 +50,7 @@ ASSETS = {
     'common/e_tan_6.tm2': ('pause.counter', (128, 96), (128, 128, 128)),
     'common/c_num_s0.tm2': ('numbers.small', (288, 16), (512, 16, 288)),
     'common/c_num_m0.tm2': ('numbers.medium', (320, 32), (512, 32, 320)),
+    'common/e_tan_5.tm2': ('numbers.time_marks', (128, 32), (128, 32, 128)),
     'c_num_ml.lzs': ('numbers.medium_large', (512, 96), (512, 128, 512)),
     'common/c_num_l1.tm2': ('numbers.large', (480, 96), (512, 128, 480)),
     'common/c_num_l2.tm2': ('numbers.large_white', (480, 96), (512, 128, 480)),
@@ -106,12 +107,12 @@ def encode_pixel_runs(rgba):
 def label_font(size, *, controls=False):
     """The bundled rounded face keeps offline pack builds reproducible."""
     from PIL import ImageFont
-    weight = 'Bold' if controls else 'ExtraBold'
+    weight = 'Bold'
     return ImageFont.truetype(str(PROFILE / f'tools/fonts/MPLUSRounded1c-{weight}-ASCII.ttf'), size=size)
 
 
 def dialog_hint_background(width, height, origin, *, top, scale):
-    """Continue the original 111px navy bar through a text replacement slot."""
+    """Draw the same translucent, rounded 111px bar for either hint layout."""
     from PIL import Image, ImageDraw
     x, y = origin
     bar_y = 1 if top else 15
@@ -119,7 +120,7 @@ def dialog_hint_background(width, height, origin, *, top, scale):
     ImageDraw.Draw(mask).rounded_rectangle(
         ((1 - x) * scale, (bar_y - y) * scale,
          (111 - x) * scale - 1, (bar_y + 8 - y) * scale - 1),
-        radius=3.5 * scale, fill=255)
+        radius=3.5 * scale, fill=128)
     background = Image.new('RGBA', mask.size, (11, 19, 71, 255))
     ImageDraw.Draw(background).rectangle(
         (0, (bar_y + 4 - y) * scale, width * scale, height * scale), fill=(2, 18, 103, 255))
@@ -128,7 +129,8 @@ def dialog_hint_background(width, height, origin, *, top, scale):
 
 
 def render_ui_label(text, size, width, height, alignment='center', *, controls=False,
-                    header=False, top_hint_bar=False, output_scale=1, hint_origin=None):
+                    header=False, top_hint_bar=False, output_scale=1, hint_origin=None,
+                    stage_select=False):
     """Render UI styles in logical pixels, retaining detail at output_scale."""
     from PIL import Image, ImageDraw, ImageFont
     if alignment not in ('left', 'center'):
@@ -137,13 +139,19 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     font = label_font(size * scale, controls=controls)
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
-    body, outline, offset = scale / 2, 3 * scale, 3 * scale / 4
+    body, outline, offset = 0, 2.5 * scale, 3 * scale / 4
     if controls:
-        # Halve the colored border beyond the thickened yellow face.
+        # Keep the border lighter on the small control captions.
         outline = body + (outline - body) / 2
+    if stage_select:
+        outline *= .6
+        offset *= .6
     body, outline, offset = int(body), int(outline), int(offset)
-    fill = (249, 206, 0, 255)
+    fill = (247, 211, 16, 255)
     outside, inside = (179, 55, 22), (255, 148, 3)
+    if stage_select:
+        fill = (255, 231, 10, 255)
+        outside = inside = (214, 67, 8)
     # Interpolate concentric strokes from the red outer edge to orange
     # beside the solid yellow letter face at native and HD resolutions.
     last = outline - body - 1
@@ -156,7 +164,7 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
         layers.append((shift, stroke, color))
     layers.append((0, body, fill))
     if header:
-        layers.insert(0, (0, 5 * scale, (255, 255, 255, 255)))
+        layers.insert(0, (0, (3 if stage_select else 5) * scale, (255, 255, 255, 255)))
     # Preserve the font's kerning, adding one supersampled pixel between glyphs.
     glyphs = [(char, font.getlength(text[:i + 1]) - font.getlength(char) + i * scale / 4)
               for i, char in enumerate(text)]
@@ -191,19 +199,25 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
             if old_width <= layer.width - 2 * margin and old_height <= layer.height - 2 * margin:
                 return render_ui_label(text, size - .25, width, height, alignment,
                                        controls=controls, header=header, top_hint_bar=top_hint_bar,
-                                       output_scale=output_scale, hint_origin=hint_origin)
+                                       output_scale=output_scale, hint_origin=hint_origin,
+                                       stage_select=stage_select)
         raise ValueError('Text exceeds pixel budget; shorten it or reduce font_size')
     x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
     y = (layer.height - th) / 2 - bounds[1]
+    if text in ("'", '"'):
+        y = scale - bounds[1]
+    if hint_origin is not None and top_hint_bar:
+        # The visible top of the caption starts halfway down the 8px bar.
+        y = (5 - hint_origin[1]) * scale - bounds[1]
     if controls and hint_origin is None:
         if top_hint_bar:
             # Dialog hints sample the middle of a longer top bar. Its rounded
             # ends and controller artwork live outside this replacement slot.
-            draw.rectangle((0, 0, width * scale, 4 * scale - 1), fill=(11, 19, 71, 255))
+            draw.rectangle((0, 0, width * scale, 4 * scale - 1), fill=(11, 19, 71, 128))
         else:
             draw.rounded_rectangle((scale, (height - 8) * scale,
                                     (width - 1) * scale, (height - 1) * scale),
-                                   radius=3.5 * scale, fill=(0, 12, 100, 255))
+                                   radius=3.5 * scale, fill=(0, 12, 100, 128))
     for shift, stroke, color in layers:
         for char, advance in glyphs:
             draw.text((x + advance + shift, y + shift), char, font=font,
@@ -273,10 +287,25 @@ def render_labels(catalog, images, require_title=True, *, output_scale=1):
                                         'common/e_nabi_a4.tm2', 'common/e_nabi_a2.tm2')),
                                     top_hint_bar=asset == 'e_but_1.lzs' and y // 24 in (0, 1, 6),
                                     output_scale=output_scale,
-                                    hint_origin=(x + tx, (y + ty) % 24) if asset == 'e_but_1.lzs' else None))
+                                    hint_origin=(x + tx, (y + ty) % 24) if asset == 'e_but_1.lzs' else None,
+                                    stage_select=(asset.startswith('tenso/e_s_title_') or asset in (
+                                        'common/e_nabi_b0.tm2', 'common/e_kaza_0.tm2',
+                                        'e_but_0.lzs', 'e_but_1.lzs'))))
         except ValueError as exc:
             raise ValueError(f'{key}: {exc}') from exc
-        image.alpha_composite(layer, ((x + tx) * output_scale, (y + ty) * output_scale))
+        if asset == 'e_but_1.lzs':
+            # Replace the whole row so both bar caps have the same shape and
+            # alpha. The runtime draws the current controller bindings on top.
+            row_y = y // 24 * 24
+            top = y // 24 in (0, 1, 6)
+            row = dialog_hint_background(128, 24, (0, 0), top=top, scale=output_scale)
+            # The label already includes its section of the bar; paste rather
+            # than composite to avoid doubling the translucent background.
+            row.paste(layer, ((x + tx) * output_scale, (y + ty - row_y) * output_scale))
+            image.paste(row, (0, row_y * output_scale))
+            rectangles[asset][-1] = [0, row_y, 128, 24]
+        else:
+            image.alpha_composite(layer, ((x + tx) * output_scale, (y + ty) * output_scale))
     expected = {'title.press_start', 'menu.new_game', 'menu.continue', 'menu.options', 'menu.gachi_king'}
     if require_title and not expected.issubset(seen):
         raise ValueError('The five title/main-menu labels are required')
@@ -310,7 +339,7 @@ def render_numeric_atlases(images, *, output_scale=1):
             continue
         slots = []
         glyphs = list(enumerate('x0123456789'))
-        # Small-font cells 11..13 hold Japanese counter units. The large
+        # Small/medium cells 11..13 hold Japanese counter units. The large
         # atlases place punctuation directly after the digits instead.
         columns = images[asset].width // (output_scale * cell)
         glyphs += list(zip((14, 15, 16, columns - 1) if cell == 16 else (11, 12, 13),
@@ -321,7 +350,8 @@ def render_numeric_atlases(images, *, output_scale=1):
             while True:
                 try:
                     layer = render_ui_label(text, fitted, cell, height,
-                                            header=asset.endswith('l2.tm2'), output_scale=output_scale)
+                                            header=asset.endswith('l2.tm2'), output_scale=output_scale,
+                                            stage_select=cell == 16)
                     break
                 except ValueError:
                     fitted -= .25
@@ -330,6 +360,16 @@ def render_numeric_atlases(images, *, output_scale=1):
             images[asset].alpha_composite(layer, (x * output_scale, y * output_scale))
             slots.append([x, y, cell, height])
         regions[asset] = merge_regions(slots)
+    asset = 'common/e_tan_5.tm2'
+    if asset in images:
+        # Actual stage-select time sprites sample this separate unit atlas.
+        # Leave its unused tiles intact, including the transparent lower row.
+        slots = []
+        for x, text in ((32, "'"), (80, '"')):
+            layer = render_ui_label(text, 12, 16, 16, output_scale=output_scale, stage_select=True)
+            images[asset].alpha_composite(layer, (x * output_scale, 0))
+            slots.append([x, 0, 16, 16])
+        regions[asset] = slots
     return regions
 
 

@@ -44,9 +44,9 @@ inline constexpr ImU32 kXboxY = IM_COL32(250, 200, 40, 255);
 // The faces, loaded once. Sizes are chosen per draw (Dear ImGui 1.92 renders
 // glyphs on demand at any size).
 struct Fonts {
-    ImFont *display{};  // Luckiest Guy: titles and big buttons, with M PLUS Rounded 1c Black for Japanese
+    ImFont *display{};  // M PLUS Rounded 1c Bold: titles and big buttons
     ImFont *body{};     // M PLUS Rounded 1c Bold: everything else, with Japanese
-    ImFont *strong{};   // M PLUS Rounded 1c ExtraBold
+    ImFont *strong{};   // Same face for emphasised text
 };
 [[nodiscard]] const Fonts &fonts();
 // A file in the resources folder beside the executable (fonts, the title art).

@@ -20,11 +20,7 @@ set(SARUSARU_FONTS_URL "https://raw.githubusercontent.com/google/fonts/${SARUSAR
 set(SARUSARU_MPLUS_COMMIT eb604901d6f04b6f7f2a84b0378c58df84a9dba6)
 # name | URL | SHA-256
 set(SARUSARU_FONT_FILES
-    "LuckiestGuy-Regular.ttf|${SARUSARU_FONTS_URL}/apache/luckiestguy/LuckiestGuy-Regular.ttf|cfbdd68a039f92df51cf3721506af6242e64594c6325fe0bedbeff3fe385d980"
-    "LuckiestGuy-LICENSE.txt|${SARUSARU_FONTS_URL}/apache/luckiestguy/LICENSE.txt|cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
     "MPLUSRounded1c-Bold.ttf|${SARUSARU_FONTS_URL}/ofl/mplusrounded1c/MPLUSRounded1c-Bold.ttf|c358630584e8e2d8fbd6121d0f4693255ffef6d1e6d4f3441fd6e5a963a11f9e"
-    "MPLUSRounded1c-ExtraBold.ttf|${SARUSARU_FONTS_URL}/ofl/mplusrounded1c/MPLUSRounded1c-ExtraBold.ttf|8e7c15901dca87f1451b356dda594f7d092ba252a5dcc47da74523a242493c36"
-    "MPLUSRounded1c-Black.ttf|${SARUSARU_FONTS_URL}/ofl/mplusrounded1c/MPLUSRounded1c-Black.ttf|d5981a59ccc5f00da1bd3ae46750fa95cd165b0e6b3a5fc7a1945f94c59449e3"
     "MPLUSRounded1c-OFL.txt|https://raw.githubusercontent.com/coz-m/MPLUS_FONTS/${SARUSARU_MPLUS_COMMIT}/OFL.txt|04971e3fcee60b247395150d93b3616f6a0b092572332c96187b472976553abc")
 
 FetchContent_Declare(sarusaru_imgui URL "${SARUSARU_IMGUI_URL}" URL_HASH SHA256=${SARUSARU_IMGUI_SHA256}
