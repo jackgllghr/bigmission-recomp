@@ -1,4 +1,5 @@
 #include "game/gameplay_camera.hpp"
+#include "game/ability_aim.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -12,6 +13,25 @@ void require(bool condition, const char *message) {
 int main() {
     using sarusaru::game::GameplayCamera;
     psprecomp::Runtime runtime;
+    auto &memory = runtime.memory();
+    constexpr std::uint32_t system = 0x08900000, aim_camera = 0x08901000;
+    require(!sarusaru::game::ability_aiming(memory), "uninitialised scene does not aim");
+    memory.store32(0x08A82B24, system);
+    memory.store32(system + 20, aim_camera);
+    memory.store32(aim_camera + 0xfc, 1);
+    memory.store32(aim_camera + 0x228, 5);
+    memory.store8(aim_camera + 0x2ab, 1);
+    require(sarusaru::game::ability_aiming(memory), "first-person monkey ability aiming recognised");
+    memory.store32(aim_camera + 0x228, 0);
+    require(!sarusaru::game::ability_aiming(memory), "ordinary following does not remap movement");
+    memory.store32(aim_camera + 0x228, 5);
+    memory.store8(aim_camera + 0x2ab, 0);
+    require(!sarusaru::game::ability_aiming(memory), "aim transition does not remap input early");
+    memory.store8(aim_camera + 0x2ab, 1);
+    memory.store32(aim_camera + 0x2dc, 1);
+    require(!sarusaru::game::ability_aiming(memory), "scripted camera overrides suppress aiming input");
+    memory.store32(system + 20, 0xffffffff);
+    require(!sarusaru::game::ability_aiming(memory), "invalid camera pointer is safe");
     sarusaru::display::Display display;
     const auto next_frame = [&] {
         require(display.set_framebuffer({0x04000000u, 512u, 3u}, 0u, 0u, runtime.memory()) == 0, "framebuffer rejected");

@@ -81,6 +81,21 @@ InputState map_input(const ControlSettings &settings, std::span<const bool> keys
     result.pad.ly = axis(value(Action::AnalogDown) - value(Action::AnalogUp));
     result.camera_x = value(Action::CameraRight) - value(Action::CameraLeft);
     result.camera_y = value(Action::CameraDown) - value(Action::CameraUp);
+    // Aim uses the physical right stick's screen directions independently of
+    // camera orbit inversion/bindings. Take both axes from the same gamepad.
+    for (const auto &pad : gamepads) {
+        const auto stick = [&](int axis) {
+            const auto raw = pad.axes[axis];
+            const float value = static_cast<float>(raw) / (raw < 0 ? 32768.0f : 32767.0f);
+            const float magnitude = std::clamp((std::abs(value) - settings.dead_zone) / (1.0f - settings.dead_zone), 0.0f, 1.0f);
+            return std::copysign(magnitude, value);
+        };
+        const float x = stick(SDL_GAMEPAD_AXIS_RIGHTX), y = stick(SDL_GAMEPAD_AXIS_RIGHTY);
+        if (x * x + y * y > result.aim_x * result.aim_x + result.aim_y * result.aim_y) {
+            result.aim_x = x;
+            result.aim_y = y;
+        }
+    }
     result.camera_reset = value(Action::CameraReset) > 0.5f;
     result.fast_forward = value(Action::FastForward) > 0.5f;
     result.menu = value(Action::Menu) > 0.5f;
@@ -88,6 +103,24 @@ InputState map_input(const ControlSettings &settings, std::span<const bool> keys
     result.load_state = value(Action::LoadState) > 0.5f;
     return result;
 }
+void apply_aiming(InputState &state, bool aiming, float sensitivity) {
+    if (!aiming) return;
+    float x = (static_cast<float>(state.pad.lx) - 128.0f) / 127.5f;
+    float y = (static_cast<float>(state.pad.ly) - 128.0f) / 127.5f;
+    if (state.aim_x * state.aim_x + state.aim_y * state.aim_y > x * x + y * y) {
+        x = state.aim_x;
+        y = state.aim_y;
+    }
+    const float gain = std::isfinite(sensitivity) ? std::clamp(sensitivity, 0.25f, 2.0f) : 1.0f;
+    const auto axis = [gain](float value) {
+        return static_cast<std::uint8_t>(std::clamp(std::lround(128.0f + value * gain * 127.5f), 0l, 255l));
+    };
+    state.pad.lx = axis(x);
+    state.pad.ly = axis(y);
+    state.camera_x = state.camera_y = 0.0f;
+    state.camera_reset = false;
+}
+
 InputState Input::sample() const {
     int key_count = 0;
     const bool *keys = SDL_GetKeyboardState(&key_count);

@@ -170,6 +170,9 @@ void rows() {
     settings.fullscreen = false;
 
     settings.controls.dead_zone = 0.2f;
+    step(SettingRow::AimSensitivity, settings, -1);
+    require(settings.controls.aim_sensitivity == 0.75f && describe(SettingRow::AimSensitivity, settings).value == "75%" &&
+        !restart_only(SettingRow::AimSensitivity), "aim sensitivity row updates and applies in game");
     step(SettingRow::DeadZone, settings, 1);
     require(std::abs(settings.controls.dead_zone - 0.25f) < 1e-6f && describe(SettingRow::DeadZone, settings).value == "25%",
             "dead zone step wrong");
@@ -262,7 +265,7 @@ void rows() {
     step(SettingRow::Subtitles, settings, 1);
     require(!settings.subtitles && describe(SettingRow::Subtitles, settings).value == "Off", "subtitles did not turn off");
     step(SettingRow::Subtitles, settings, 1);
-    require(seen == 17, "settings rows missing from the tabs");
+    require(seen == 18, "settings rows missing from the tabs");
     const auto graphics = settings_tabs().front().rows;
     require(settings_tabs().size() == 4u && graphics.size() == 9u && graphics[0] == SettingRow::Preset &&
                 graphics[1] == SettingRow::Fullscreen && graphics[2] == SettingRow::WindowSize &&
