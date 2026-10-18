@@ -6,6 +6,7 @@ pixels and source hashes; extracted Japanese textures stay in memory.
 """
 import argparse
 import hashlib
+from dataclasses import dataclass
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -81,6 +82,21 @@ ASSETS = {
 }
 
 
+@dataclass(frozen=True)
+class TextStyle:
+    """Shared colors and logical-pixel stroke dimensions for game labels."""
+    fill: tuple[int, int, int, int]
+    outline: tuple[int, int, int, int]
+    outline_width: float = 1.5
+    shadow_offset: float = .45
+    header_halo_width: float = 3
+    control_outline_ratio: float = .5
+
+
+# #ffe70a letter faces with solid #d64308 borders.
+GOLD_TEXT_STYLE = TextStyle(fill=(255, 231, 10, 255), outline=(214, 67, 8, 255))
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest().encode('ascii')
 
@@ -130,7 +146,7 @@ def dialog_hint_background(width, height, origin, *, top, scale):
 
 def render_ui_label(text, size, width, height, alignment='center', *, controls=False,
                     header=False, top_hint_bar=False, output_scale=1, hint_origin=None,
-                    stage_select=False):
+                    style=GOLD_TEXT_STYLE):
     """Render UI styles in logical pixels, retaining detail at output_scale."""
     from PIL import Image, ImageDraw, ImageFont
     if alignment not in ('left', 'center'):
@@ -139,32 +155,12 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
     font = label_font(size * scale, controls=controls)
     layer = Image.new('RGBA', (width * scale, height * scale))
     draw = ImageDraw.Draw(layer)
-    body, outline, offset = 0, 2.5 * scale, 3 * scale / 4
-    if controls:
-        # Keep the border lighter on the small control captions.
-        outline = body + (outline - body) / 2
-    if stage_select:
-        outline *= .6
-        offset *= .6
-    body, outline, offset = int(body), int(outline), int(offset)
-    fill = (247, 211, 16, 255)
-    outside, inside = (179, 55, 22), (255, 148, 3)
-    if stage_select:
-        fill = (255, 231, 10, 255)
-        outside = inside = (214, 67, 8)
-    # Interpolate concentric strokes from the red outer edge to orange
-    # beside the solid yellow letter face at native and HD resolutions.
-    last = outline - body - 1
-    layers = []
-    for index, stroke in enumerate(range(outline, body, -1)):
-        amount = index / last
-        color = tuple(round(a + (b - a) * amount)
-                      for a, b in zip(outside, inside)) + (255,)
-        shift = 0 if controls or header else round(offset * (1 - index / last))
-        layers.append((shift, stroke, color))
-    layers.append((0, body, fill))
+    outline = int(style.outline_width * scale * (style.control_outline_ratio if controls else 1))
+    offset = int(style.shadow_offset * scale)
+    shift = 0 if controls or header else offset
+    layers = [(shift, outline, style.outline), (0, 0, style.fill)]
     if header:
-        layers.insert(0, (0, (3 if stage_select else 5) * scale, (255, 255, 255, 255)))
+        layers.insert(0, (0, int(style.header_halo_width * scale), (255, 255, 255, 255)))
     # Preserve the font's kerning, adding one supersampled pixel between glyphs.
     glyphs = [(char, font.getlength(text[:i + 1]) - font.getlength(char) + i * scale / 4)
               for i, char in enumerate(text)]
@@ -200,7 +196,7 @@ def render_ui_label(text, size, width, height, alignment='center', *, controls=F
                 return render_ui_label(text, size - .25, width, height, alignment,
                                        controls=controls, header=header, top_hint_bar=top_hint_bar,
                                        output_scale=output_scale, hint_origin=hint_origin,
-                                       stage_select=stage_select)
+                                       style=style)
         raise ValueError('Text exceeds pixel budget; shorten it or reduce font_size')
     x = scale - bounds[0] if alignment == 'left' else (layer.width - tw) / 2 - bounds[0]
     y = (layer.height - th) / 2 - bounds[1]
@@ -287,10 +283,7 @@ def render_labels(catalog, images, require_title=True, *, output_scale=1):
                                         'common/e_nabi_a4.tm2', 'common/e_nabi_a2.tm2')),
                                     top_hint_bar=asset == 'e_but_1.lzs' and y // 24 in (0, 1, 6),
                                     output_scale=output_scale,
-                                    hint_origin=(x + tx, (y + ty) % 24) if asset == 'e_but_1.lzs' else None,
-                                    stage_select=(asset.startswith('tenso/e_s_title_') or asset in (
-                                        'common/e_nabi_b0.tm2', 'common/e_kaza_0.tm2',
-                                        'e_but_0.lzs', 'e_but_1.lzs'))))
+                                    hint_origin=(x + tx, (y + ty) % 24) if asset == 'e_but_1.lzs' else None))
         except ValueError as exc:
             raise ValueError(f'{key}: {exc}') from exc
         if asset == 'e_but_1.lzs':
@@ -350,8 +343,7 @@ def render_numeric_atlases(images, *, output_scale=1):
             while True:
                 try:
                     layer = render_ui_label(text, fitted, cell, height,
-                                            header=asset.endswith('l2.tm2'), output_scale=output_scale,
-                                            stage_select=cell == 16)
+                                            header=asset.endswith('l2.tm2'), output_scale=output_scale)
                     break
                 except ValueError:
                     fitted -= .25
@@ -366,7 +358,7 @@ def render_numeric_atlases(images, *, output_scale=1):
         # Leave its unused tiles intact, including the transparent lower row.
         slots = []
         for x, text in ((32, "'"), (80, '"')):
-            layer = render_ui_label(text, 12, 16, 16, output_scale=output_scale, stage_select=True)
+            layer = render_ui_label(text, 12, 16, 16, output_scale=output_scale)
             images[asset].alpha_composite(layer, (x * output_scale, 0))
             slots.append([x, 0, 16, 16])
         regions[asset] = slots

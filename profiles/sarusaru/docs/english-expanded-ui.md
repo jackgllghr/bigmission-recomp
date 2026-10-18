@@ -162,43 +162,34 @@ ink inside a narrower safe area while clearing all original pixels. The builder
 validates that the inner rectangle fits the outer region. Other labels retain
 their existing layout unless a smaller font size is needed for the new edge.
 
-Gold image labels now use a half-pixel synthetic bold stroke and a two-pixel
-red edge offset 0.75 pixels down and right. Quarter-pixel letter spacing helps
-separate smaller text while preserving the font's kerning. Five tight labels
-use a one-point smaller font to keep the added spacing within their slots.
-Both layers are measured together
-at 4x resolution before downsampling. Source byte/layout checks, icons and
-numerals use their existing paths. The supplied title logo is unchanged.
+All gold image labels and numeric cells use the immutable `TextStyle` class
+and shared `GOLD_TEXT_STYLE` in `tools/build_menu_translation.py`. The default
+fill is `#ffe70a` with a solid `#d64308` outline. Color and stroke dimensions
+are declared together once; callers can pass another style to the renderer.
+The former stage-select-only palette switch has been removed.
 
-The gameplay controls atlas (`common00/action_name.tm2`) uses a centered
-border instead: gold ink, an orange inner edge, then a red outer edge, with no
-shadow offset. The bottom menu hints (`e_but_0.lzs`, `e_but_1.lzs`) share this
-style. Navy bars follow their original placement: below controls/shortcuts
-and most dialog hints, above the top-bar Back/Cancel variants, joining the
-preserved bar ends and controller icons.
-Large stage titles (`tenso/e_s_title_*.tm2`) and warp introduction banners
-(`common/e_nabi_a2.tm2`, `common/e_nabi_a4.tm2`) have a separate centered style
-with an additional four-pixel white outer stroke. One long title uses a
-one-point smaller font to accommodate the extra border. Other UI labels keep
-the offset red treatment.
+Ordinary labels use a 1.5-pixel outline offset 0.45 pixels down and right.
+Small gameplay control captions and menu hints use half that outline width,
+centered on the text. Stage titles and warp introduction banners retain a
+centered three-pixel white outer halo. These dimensions preserve the lighter
+stage-select treatment across main-menu, pause, options, confirmation,
+laboratory, save/load and gameplay labels, including the completion digits
+and percent sign. Quarter-pixel tracking preserves the font's kerning.
+White body/help text and the supplied title artwork retain their own styles.
 
-Stage-selection titles, clear badges, Current Best Time, shared menu hints,
-and small/medium numeric cells use yellow `#ffe70a` with a solid `#d64308`
-outline. Their outline, offset shadow and title's white outer border are
-60% of the previous dimensions, preserving their relative proportions.
-Shared hint and numeric atlases carry that treatment into other menus that
-reuse them; the large completion digits retain their separate palette.
+Navy bars retain their rounded shape and translucency. The BGM and SE rows in
+`common/b_but_c0.tm2` are now font-rendered catalog entries alongside Defaults
+and Back, with `text_rect` bounds matching the original right-aligned ink.
 
 The clipping regression projects authored badge pixels through four actual
 GE triangle transforms and checks that the visible ink remains inside the
-screen. It failed before the layout correction. Lettering tests also verify
-increased gold weight, a wider red edge, its down/right offset, and invalid
-inner-rectangle rejection.
+screen. Lettering tests verify the shared palette across the requested menu
+and gameplay labels, completion digits and percent sign, configurable style
+colors/strokes, control-outline proportions, and invalid inner rectangles.
 
 A Vulkan capture of stage selection confirms that the Clear stamp stays inside
 the screen and shows only its own tile; the previous extra Perfect fragment is
-absent. Stage titles, best-time text and button legends show the heavier gold
-ink and offset red edge. Local ignored evidence is under
+absent. The original layout comparison is kept as local ignored evidence under
 `progress/translation-ui/lettering-stage-select.png` and
 `progress/translation-ui/lettering-comparison.png`.
 
