@@ -411,11 +411,11 @@ endif()
 # upscaling on the device, and 4K (8x) still needs the recipe. An empty URL
 # builds one that offers none.
 set(SARUSARU_HD_PACK_URL
-    "https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/hd-2026-10-16/sarusaru-hd-4x.zip"
+    "https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/hd-2026-10-18/sarusaru-hd-4x.zip"
     CACHE STRING "URL of the prebuilt HD texture pack zip the launcher offers (empty: none)")
-set(SARUSARU_HD_PACK_SHA256 "39d11177c945995ad5623a048891f291f27a5a46ed5776aac668ba8bb21945ab"
+set(SARUSARU_HD_PACK_SHA256 "13a1dc35159d3123ffbe09b1e722d7987c23df82d797009d6ab46d3136a70ed1"
     CACHE STRING "SHA-256 of the prebuilt HD texture pack zip")
-set(SARUSARU_HD_PACK_SIZE "40814084" CACHE STRING "Size in bytes of the prebuilt HD texture pack zip")
+set(SARUSARU_HD_PACK_SIZE "44562453" CACHE STRING "Size in bytes of the prebuilt HD texture pack zip")
 if(NOT SARUSARU_HD_PACK_URL STREQUAL "")
     string(LENGTH "${SARUSARU_HD_PACK_SHA256}" _sarusaru_hd_pack_hash_length)
     if(NOT SARUSARU_HD_PACK_URL MATCHES "^(https|file)://" OR NOT SARUSARU_HD_PACK_SHA256 MATCHES "^[0-9a-f]+$"
