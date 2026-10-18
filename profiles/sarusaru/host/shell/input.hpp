@@ -19,6 +19,7 @@ struct InputState {
     ctrl::Controller::Pad pad;
     bool fast_forward{}, menu{}, save_state{}, load_state{};
     float camera_x{}, camera_y{};
+    float aim_x{}, aim_y{}; // physical right stick, with the same dead zone
     bool camera_reset{};
 };
 // Pure mapping shared by live polling and synthetic tests (no window/device required).
@@ -26,6 +27,10 @@ struct InputState {
 // itself: while it is held, neither also triggers its own single-button actions.
 [[nodiscard]] InputState map_input(const ControlSettings &settings, std::span<const bool> keys,
                                    std::span<const GamepadState> gamepads);
+// Routes the camera controls to the PSP stick only while an ability is aiming.
+// The stronger stick wins; sensitivity changes response up to the native limit.
+void apply_aiming(InputState &state, bool aiming, float sensitivity);
+
 class Input {
 public:
     // Opens the gamepads already connected: their SDL_EVENT_GAMEPAD_ADDED may

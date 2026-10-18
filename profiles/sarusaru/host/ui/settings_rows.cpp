@@ -10,7 +10,7 @@ namespace {
 
 constexpr SettingRow kGraphics[] = {SettingRow::Preset, SettingRow::Fullscreen, SettingRow::WindowSize, SettingRow::InternalResolution,
     SettingRow::FrameRate, SettingRow::Fov, SettingRow::DrawDistance, SettingRow::CelShading, SettingRow::Textures};
-constexpr SettingRow kControls[] = {SettingRow::DeadZone};
+constexpr SettingRow kControls[] = {SettingRow::DeadZone, SettingRow::AimSensitivity};
 constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::Subtitles, SettingRow::ConfirmButton, SettingRow::ControllerButtons, SettingRow::SkipIntroLogos};
 constexpr SettingRow kUpdates[] = {SettingRow::AutomaticUpdates};
 constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabControls, kControls},
@@ -189,6 +189,11 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
         view.enabled = !settings.fullscreen;
         view.description = text(view.enabled ? Text::DescWindowSize : Text::DescWindowSizeFullscreen);
         break;
+    case SettingRow::AimSensitivity:
+        view.label = text(Text::RowAimSensitivity);
+        view.value = number("%.0f%%", settings.controls.aim_sensitivity * 100.0);
+        view.description = text(Text::DescAimSensitivity);
+        break;
     case SettingRow::DeadZone:
         view.label = text(Text::RowDeadZone);
         view.value = number("%.0f%%", settings.controls.dead_zone * 100.0);
@@ -285,6 +290,11 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
         const auto width = static_cast<std::uint32_t>(step_value(kWindowWidths, settings.window_width, direction));
         settings.window_width = width;
         settings.window_height = width * 272u / 480u;
+        break;
+    }
+    case SettingRow::AimSensitivity: {
+        constexpr double steps[] = {0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2};
+        settings.controls.aim_sensitivity = static_cast<float>(step_value(steps, settings.controls.aim_sensitivity, direction));
         break;
     }
     case SettingRow::DeadZone: {
