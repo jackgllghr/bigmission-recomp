@@ -153,6 +153,11 @@ line signatures. ASCII and compact cell widths cannot combine into one line.
 The main-menu copyright footer is a separate `i_g_c.lzs` replacement, drawn in
 the rounded white body style with its original wording and copyright symbol.
 Both paths include native and 8x text layers.
+The title logo also has an 8x layer, resampled from the supplied logo; it is
+3600x1748 so that the layer (2816x1152) is never enlarged from it.
+With an HD texture pack, a translated texture's art around its authored
+regions comes from the pack's image of the original texture (see
+[`hd-textures.md`](hd-textures.md)), so icons and frames match the HD pack.
 Save/load text with runtime substitutions retains the guest's rendering for
 those dynamic lines; static lines are deduplicated by their full signatures.
 

@@ -26,8 +26,10 @@ logical rectangle, cut to 128 bits (32 hex digits). The logical width is the
 GE width, or the row stride (`buffer_width`) when that is narrower, because
 columns past the stride wrap into the next row and are not the texture's own.
 Two palettes giving the same pixels give the same identity, so one upscale
-covers both. The identity is taken after any English translation pack has
-replaced its regions, so translated menus get their own HD images.
+covers both. The identity is taken before any English translation pack has
+replaced its regions, so dumps and packs hold the original texture. For a
+translated texture, the pack's image is the art around the translation's
+authored regions, and the translation's HD lettering is drawn in them.
 
 It is computed only on a renderer cache miss, and only when a dump or HD pack
 is active.

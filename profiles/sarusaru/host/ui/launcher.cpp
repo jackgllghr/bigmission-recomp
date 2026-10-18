@@ -113,6 +113,14 @@ void Launcher::load_title_art() {
     SDL_Surface *rgba = SDL_ConvertSurface(loaded, SDL_PIXELFORMAT_ABGR8888);
     SDL_DestroySurface(loaded);
     if (rgba == nullptr) return;
+    // The art is sized for the game's HD title texture; the launcher draws it
+    // far smaller and without mipmaps, so halve it (a 2x2 average) first.
+    while (rgba->h > 1024) {
+        SDL_Surface *half = SDL_ScaleSurface(rgba, rgba->w / 2, rgba->h / 2, SDL_SCALEMODE_LINEAR);
+        if (half == nullptr) break;
+        SDL_DestroySurface(rgba);
+        rgba = half;
+    }
     std::vector<std::uint8_t> pixels(static_cast<std::size_t>(rgba->w) * static_cast<std::size_t>(rgba->h) * 4u);
     for (int y = 0; y < rgba->h; ++y)
         std::memcpy(pixels.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(rgba->w) * 4u,

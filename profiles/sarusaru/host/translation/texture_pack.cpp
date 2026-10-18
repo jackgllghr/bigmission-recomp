@@ -334,7 +334,7 @@ bool TexturePack::apply(const gpu::TextureState &texture, std::vector<std::uint3
 }
 
 std::uint32_t TexturePack::apply_scaled(const gpu::TextureState &texture, std::vector<std::uint32_t> &pixels,
-                                       std::uint32_t requested_scale) const {
+                                       std::uint32_t requested_scale, const BaseArt *base) const {
     if (requested_scale < 1 || requested_scale > 8 ||
         pixels.size() != static_cast<std::size_t>(texture.width) * texture.height) return 0;
     for (const auto &entry : entries_) {
@@ -360,9 +360,14 @@ std::uint32_t TexturePack::apply_scaled(const gpu::TextureState &texture, std::v
             }
             const auto width = texture.width * scale, height = texture.height * scale;
             std::vector<std::uint32_t> scaled(std::size_t(width) * height);
+            const bool art = base != nullptr && base->scale && base->width && base->height &&
+                base->texels.size() >= std::size_t(base->width) * base->height * base->scale * base->scale;
             for (std::uint32_t y = 0; y < height; ++y)
                 for (std::uint32_t x = 0; x < width; ++x)
-                    scaled[std::size_t(y) * width + x] = pixels[std::size_t(y / scale) * texture.width + x / scale];
+                    scaled[std::size_t(y) * width + x] = art && x / scale < base->width && y / scale < base->height
+                        ? base->texels[std::size_t(y * base->scale / scale) * base->width * base->scale +
+                                       x * base->scale / scale]
+                        : pixels[std::size_t(y / scale) * texture.width + x / scale];
             const auto step = entry.hd_scale / scale;
             const auto hd_width = entry.width * entry.hd_scale;
             for (const auto &region : entry.regions)
