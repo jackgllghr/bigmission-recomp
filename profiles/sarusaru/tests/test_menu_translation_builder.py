@@ -95,13 +95,39 @@ class MenuCatalogTests(unittest.TestCase):
                     x, y = (index % columns) * cell, (index // columns) * height
                     self.assertIsNotNone(image.crop((x * scale, y * scale,
                         (x + cell) * scale, (y + height) * scale)).getbbox())
-                # Preserve Japanese units in small fonts and spare large cells.
+                # Preserve Japanese units and spare large cells.
                 untouched = 11 if cell == 16 else 14
                 x, y = (untouched % columns) * cell, (untouched // columns) * height
                 self.assertIsNone(image.crop((x * scale, y * scale,
                     (x + cell) * scale, (y + height) * scale)).getbbox())
                 self.assertTrue(all(x + w <= image.width // scale and y + h <= image.height // scale
                                     for x, y, w, h in regions[asset]))
+
+    def test_stage_select_time_marks_replace_the_actual_guest_sampled_tiles(self):
+        from PIL import Image
+        # Observed stage-select sprites use a separate 128x32 atlas, not the
+        # small number atlas: UV (32,0)..(48,16) and (80,0)..(96,16).
+        asset = 'common/e_tan_5.tm2'
+        for scale in (1, 8):
+            image = Image.new('RGBA', (128 * scale, 32 * scale))
+            regions = render_numeric_atlases({asset: image}, output_scale=scale)
+            self.assertIn(asset, regions)
+            self.assertEqual(regions[asset], [[32, 0, 16, 16], [80, 0, 16, 16]])
+            for x, text in ((32, "'"), (80, '"')):
+                cell = image.crop((x * scale, 0, (x + 16) * scale, 16 * scale))
+                expected = render_ui_label(text, 12, 16, 16, output_scale=scale, stage_select=True)
+                self.assertEqual(cell.getchannel('A').tobytes(), expected.getchannel('A').tobytes())
+                self.assertIsNotNone(cell.getbbox())
+            self.assertIsNone(image.crop((0, 16 * scale, 128 * scale, 32 * scale)).getbbox())
+
+    def test_cancel_caption_starts_halfway_down_the_top_bar(self):
+        for scale in (1, 8):
+            image = render_ui_label('Cancel', 13, 72, 20, controls=True,
+                                    top_hint_bar=True, hint_origin=(16, 4), output_scale=scale)
+            ys = [y for y in range(image.height) for x in range(image.width)
+                  if (lambda p: p[3] > 128 and p[0] > 120)(image.getpixel((x, y)))]
+            # Atlas y=4 is this label's origin; the 8px bar begins at y=1.
+            self.assertAlmostEqual(min(ys) / scale + 4, 5, delta=1 / scale)
 
     def test_pause_help_matches_compact_glyph_lines_and_keeps_hd_detail(self):
         import hashlib
@@ -210,8 +236,8 @@ class MenuCatalogTests(unittest.TestCase):
         tracked = render_ui_label(text, 10, 100, 20)
         untracked = Image.new('RGBA', (400, 80))
         ImageDraw.Draw(untracked).text((20, 8), text,
-            font=label_font(40), fill=(249, 206, 0, 255),
-            stroke_width=0, stroke_fill=(249, 206, 0, 255))
+            font=label_font(40), fill=(247, 211, 16, 255),
+            stroke_width=0, stroke_fill=(247, 211, 16, 255))
         untracked = untracked.resize((100, 20), Image.Resampling.LANCZOS)
         def gold_span(image):
             xs = [x for y in range(image.height) for x in range(image.width)
@@ -227,7 +253,7 @@ class MenuCatalogTests(unittest.TestCase):
             with self.subTest(style=style):
                 image = render_ui_label('H', 24, 80, 40, output_scale=8, **style)
                 pixels = set(image.get_flattened_data())
-                self.assertIn((249, 206, 0, 255), pixels)
+                self.assertIn((247, 211, 16, 255), pixels)
                 self.assertNotIn((135, 49, 35, 255), pixels)
                 self.assertIn((179, 55, 22, 255), pixels)
                 self.assertIn((255, 148, 3, 255), pixels)
@@ -246,6 +272,22 @@ class MenuCatalogTests(unittest.TestCase):
         composited.alpha_composite(image)
         self.assertEqual(self.images['common00/action_name.tm2'].crop((0, 0, 80, 40)).tobytes(),
                          composited.tobytes())
+
+    def test_stage_select_palette_and_thinner_outlines(self):
+        for style in ({}, {'controls': True}, {'header': True}):
+            with self.subTest(style=style):
+                old = render_ui_label('H', 24, 80, 48, output_scale=8, **style)
+                image = render_ui_label('H', 24, 80, 48, output_scale=8, stage_select=True, **style)
+                pixels = set(image.get_flattened_data())
+                self.assertIn((255, 231, 10, 255), pixels)
+                self.assertIn((214, 67, 8, 255), pixels)
+                self.assertNotIn((247, 211, 16, 255), pixels)
+                self.assertNotIn((179, 55, 22, 255), pixels)
+                # Ignore faint resampling fringe when measuring the silhouette.
+                old_box = old.getchannel('A').point(lambda a: 255 if a > 128 else 0).getbbox()
+                box = image.getchannel('A').point(lambda a: 255 if a > 128 else 0).getbbox()
+                for axis in (0, 1):
+                    self.assertLess(box[axis + 2] - box[axis], old_box[axis + 2] - old_box[axis])
 
     def test_control_hint_outlines_are_half_the_regular_width(self):
         for scale in (1, 8):
