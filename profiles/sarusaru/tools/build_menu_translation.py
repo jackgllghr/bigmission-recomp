@@ -79,6 +79,7 @@ ASSETS = {
     'menko/i_g_obj_5.lzs': ('ui.menko.i_g_obj_5', (64, 64), (64, 64, 64)),
     'menko/i_g_obj_6.lzs': ('ui.menko.i_g_obj_6', (64, 64), (64, 64, 64)),
     'common/b_but_c0.tm2': ('options.labels', (160, 64), (256, 64, 160)),
+    'menko/e_nabi_b3.lzs': ('ui.menko.e_nabi_b3', (64, 112), (64, 128, 64)),
 }
 
 
@@ -455,21 +456,58 @@ def compact_monkey_name_runs(records, drafts, boot):
     return runs
 
 
-def render_body_text(text, size, width, height, alignment='left', *, output_scale=1):
+def render_body_text(text, size, width, height, alignment='left', *, output_scale=1, baseline=False):
+    """White text with a black edge. With `baseline`, the font's capital and
+    descender extent rather than the ink is centered, so lines in a table
+    share one baseline."""
     from PIL import Image, ImageDraw
-    if alignment not in ('left', 'center'):
-        raise ValueError('Label alignment must be left or center')
+    if alignment not in ('left', 'center', 'right'):
+        raise ValueError('Label alignment must be left, center or right')
     scale = max(4, output_scale)
     layer = Image.new('RGBA', (width * scale, height * scale))
     font = label_font(size * scale, controls=True)
     draw = ImageDraw.Draw(layer)
     box = draw.textbbox((0, 0), text, font=font, stroke_width=scale)
-    if box[2] - box[0] > layer.width - 2 * scale or box[3] - box[1] > layer.height - 2 * scale:
+    # Centered vertically: a line with both ascenders and descenders may use
+    # all but half a logical pixel above and below.
+    if box[2] - box[0] > layer.width - 2 * scale or box[3] - box[1] > layer.height - scale:
         raise ValueError('Help line exceeds pixel budget')
-    x = scale - box[0] if alignment == 'left' else (layer.width - box[2] + box[0]) / 2 - box[0]
-    draw.text((x, (layer.height - box[3] + box[1]) / 2 - box[1]), text, font=font,
+    x = {'left': scale - box[0], 'center': (layer.width - box[2] + box[0]) / 2 - box[0],
+         'right': layer.width - scale - box[2]}[alignment]
+    y = (layer.height - box[3] + box[1]) / 2 - box[1]
+    if baseline:
+        # Center capitals and descenders, whichever this line uses.
+        reference = draw.textbbox((0, 0), 'Hg', font=font, stroke_width=scale)
+        y = (layer.height - reference[3] + reference[1]) / 2 - reference[1]
+        if y + box[1] < 0 or y + box[3] > layer.height:
+            raise ValueError('Help line exceeds pixel budget')
+    draw.text((x, y), text, font=font,
               fill=(255, 255, 255, 255), stroke_width=scale, stroke_fill=(0, 0, 0, 255))
     return layer.resize((width * output_scale, height * output_scale), Image.Resampling.LANCZOS)
+
+
+def render_button(button, *, output_scale=1):
+    """A white, black-edged PlayStation shape in one 16x16 cell, like the font's."""
+    from PIL import Image, ImageDraw
+    from PIL import ImageFilter
+    scale = max(4, output_scale)
+    shape = Image.new('L', (16 * scale, 16 * scale))
+    draw = ImageDraw.Draw(shape)
+    box, width = (3 * scale, 3 * scale, 13 * scale - 1, 13 * scale - 1), int(1.75 * scale)
+    if button == 'square':
+        draw.rectangle(box, outline=255, width=width)
+    elif button == 'circle':
+        draw.ellipse(box, outline=255, width=width)
+    elif button == 'cross':
+        draw.line((box[0], box[1], box[2], box[3]), fill=255, width=width)
+        draw.line((box[0], box[3], box[2], box[1]), fill=255, width=width)
+    else:
+        raise ValueError('Unknown button glyph')
+    # A one-pixel black edge around the white stroke, as the font draws it.
+    layer = Image.new('RGBA', shape.size, (0, 0, 0, 0))
+    layer.paste((0, 0, 0, 255), mask=shape.filter(ImageFilter.MaxFilter(2 * scale + 1)))
+    layer.paste((255, 255, 255, 255), mask=shape)
+    return layer.resize((16 * output_scale, 16 * output_scale), Image.Resampling.LANCZOS)
 
 
 def render_line(run, canvas, *, output_scale=1):
@@ -480,8 +518,14 @@ def render_line(run, canvas, *, output_scale=1):
     text = run['text']
     if not text or any(not 32 <= ord(c) <= 126 for c in text):
         raise ValueError('Help lines support printable ASCII')
-    canvas.alpha_composite(render_body_text(text, 12, run['width'], 16,
-                                          run.get('align', 'left'), output_scale=output_scale))
+    if 'button' in run:
+        # The button keeps its own cell; the action follows a short gap.
+        canvas.alpha_composite(render_button(run['button'], output_scale=output_scale))
+        canvas.alpha_composite(render_body_text(text, 12, run['width'] - 18, 16, output_scale=output_scale,
+                                                baseline=run.get('baseline', False)), (18 * output_scale, 0))
+        return
+    canvas.alpha_composite(render_body_text(text, 12, run['width'], 16, run.get('align', 'left'),
+                                          output_scale=output_scale, baseline=run.get('baseline', False)))
 
 
 def load_textures(iso):
@@ -581,7 +625,7 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
     regions = render_labels(catalog, images)
     regions.update(render_numeric_atlases(images))
     regions['i_g_titl_l.lzs'] = [(0, 0, 352, 144)]
-    result = bytearray(b'SSTEXPK7')
+    result = bytearray(b'SSTEXPK8')
     result += supported['disc_id'].encode('ascii') + supported['executable_sha256'].encode('ascii') + b'en'
     result += struct.pack('<I', len(sources))
     for source_path, source in sources.items():
@@ -642,19 +686,36 @@ def build(iso_path, logo_path, catalog_path, output, gameplay_catalog=None, dial
         result += struct.pack('<H', len(replacement)) + replacement
     runs = catalog.get('glyph_runs', []) + pause_help_runs(catalog, boot) + ascii_ui_runs(catalog)
     if gameplay_catalog is not None:
-        runs += compact_monkey_name_runs(compact_names, json.loads(gameplay_catalog.read_text()), boot)
-    if len(runs) > 256:
+        drafts = json.loads(gameplay_catalog.read_text())
+        runs += compact_monkey_name_runs(compact_names, drafts, boot)
+        import monkey_book
+        from dialogue_assets import GlyphMap
+        context = json.loads((PROFILE / 'resources/translations/dialogue-context.json').read_text())
+        at = int(context['kanji_table'], 0)
+        runs += monkey_book.runs(boot, drafts, GlyphMap(boot[at:at + context['kanji_bytes']]))
+        runs += monkey_book.name_runs(drafts)
+    # One line per glyph sequence: the first catalog to claim it keeps it.
+    lines = {}
+    for run in runs:
+        if lines.setdefault(run['signature'], run)['text'] != run['text']:
+            raise ValueError(f"{run['id']}: same glyphs as {lines[run['signature']]['id']} with other text")
+    runs = list(lines.values())
+    if len(runs) > 4096:
         raise ValueError('Too many glyph-run replacements')
     result += struct.pack('<H', len(runs))
     for run in runs:
-        canvas = Image.new('RGBA', (512, 16))
-        render_line(run, canvas)
+        # Each line is stored at its own width, as pixel runs.
+        canvas = Image.new('RGBA', (run['width'], 16))
+        try:
+            render_line(run, canvas)
+        except ValueError as exc:
+            raise ValueError(f"{run['id']}: {exc}") from None
         result += name(run['id']) + struct.pack('<HH', run['width'], 16) + digest(font.rgba)
         result += run['signature'].encode('ascii') + struct.pack('<H', run['glyph_count'])
-        rgba = canvas.tobytes()
-        result += struct.pack('<I', len(rgba)) + rgba
+        pixel_runs = encode_pixel_runs(canvas.tobytes())
+        result += struct.pack('<I', len(pixel_runs)) + pixel_runs
         hd_scale = run.get('hd_scale', 8)
-        hd = Image.new('RGBA', (512 * hd_scale, 16 * hd_scale))
+        hd = Image.new('RGBA', (run['width'] * hd_scale, 16 * hd_scale))
         render_line(run, hd, output_scale=hd_scale)
         hd_runs = encode_pixel_runs(hd.tobytes())
         result += struct.pack('<HI', hd_scale, len(hd_runs)) + hd_runs

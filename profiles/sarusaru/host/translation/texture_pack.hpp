@@ -54,9 +54,11 @@ public:
     void translate_draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call, const DrawSink &emit);
     void flush_draws(const DrawSink &emit);
     // Reserved host-only IDs are generated at runtime, never read from guest assets.
-    [[nodiscard]] std::span<const std::uint8_t> host_rgba(std::uint32_t address) const;
+    [[nodiscard]] bool host_texture(std::uint32_t address) const noexcept;
+    [[nodiscard]] std::vector<std::uint8_t> host_rgba(std::uint32_t address) const;
+    // Decoded on each call: the renderer uploads a line once and keeps its texture.
     struct HostImage {
-        std::span<const std::uint8_t> rgba;
+        std::vector<std::uint8_t> rgba;
         std::uint32_t width{}, height{};
     };
     [[nodiscard]] HostImage host_image(std::uint32_t address, std::uint32_t requested_scale) const;
@@ -90,15 +92,18 @@ private:
         std::vector<std::uint8_t> encoded;
     };
     std::vector<DialogueEntry> dialogue_;
+    // Lines stay as pixel runs (u16 count, u32 RGBA) until drawn.
     struct GlyphRun {
         std::string id, font_hash, signature;
-        std::uint16_t width{}, height{}, glyph_count{};
-        std::vector<std::uint8_t> rgba;
+        std::uint16_t width{}, height{}, glyph_count{}, image_width{};
+        std::vector<std::uint8_t> rgba_runs;
         std::uint16_t hd_scale{};
-        std::vector<std::uint8_t> hd_rgba;
+        std::vector<std::uint8_t> hd_runs;
     };
-    static constexpr std::uint32_t kHostTextureBase = 0xFFF00000u;
+    static constexpr std::uint32_t kHostTextureBase = 0xFFF00000u, kHostTextureStride = 0x100u;
+    static constexpr std::uint32_t kMaxGlyphRuns = (0u - kHostTextureBase) / kHostTextureStride;
     std::vector<GlyphRun> runs_;
+    std::unordered_map<std::string, std::size_t> run_index_;
     std::vector<gpu::DrawCall> pending_;
     std::string pending_font_;
     std::unordered_map<std::string, std::string> fonts_;

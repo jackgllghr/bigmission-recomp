@@ -393,10 +393,46 @@ int main() {
         integer(many_runs, 1, 2); integer(many_runs, 512 * 16 * 4, 4);
         many_runs.resize(many_runs.size() + 512 * 16 * 4);
     }
-    require(load(many_runs).host_rgba(0xfffff000u).size() == 512 * 16 * 4,
+    require(load(many_runs).host_rgba(0xfff0ff00u).size() == 512 * 16 * 4,
             "expanded text catalog lost the final reserved host texture ID");
     auto too_many_runs = version2(); integer(too_many_runs, 0, 4); integer(too_many_runs, 257, 2);
     rejects(too_many_runs);
+
+    // V8 stores each line at its own width as pixel runs, and allows the
+    // Monkey Book's hundreds of lines.
+    const auto compact_runs = [&](unsigned count, unsigned width, std::uint32_t hd_count) {
+        auto bytes = version2(); bytes[7] = '8'; integer(bytes, 0, 4); integer(bytes, count, 2);
+        for (unsigned i = 0; i < count; ++i) {
+            name(bytes, "monkey.synthetic." + std::to_string(i)); integer(bytes, width, 2); integer(bytes, 16, 2);
+            text(bytes, psprecomp::sha256(Bytes(512 * 512 * 4, 0)));
+            text(bytes, i == 0 ? psprecomp::sha256(glyph_signature) : psprecomp::sha256(Bytes{static_cast<std::uint8_t>(i), static_cast<std::uint8_t>(i >> 8), 1}));
+            integer(bytes, 2, 2);
+            integer(bytes, 12, 4);
+            integer(bytes, width * 16 - 1, 2); integer(bytes, 0xff0000ffu, 4);
+            integer(bytes, 1, 2); integer(bytes, 0xff00ff00u, 4);
+            integer(bytes, 2, 2); integer(bytes, 6, 4);
+            integer(bytes, hd_count, 2); integer(bytes, 0xff123456u, 4);
+        }
+        for (int section = 0; section < 3; ++section) integer(bytes, 0, 2);
+        return bytes;
+    };
+    auto tight_runs = load(compact_runs(1000, 40, 40 * 16 * 4));
+    emitted.clear();
+    tight_runs.translate_draw(font_memory, glyph, emit); tight_runs.translate_draw(font_memory, next, emit);
+    tight_runs.flush_draws(emit);
+    require(emitted.size() == 1 && emitted[0].texture.width == 40 && emitted[0].vertices[1].position[0] == 50 &&
+            emitted[0].vertices[1].texcoord[0] == 40, "V8 line lost its own width");
+    const auto tight = tight_runs.host_image(emitted[0].texture.address, 1);
+    require(tight.width == 40 && tight.height == 16 && tight.rgba.size() == 40 * 16 * 4 &&
+            tight.rgba[0] == 0xff && tight.rgba[1] == 0 && tight.rgba.end()[-3] == 0xff,
+            "V8 line pixel runs decoded incorrectly");
+    const auto tight_hd = tight_runs.host_image(emitted[0].texture.address, 4);
+    require(tight_hd.width == 80 && tight_hd.height == 32 && tight_hd.rgba[0] == 0x56, "V8 HD line decoded incorrectly");
+    require(tight_runs.host_texture(0xfff00000u + 999 * 0x100u) && !tight_runs.host_texture(0xfff00000u + 1000 * 0x100u) &&
+            tight_runs.host_image(0xfff00000u + 999 * 0x100u, 1).width == 40, "V8 lost a high host texture ID");
+    rejects(compact_runs(1, 40, 40 * 16 * 4 - 1));
+    rejects(compact_runs(1, 40, 40 * 16 * 4 + 1));
+    rejects(compact_runs(4097, 1, 4));
 
     // Captions share the compact-message format with dialogue, beyond 88 entries.
     auto many_captions = version2(); many_captions[7] = '4';

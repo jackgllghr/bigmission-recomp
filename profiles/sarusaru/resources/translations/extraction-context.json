@@ -46,6 +46,18 @@
     "count": 207,
     "pointer_offset": 8
   },
+  "monkey_book": {
+    "description": "Monkey record fields drawn by the Collection's Monkey Book (record offsets), and its format strings.",
+    "pointer_bias": 116,
+    "fields": {"description": 12, "kind": 16, "square": 24, "circle": 28, "cross": 32},
+    "ui": {
+      "actions": "0x21efe4",
+      "stage": "0x21f03c",
+      "caught": "0x21efd4",
+      "caught_zero": "0x21effc",
+      "unknown": "0x21f034"
+    }
+  },
   "compact_monkey_names": {
     "offset": "0x280c34",
     "count": 201

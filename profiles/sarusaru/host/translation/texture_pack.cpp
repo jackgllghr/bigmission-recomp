@@ -71,7 +71,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) invalid("short read");
     Reader reader(bytes);
     const auto magic = reader.text(8);
-    if (!magic.starts_with("SSTEXPK") || magic[7] < '1' || magic[7] > '7') invalid("unsupported format/version");
+    if (!magic.starts_with("SSTEXPK") || magic[7] < '1' || magic[7] > '8') invalid("unsupported format/version");
     const int version = magic[7] - '0';
     if (disc_id.size() != 9 || reader.text(9) != disc_id || reader.digest() != executable_hash) invalid("incompatible game");
     TexturePack pack;
@@ -157,8 +157,21 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
         for (std::size_t i = 1; i < ranges.size(); ++i)
             if (ranges[i].first < ranges[i - 1].second) invalid("overlapping string slots");
         const auto runs = reader.integer(2);
-        if (runs > 256) invalid("too many glyph-run replacements");
-        std::set<std::string> run_identities;
+        if (runs > (version >= 8 ? kMaxGlyphRuns : 256u)) invalid("too many glyph-run replacements");
+        // Pixel runs (u16 count, u32 RGBA) that must cover exactly `pixels`.
+        const auto pixel_runs = [](std::span<const std::uint8_t> bytes, std::size_t pixels) {
+            if (bytes.empty() || bytes.size() % 6) invalid("invalid help-line pixel runs");
+            Reader runs(bytes);
+            std::size_t total = 0;
+            while (!runs.empty()) {
+                const auto count = runs.integer(2);
+                runs.integer(4);
+                if (!count || count > pixels - total) invalid("help-line run exceeds image");
+                total += count;
+            }
+            if (total != pixels) invalid("short help-line image");
+            return std::vector<std::uint8_t>(bytes.begin(), bytes.end());
+        };
         for (std::uint32_t i = 0; i < runs; ++i) {
             GlyphRun run;
             run.id = reader.name(128);
@@ -169,29 +182,33 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
             run.font_hash = reader.digest();
             run.signature = reader.digest();
             run.glyph_count = static_cast<std::uint16_t>(reader.integer(2));
-            if (run.glyph_count == 0 || run.glyph_count > 64 || !run_identities.insert(run.font_hash + run.signature).second)
+            if (run.glyph_count == 0 || run.glyph_count > 64 ||
+                !pack.run_index_.emplace(run.font_hash + run.signature, pack.runs_.size()).second)
                 invalid("invalid or duplicate help-line identity");
+            // Version 8 stores each line at its own width as pixel runs; older
+            // packs store a raw 512-texel-wide image.
+            run.image_width = version >= 8 ? run.width : 512u;
+            const std::size_t pixels = std::size_t{run.image_width} * 16u;
             const auto size = reader.integer(4);
-            if (size != 512u * 16u * 4u) invalid("invalid help-line pixel payload");
-            const auto pixels = reader.take(size);
-            run.rgba.assign(pixels.begin(), pixels.end());
+            if (version >= 8) {
+                run.rgba_runs = pixel_runs(reader.take(size), pixels);
+            } else {
+                if (size != pixels * 4u) invalid("invalid help-line pixel payload");
+                const auto raw = reader.take(size);
+                for (std::size_t at = 0; at < raw.size();) {
+                    std::uint16_t count = 0;
+                    while (at + count * 4u < raw.size() && count < 0xFFFFu &&
+                           std::equal(raw.begin() + at, raw.begin() + at + 4, raw.begin() + at + count * 4u)) ++count;
+                    run.rgba_runs.push_back(static_cast<std::uint8_t>(count));
+                    run.rgba_runs.push_back(static_cast<std::uint8_t>(count >> 8));
+                    run.rgba_runs.insert(run.rgba_runs.end(), raw.begin() + at, raw.begin() + at + 4);
+                    at += count * 4u;
+                }
+            }
             if (version >= 7) {
                 const auto scale = reader.integer(2), size = reader.integer(4);
-                if ((scale != 2 && scale != 4 && scale != 8) || !size || size % 6)
-                    invalid("invalid HD help-line layer");
-                Reader runs(reader.take(size));
-                const std::size_t expected = 512u * 16u * scale * scale;
-                std::size_t total = 0;
-                run.hd_rgba.reserve(expected * 4);
-                while (!runs.empty()) {
-                    const auto count = runs.integer(2), pixel = runs.integer(4);
-                    if (!count || count > expected - total) invalid("HD help-line run exceeds image");
-                    total += count;
-                    for (unsigned i = 0; i < count; ++i)
-                        for (unsigned shift = 0; shift < 32; shift += 8)
-                            run.hd_rgba.push_back(static_cast<std::uint8_t>(pixel >> shift));
-                }
-                if (total != expected) invalid("short HD help-line image");
+                if (scale != 2 && scale != 4 && scale != 8) invalid("invalid HD help-line layer");
+                run.hd_runs = pixel_runs(reader.take(size), pixels * scale * scale);
                 run.hd_scale = static_cast<std::uint16_t>(scale);
             }
             pack.runs_.push_back(std::move(run));

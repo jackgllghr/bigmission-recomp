@@ -93,11 +93,10 @@ void TexturePack::flush_draws(const DrawSink &emit) {
             word(signature, static_cast<std::uint16_t>(value));
         }
     }
-    const auto hash = valid ? psprecomp::sha256(signature) : std::string{};
     std::optional<std::size_t> matched;
-    for (std::size_t i = 0; i < runs_.size(); ++i) {
-        const auto &run = runs_[i];
-        if (run.font_hash == pending_font_ && run.glyph_count == pending_.size() && run.signature == hash) matched = i;
+    if (valid) {
+        const auto found = run_index_.find(pending_font_ + psprecomp::sha256(signature));
+        if (found != run_index_.end() && runs_[found->second].glyph_count == pending_.size()) matched = found->second;
     }
     // Move the pending batch before invoking a sink, so reentrant callbacks see an empty batch.
     auto original = std::move(pending_);
@@ -105,10 +104,10 @@ void TexturePack::flush_draws(const DrawSink &emit) {
     if (!matched) { for (const auto &call : original) emit(call); return; }
     const auto &run = runs_[*matched];
     auto translated = original.front();
-    translated.texture.address = kHostTextureBase + static_cast<std::uint32_t>(*matched) * 0x1000u;
-    translated.texture.width = 512;
+    translated.texture.address = kHostTextureBase + static_cast<std::uint32_t>(*matched) * kHostTextureStride;
+    translated.texture.width = run.image_width;
     translated.texture.height = 16;
-    translated.texture.buffer_width = 512;
+    translated.texture.buffer_width = run.image_width;
     translated.texture.format = gpu::TextureFormat::Rgba8888;
     translated.texture.swizzled = false;
     translated.vertices[0].texcoord[0] = translated.vertices[0].texcoord[1] = 0;
@@ -119,17 +118,27 @@ void TexturePack::flush_draws(const DrawSink &emit) {
     emit(translated);
 }
 
-std::span<const std::uint8_t> TexturePack::host_rgba(std::uint32_t address) const {
+bool TexturePack::host_texture(std::uint32_t address) const noexcept {
+    return address >= kHostTextureBase && (address - kHostTextureBase) % kHostTextureStride == 0 &&
+        (address - kHostTextureBase) / kHostTextureStride < runs_.size();
+}
+
+std::vector<std::uint8_t> TexturePack::host_rgba(std::uint32_t address) const {
     return host_image(address, 1).rgba;
 }
 
 TexturePack::HostImage TexturePack::host_image(std::uint32_t address, std::uint32_t requested_scale) const {
-    if (address < kHostTextureBase || (address - kHostTextureBase) % 0x1000u != 0) return {};
-    const auto index = (address - kHostTextureBase) / 0x1000u;
-    if (index >= runs_.size()) return {};
-    const auto &run = runs_[index];
-    if (requested_scale > 1 && run.hd_scale)
-        return {run.hd_rgba, 512u * run.hd_scale, 16u * run.hd_scale};
-    return {run.rgba, 512u, 16u};
+    if (!host_texture(address)) return {};
+    const auto &run = runs_[(address - kHostTextureBase) / kHostTextureStride];
+    const std::uint32_t scale = requested_scale > 1 && run.hd_scale ? run.hd_scale : 1u;
+    const auto &runs = scale > 1 ? run.hd_runs : run.rgba_runs;
+    HostImage image{{}, run.image_width * scale, 16u * scale};
+    image.rgba.reserve(std::size_t{image.width} * image.height * 4u);
+    // Validated when the pack was loaded.
+    for (std::size_t at = 0; at + 6 <= runs.size(); at += 6) {
+        const std::size_t count = runs[at] | std::size_t{runs[at + 1]} << 8;
+        for (std::size_t i = 0; i < count; ++i) image.rgba.insert(image.rgba.end(), runs.begin() + at + 2, runs.begin() + at + 6);
+    }
+    return image;
 }
 }
