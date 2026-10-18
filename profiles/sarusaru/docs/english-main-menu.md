@@ -47,11 +47,12 @@ implemented yet.
 | Intro | Autosave warning and Next button; missing-card/space prompts |
 | Name entry | Heading, prompt, confirmation, keyboard mode tabs and button legends |
 | Save/load | Continue/Load/Back menu, numbered slot controls, selection/help, confirmations, progress, success and error messages |
-| Options | Heading, Defaults/Back, confirmation legends, music/effects/defaults/return help |
+| Options | Heading, BGM/SE/Defaults/Back, confirmation legends, music/effects/defaults/return help |
 | Gameplay controls | 65 context-sensitive action labels, including Jump, Catch, attacks and abilities |
 
-Existing BGM/SE labels, volume bars, controller icons, numeric slot labels and
-backgrounds remain intact. Kana/Kata/ABC/123 are input-alphabet choices; the
+BGM/SE labels use the shared gold text style; their original text bounds are
+preserved. Volume bars, controller icons, numeric slot labels and backgrounds
+remain intact. Kana/Kata/ABC/123 are input-alphabet choices; the
 Japanese keyboard's characters remain available intentionally. Select ABC for
 Latin name entry. Existing player names and save metadata are preserved.
 Other gameplay text, movies, minigame content beyond shared controls and other unrecognized

@@ -12,7 +12,7 @@ PROFILE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROFILE / 'tools'))
 from build_menu_translation import (ASSETS, build, render_labels, merge_regions, render_ui_label,
                                     label_font, subtitle_records, render_numeric_atlases, pause_help_runs, render_line,
-                                    ascii_ui_runs, compact_monkey_name_runs)
+                                    ascii_ui_runs, compact_monkey_name_runs, GOLD_TEXT_STYLE)
 from translation_catalogs import catalog
 
 
@@ -115,7 +115,7 @@ class MenuCatalogTests(unittest.TestCase):
             self.assertEqual(regions[asset], [[32, 0, 16, 16], [80, 0, 16, 16]])
             for x, text in ((32, "'"), (80, '"')):
                 cell = image.crop((x * scale, 0, (x + 16) * scale, 16 * scale))
-                expected = render_ui_label(text, 12, 16, 16, output_scale=scale, stage_select=True)
+                expected = render_ui_label(text, 12, 16, 16, output_scale=scale)
                 self.assertEqual(cell.getchannel('A').tobytes(), expected.getchannel('A').tobytes())
                 self.assertIsNotNone(cell.getbbox())
             self.assertIsNone(image.crop((0, 16 * scale, 128 * scale, 32 * scale)).getbbox())
@@ -236,8 +236,8 @@ class MenuCatalogTests(unittest.TestCase):
         tracked = render_ui_label(text, 10, 100, 20)
         untracked = Image.new('RGBA', (400, 80))
         ImageDraw.Draw(untracked).text((20, 8), text,
-            font=label_font(40), fill=(247, 211, 16, 255),
-            stroke_width=0, stroke_fill=(247, 211, 16, 255))
+            font=label_font(40), fill=(255, 231, 10, 255),
+            stroke_width=0, stroke_fill=(255, 231, 10, 255))
         untracked = untracked.resize((100, 20), Image.Resampling.LANCZOS)
         def gold_span(image):
             xs = [x for y in range(image.height) for x in range(image.width)
@@ -248,21 +248,15 @@ class MenuCatalogTests(unittest.TestCase):
         self.assertGreaterEqual(gold_span(tracked), gold_span(untracked) + 1)
         self.assertLessEqual(gold_span(tracked), gold_span(untracked) + 3)
 
-    def test_label_fill_and_outline_gradient_match_game_palette(self):
-        for style in ({}, {'controls': True}, {'header': True}):
-            with self.subTest(style=style):
-                image = render_ui_label('H', 24, 80, 40, output_scale=8, **style)
+    def test_labels_share_the_solid_gold_palette(self):
+        for options in ({}, {'controls': True}, {'header': True}):
+            with self.subTest(options=options):
+                image = render_ui_label('H', 24, 80, 40, output_scale=8, **options)
                 pixels = set(image.get_flattened_data())
-                self.assertIn((247, 211, 16, 255), pixels)
-                self.assertNotIn((135, 49, 35, 255), pixels)
-                self.assertIn((179, 55, 22, 255), pixels)
-                self.assertIn((255, 148, 3, 255), pixels)
-                self.assertNotIn((255, 236, 2, 255), pixels)
-                # The edge traverses intermediate colors, rather than two
-                # flat outline bands. Ignore antialiasing and the white halo.
-                gradient = {(r, g, b) for r, g, b, a in pixels
-                            if a == 255 and 179 < r < 255 and 55 < g < 148 and 3 < b < 22}
-                self.assertGreaterEqual(len(gradient), 8)
+                self.assertIn((255, 231, 10, 255), pixels)
+                self.assertIn((214, 67, 8, 255), pixels)
+                for old in ((247, 211, 16, 255), (179, 55, 22, 255), (255, 148, 3, 255)):
+                    self.assertNotIn(old, pixels)
         image = render_ui_label('H', 24, 80, 40, controls=True)
         self.catalog['labels'].append({'id': 'control.test', 'text': 'H',
             'asset': 'common00/action_name.tm2', 'rect': [0, 0, 80, 40], 'font_size': 24})
@@ -273,21 +267,63 @@ class MenuCatalogTests(unittest.TestCase):
         self.assertEqual(self.images['common00/action_name.tm2'].crop((0, 0, 80, 40)).tobytes(),
                          composited.tobytes())
 
-    def test_stage_select_palette_and_thinner_outlines(self):
-        for style in ({}, {'controls': True}, {'header': True}):
-            with self.subTest(style=style):
-                old = render_ui_label('H', 24, 80, 48, output_scale=8, **style)
-                image = render_ui_label('H', 24, 80, 48, output_scale=8, stage_select=True, **style)
+    def test_text_style_controls_fill_outline_and_stroke_dimensions(self):
+        from dataclasses import replace
+        wider = replace(GOLD_TEXT_STYLE, fill=(30, 220, 60, 255), outline=(80, 20, 120, 255),
+                        outline_width=3, header_halo_width=6)
+        for options in ({}, {'controls': True}, {'header': True}):
+            with self.subTest(options=options):
+                normal = render_ui_label('H', 24, 80, 48, output_scale=8, **options)
+                image = render_ui_label('H', 24, 80, 48, output_scale=8, style=wider, **options)
                 pixels = set(image.get_flattened_data())
-                self.assertIn((255, 231, 10, 255), pixels)
-                self.assertIn((214, 67, 8, 255), pixels)
-                self.assertNotIn((247, 211, 16, 255), pixels)
-                self.assertNotIn((179, 55, 22, 255), pixels)
-                # Ignore faint resampling fringe when measuring the silhouette.
-                old_box = old.getchannel('A').point(lambda a: 255 if a > 128 else 0).getbbox()
+                self.assertIn(wider.fill, pixels)
+                self.assertIn(wider.outline, pixels)
+                normal_box = normal.getchannel('A').point(lambda a: 255 if a > 128 else 0).getbbox()
                 box = image.getchannel('A').point(lambda a: 255 if a > 128 else 0).getbbox()
                 for axis in (0, 1):
-                    self.assertLess(box[axis + 2] - box[axis], old_box[axis + 2] - old_box[axis])
+                    self.assertGreater(box[axis + 2] - box[axis], normal_box[axis + 2] - normal_box[axis])
+
+    @unittest.skipUnless(catalog('english-menu.json').is_file(), 'English catalog is not checked out')
+    def test_requested_game_and_menu_labels_use_the_shared_palette(self):
+        from PIL import Image
+        authored = json.loads(catalog('english-menu.json').read_text())
+        ids = {'title.press_start', 'menu.new_game', 'menu.continue', 'menu.options',
+               'gameplay.action.02.00', 'gameplay.action.03.00', 'stage.small.00',
+               'pause.counter.remaining', 'pause.counter.monkeys', 'gameplay.counter.remaining'}
+        for prefix, count in (('pause.button', 5), ('options.label', 4),
+                              ('laboratory.sign', 4), ('save.action', 3), ('save.label', 3)):
+            ids.update(f'{prefix}.{i}' for i in range(count))
+        labels = [label for label in authored['labels'] if label['id'] in ids]
+        self.assertEqual({label['id'] for label in labels}, ids)
+        for asset in {label['asset'] for label in labels}:
+            selected = [label for label in labels if label['asset'] == asset]
+            width, height = ASSETS[asset][1]
+            for scale in (1, 8):
+                image = Image.new('RGBA', (width * scale, height * scale))
+                render_labels(dict(authored, labels=selected), {asset: image},
+                              require_title=False, output_scale=scale)
+                for label in selected:
+                    with self.subTest(label=label['id'], scale=scale):
+                        x, y, w, h = label['rect']
+                        tile = image.crop((x * scale, y * scale, (x + w) * scale, (y + h) * scale))
+                        self.assertIsNotNone(tile.getbbox())
+                        if scale == 8:
+                            colors = {color for _, color in tile.getcolors(tile.width * tile.height)}
+                            self.assertIn((255, 231, 10, 255), colors)
+                            self.assertIn((214, 67, 8, 255), colors)
+                            self.assertNotIn((247, 211, 16, 255), colors)
+
+    def test_completion_digits_and_percent_use_the_shared_palette(self):
+        from PIL import Image
+        for asset in ('common/c_num_l1.tm2', 'c_num_ml.lzs'):
+            width, height = ASSETS[asset][1]
+            image = Image.new('RGBA', (width * 8, height * 8))
+            render_numeric_atlases({asset: image}, output_scale=8)
+            x, cell = (432, 48) if asset.endswith('l1.tm2') else (416, 32)
+            tile = image.crop((x * 8, 0, (x + cell) * 8, 48 * 8))
+            colors = {color for _, color in tile.getcolors(tile.width * tile.height)}
+            self.assertIn((255, 231, 10, 255), colors)
+            self.assertIn((214, 67, 8, 255), colors)
 
     def test_control_hint_outlines_are_half_the_regular_width(self):
         for scale in (1, 8):
@@ -306,7 +342,7 @@ class MenuCatalogTests(unittest.TestCase):
                               (max(p[axis] for p in face) - min(p[axis] for p in face))
                               for axis in (0, 1)])
             for axis in (0, 1):
-                self.assertGreaterEqual(spans[0][axis], 4 * scale)
+                self.assertGreaterEqual(spans[0][axis], 2 * scale)
                 # Native downsampling can move each thresholded edge by
                 # one pixel. HD coverage retains the exact half-width.
                 self.assertAlmostEqual(spans[1][axis], spans[0][axis] / 2,
