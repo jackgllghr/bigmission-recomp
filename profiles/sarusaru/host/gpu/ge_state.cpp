@@ -45,6 +45,7 @@ enum Command : std::uint32_t {
     kAlphaTestEnable = 0x22,
     kDepthTestEnable = 0x23,
     kStencilTestEnable = 0x24,
+    kMorphWeight0 = 0x2C, // to 0x33, one float24 per target
     kBoneMatrixNumber = 0x2A,
     kPatchDivision = 0x36,  // PSUB: u divisions, v divisions << 8
     kPatchPrimitive = 0x37, // PPRIM: 0 triangles, 1 lines, 2 points
@@ -393,7 +394,7 @@ VertexFormat vertex_format(std::uint32_t vertex_type) noexcept {
 }
 
 std::uint32_t decode_vertices(const GuestMemory &memory, std::uint32_t address, std::uint32_t vertex_type,
-    std::uint32_t count, std::vector<Vertex> &out, const float *bone_matrices) {
+    std::uint32_t count, std::vector<Vertex> &out, const float *bone_matrices, const float *morph_weights) {
     // Field order is weights, texcoords, color, normal, position; every field is
     // aligned to its component size and the vertex to the largest of them.
     const std::uint32_t texcoord_type = vertex_type & 3u;
@@ -426,7 +427,8 @@ std::uint32_t decode_vertices(const GuestMemory &memory, std::uint32_t address, 
     const std::uint32_t color_offset = place(color_component, 1u);
     const std::uint32_t normal_offset = place(kComponentSize[normal_type], 3u);
     const std::uint32_t position_offset = place(kComponentSize[position_type], 3u);
-    const std::uint32_t stride = align_up(offset, biggest) * morph_count;
+    const std::uint32_t target_stride = align_up(offset, biggest);
+    const std::uint32_t stride = target_stride * morph_count;
     if (stride == 0u) return 0u;
 
     // Resolve the whole vertex run once and read it directly; a run that is not
@@ -512,41 +514,73 @@ std::uint32_t decode_vertices(const GuestMemory &memory, std::uint32_t address, 
     out.clear();
     out.reserve(count);
     for (std::uint32_t i = 0; i < count; ++i) {
-        const std::uint32_t base = address + i * stride;
-        Vertex vertex{};
-        if (texcoord_offset != 0xFFFFFFFFu) {
-            // Texture coordinates are unsigned; reading them signed wrapped the
-            // upper half of every 8- and 16-bit UV range to negative values.
-            const std::uint32_t component = kComponentSize[texcoord_type];
-            const float scale =
-                texcoord_type == 1u ? 1.0f / 128.0f : (texcoord_type == 2u && !through ? 1.0f / 32768.0f : 1.0f);
-            vertex.texcoord[0] = read_unsigned(base + texcoord_offset, texcoord_type) * scale;
-            vertex.texcoord[1] = read_unsigned(base + texcoord_offset + component, texcoord_type) * scale;
-        }
-        if (color_offset != 0xFFFFFFFFu) {
-            const std::uint32_t raw = color_component == 2u ? load16(base + color_offset) : load32(base + color_offset);
-            vertex.color = expand_color(raw, color_type);
-        }
-        if (normal_offset != 0xFFFFFFFFu) {
-            const std::uint32_t component = kComponentSize[normal_type];
-            const float scale = normal_type == 1u ? 1.0f / 128.0f : (normal_type == 2u ? 1.0f / 32768.0f : 1.0f);
-            for (std::uint32_t axis = 0; axis < 3u; ++axis)
-                vertex.normal[axis] = read_component(base + normal_offset + axis * component, normal_type) * scale;
-        }
-        if (position_offset != 0xFFFFFFFFu) {
-            const std::uint32_t component = kComponentSize[position_type];
-            // Screen-space vertices keep their integer units; transformed ones
-            // are normalized by their component size (128 / 32768, not 127 /
-            // 32767 — the GE divides by the magnitude of the sign bit).
-            const float scale =
-                through ? 1.0f : (position_type == 1u ? 1.0f / 128.0f : (position_type == 2u ? 1.0f / 32768.0f : 1.0f));
-            for (std::uint32_t axis = 0; axis < 3u; ++axis) {
-                float value = read_component(base + position_offset + axis * component, position_type);
-                // Through-mode Z is unsigned in the 16-bit case.
-                if (through && axis == 2u && position_type == 2u)
-                    value = static_cast<float>(load16(base + position_offset + axis * component));
-                vertex.position[axis] = value * scale;
+        Vertex blended{};
+        std::array<float, 4> color{};
+        std::array<float, 8> skin_weights{};
+        // Blend attributes before skinning, as specified by the GE pipeline:
+        // https://www.ppsspp.org/docs/psp-hardware/gpu/ge-vertex-pipeline/#morphing
+        const bool morphing = morph_count > 1u && !through && morph_weights != nullptr;
+        const auto targets = morphing ? morph_count : 1u;
+        for (std::uint32_t target = 0; target < targets; ++target) {
+            const float factor = morphing ? morph_weights[target] : 1.0f;
+            if (factor == 0.0f) continue;
+            const std::uint32_t base = address + i * stride + target * target_stride;
+            Vertex vertex{};
+            if (texcoord_offset != 0xFFFFFFFFu) {
+                // Texture coordinates are unsigned; reading them signed wrapped the
+                // upper half of every 8- and 16-bit UV range to negative values.
+                const std::uint32_t component = kComponentSize[texcoord_type];
+                const float scale =
+                    texcoord_type == 1u ? 1.0f / 128.0f : (texcoord_type == 2u && !through ? 1.0f / 32768.0f : 1.0f);
+                vertex.texcoord[0] = read_unsigned(base + texcoord_offset, texcoord_type) * scale;
+                vertex.texcoord[1] = read_unsigned(base + texcoord_offset + component, texcoord_type) * scale;
             }
+            if (color_offset != 0xFFFFFFFFu) {
+                const std::uint32_t raw = color_component == 2u ? load16(base + color_offset) : load32(base + color_offset);
+                vertex.color = expand_color(raw, color_type);
+            }
+            if (normal_offset != 0xFFFFFFFFu) {
+                const std::uint32_t component = kComponentSize[normal_type];
+                const float scale = normal_type == 1u ? 1.0f / 128.0f : (normal_type == 2u ? 1.0f / 32768.0f : 1.0f);
+                for (std::uint32_t axis = 0; axis < 3u; ++axis)
+                    vertex.normal[axis] = read_component(base + normal_offset + axis * component, normal_type) * scale;
+            }
+            if (position_offset != 0xFFFFFFFFu) {
+                const std::uint32_t component = kComponentSize[position_type];
+                // Screen-space vertices keep their integer units; transformed ones
+                // are normalized by their component size (128 / 32768, not 127 /
+                // 32767 — the GE divides by the magnitude of the sign bit).
+                const float scale =
+                    through ? 1.0f : (position_type == 1u ? 1.0f / 128.0f : (position_type == 2u ? 1.0f / 32768.0f : 1.0f));
+                for (std::uint32_t axis = 0; axis < 3u; ++axis) {
+                    float value = read_component(base + position_offset + axis * component, position_type);
+                    // Through-mode Z is unsigned in the 16-bit case.
+                    if (through && axis == 2u && position_type == 2u)
+                        value = static_cast<float>(load16(base + position_offset + axis * component));
+                    vertex.position[axis] = value * scale;
+                }
+            }
+            for (std::uint32_t axis = 0; axis < 3u; ++axis) {
+                blended.position[axis] += vertex.position[axis] * factor;
+                blended.normal[axis] += vertex.normal[axis] * factor;
+            }
+            for (std::uint32_t axis = 0; axis < 2u; ++axis)
+                blended.texcoord[axis] += vertex.texcoord[axis] * factor;
+            for (std::uint32_t channel = 0; channel < 4u; ++channel)
+                color[channel] += static_cast<float>((vertex.color >> (channel * 8u)) & 0xffu) * factor;
+            if (skinned) {
+                const float scale = weight_type == 1u ? 1.0f / 128.0f : (weight_type == 2u ? 1.0f / 32768.0f : 1.0f);
+                for (std::uint32_t bone = 0; bone < weight_count; ++bone) {
+                    const auto at = base + weight_offset + bone * kComponentSize[weight_type];
+                    skin_weights[bone] += read_unsigned(at, weight_type) * scale * factor;
+                }
+            }
+        }
+        Vertex vertex = blended;
+        if (color_offset != 0xFFFFFFFFu) {
+            vertex.color = 0u;
+            for (std::uint32_t channel = 0; channel < 4u; ++channel)
+                vertex.color |= static_cast<std::uint32_t>(std::clamp(color[channel], 0.0f, 255.0f)) << (channel * 8u);
         }
         if (skinned) {
             // A skinned vertex is stored in its bones' space: the GE blends it
@@ -554,12 +588,10 @@ std::uint32_t decode_vertices(const GuestMemory &memory, std::uint32_t address, 
             // the world matrix then sees. Without this the raw positions stay
             // inside the unit cube they were normalised into and the whole model
             // collapses onto a couple of pixels.
-            const std::uint32_t component = kComponentSize[weight_type];
-            const float weight_scale = weight_type == 1u ? 1.0f / 128.0f : (weight_type == 2u ? 1.0f / 32768.0f : 1.0f);
             std::array<float, 3> position{};
             std::array<float, 3> normal{};
             for (std::uint32_t bone = 0; bone < weight_count && bone < 8u; ++bone) {
-                const float weight = read_unsigned(base + weight_offset + bone * component, weight_type) * weight_scale;
+                const float weight = skin_weights[bone];
                 if (weight == 0.0f) continue;
                 // PSP 3x4 matrices are three basis rows plus a translation row,
                 // used as a row vector: p' = p * M.
@@ -1018,6 +1050,7 @@ void GeState::handle_command(const GuestMemory &memory, std::uint32_t command, s
 
 
     default:
+        if (command >= kMorphWeight0 && command < kMorphWeight0 + 8u) break; // read from registers_
         // The per-light runs: three floats per light for positions, directions
         // and attenuations, one float for the spot exponent and cutoff, and
         // three colours per light.
@@ -1241,9 +1274,16 @@ bool GeState::load_call(const GuestMemory &memory, PrimitiveType primitive, std:
             stride = probe;
         }
     }
-    if (call.raw_vertices == nullptr || raw_also_decoded_)
-        stride =
-            decode_vertices(memory, first_address, vertex_type_, vertex_count, call.vertices, bone_matrices_.data());
+    if (call.raw_vertices == nullptr || raw_also_decoded_) {
+        // Morph registers are already part of GE state (including save states).
+        // Blend all interleaved targets before skinning; target zero alone is
+        // the glider's folded canopy, even when the guest selects another shape.
+        std::array<float, 8> morph_weights{};
+        for (std::uint32_t target = 0; target < morph_weights.size(); ++target)
+            morph_weights[target] = decode_float24(registers_[kMorphWeight0 + target]);
+        stride = decode_vertices(memory, first_address, vertex_type_, vertex_count, call.vertices,
+            bone_matrices_.data(), morph_weights.data());
+    }
     if (stride == 0u || (call.vertices.empty() && call.raw_vertices == nullptr)) return false;
     // A prim leaves VADDR/IADDR alone but advances the pointer it consumed, so
     // a run of prims can share one setup. An indexed prim consumes indices, not
