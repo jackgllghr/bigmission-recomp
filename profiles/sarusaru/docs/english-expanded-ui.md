@@ -280,3 +280,46 @@ text rectangles, using atlas coordinates for its height and rounded end.
 The text layer is resampled separately, then alpha-composited over the bar;
 antialiased letter fringes retain an opaque background wherever the bar
 continues. Cancel regressions cover top and footer layouts at 1x, 4x and 8x.
+
+## Monkey Book
+
+Collection > Monkey Book draws its text straight to the framebuffer with the
+game font. Each record of the 207-entry monkey table (`0x223400`, stride 40)
+points at five CP932 strings drawn here: description (record+12), kind (+16)
+and the square, circle and cross actions (+24, +28, +32). The screen adds
+`ステージ%s`, `%sかいのった` (a full-width count, padded to three cells),
+`□：%s\n○：%s\n×：%s\n` and `？？？` for monkeys not yet caught. Their locators
+are in `extraction-context.json` under `monkey_book`.
+
+These strings stay Japanese in the executable. `tools/monkey_book.py` maps each
+one to the font cells the guest samples (kanji through the table that compact
+text uses) and emits a glyph run, so the English has no byte budget. Unlike
+compact text, a string's own full-width space is drawn as the blank cell and is
+part of the run; the counter's padding is not drawn. An action's run includes
+its button and colon cells, and the English line draws its own white,
+black-edged square, circle or cross in that first cell. Counts and stage
+numbers 0–99 each have a line; others keep the guest's text. Catch counts are
+right-aligned to the original right edge. Translated monkey names are already
+ASCII in the records and get 8x16 ASCII-cell runs. Table lines center the
+font's capital-to-descender extent rather than their own ink, so a row's
+baseline does not move with descenders.
+
+The catalog holds one entry per distinct (field, original text), named after
+the first record that uses it (`monkey.record_032.kind`), in the gameplay
+catalog's `monkey_book` list with the original's SHA-256. Screen strings are
+`monkey_book.stage`, `monkey_book.caught` and `monkey_book.caught_once`
+(`{n}` is the number) and `monkey_book.unknown`. The seven gold headings
+(Type, Name and the five stats) are `menko/e_nabi_b3.lzs`, a 64x112 atlas of
+64x16 labels.
+
+The book adds 788 lines (1041 in all). `SSTEXPK8` stores each glyph run at its
+own width as pixel runs, for both the base and HD layers, and allows up to 4096
+runs. Lines stay encoded in memory and are decoded when the renderer first
+uploads one; unused line textures are released like guest textures. Host
+texture IDs are spaced 0x100 apart. V7 and older packs still load. The combined
+pack is about 65 MB.
+
+A scripted run with the baseline save opens the book and pages through stages
+1–12. Captures at 4x confirm English headings, kinds, names, descriptions,
+counters and actions, a description with an internal space (Ukki Yellow) and
+the Data Device help line in the same pack.

@@ -279,6 +279,11 @@ void GeRenderer::begin_frame(VkCommandBuffer commands) {
             ++it;
         }
     }
+    std::erase_if(host_textures_, [&](auto &entry) {
+        if (frame_ - entry.second.last_frame <= kTextureLifetimeFrames) return false;
+        vk_.destroy_image(entry.second.image);
+        return true;
+    });
     if (!white_ready_) {
         const std::uint32_t white = 0xFFFFFFFFu;
         upload(white_, &white, 1u, 1u);
@@ -462,11 +467,14 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
                                      float &v_scale) {
     const auto &texture = call.texture;
     u_scale = v_scale = 1.0f;
-    if (translation_pack_ != nullptr) {
+    if (translation_pack_ != nullptr && translation_pack_->host_texture(texture.address)) {
+        if (const auto found = host_textures_.find(texture.address); found != host_textures_.end()) {
+            found->second.last_frame = frame_;
+            return found->second.image.view;
+        }
         const auto image = translation_pack_->host_image(texture.address, scale_);
-        const auto pixels = image.rgba;
+        const auto &pixels = image.rgba;
         if (!pixels.empty()) {
-            if (const auto found = host_textures_.find(texture.address); found != host_textures_.end()) return found->second.image.view;
             Texture entry;
             if (!vk_.create_image(image.width, image.height, kColorFormat, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                                   VK_IMAGE_ASPECT_COLOR_BIT, entry.image)) return VK_NULL_HANDLE;
@@ -476,6 +484,7 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
                     texels[i] |= static_cast<std::uint32_t>(pixels[i * 4 + byte]) << (byte * 8);
             upload(entry.image, texels.data(), image.width, image.height);
             const auto view = entry.image.view;
+            entry.last_frame = frame_;
             host_textures_.emplace(texture.address, std::move(entry));
             return view;
         }
