@@ -111,6 +111,9 @@ X(DescWindowSize, "The window's size when the game starts. It can still be resiz
   "起動時のウィンドウの大きさです。ドラッグして変えることもできます。")
 X(DescWindowSizeFullscreen, "Full Screen is on. Turn it off to choose a window size.",
   "フルスクリーンがオンです。ウィンドウサイズを選ぶにはオフにしてください。")
+X(RowAimSensitivity, "Aiming Sensitivity", "照準感度")
+X(DescAimSensitivity, "Stick response while aiming a monkey ability. Either stick can aim; 100% uses the original response. Higher values reach full aiming speed sooner.",
+    "サルの能力で狙うときのスティック感度。左右どちらでも照準を動かせます。100%が元の感度です。高い値ほど少ない操作で最大速度になります。")
 X(RowDeadZone, "Stick Dead Zone", "スティックのデッドゾーン")
 X(DescDeadZone, "How far a stick must move before the game sees it. Raise it if a worn stick drifts.",
   "スティックをどれだけ倒すと反応するかを決めます。スティックが勝手に動く場合は上げてください。")

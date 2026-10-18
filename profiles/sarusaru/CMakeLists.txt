@@ -535,7 +535,7 @@ if(SARUSARU_HAS_RENDERER)
         enable_language(RC)
         list(APPEND _sarusaru_resources resources/sarusaru.rc)
         set_source_files_properties(resources/sarusaru.rc PROPERTIES
-            OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/sarusaru.ico")
+            OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/sarusaru.ico;${CMAKE_CURRENT_BINARY_DIR}/release_version_rc.h")
     endif()
     set(_sarusaru_shell_sources host/shell/main.cpp host/shell/ge_renderer.cpp host/shell/button_prompts.cpp
         host/shell/audio_output.cpp "${_sarusaru_shaders}" "${_sarusaru_icon}"

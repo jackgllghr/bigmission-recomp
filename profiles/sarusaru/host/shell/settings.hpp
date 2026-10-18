@@ -34,6 +34,7 @@ struct Binding {
 struct ControlSettings {
     std::array<std::vector<Binding>, kActionCount> keyboard, gamepad;
     float dead_zone{0.2f};
+    float aim_sensitivity{1.0f}; // both sticks while aiming, 0.25–2; 1 is native response
     bool operator==(const ControlSettings &) const = default;
 };
 // The launcher's language; Auto follows the system's preferred language.

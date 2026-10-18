@@ -10,6 +10,7 @@
 // the shell pumps events, presents the displayed framebuffer and waits until
 // real time catches up with guest time.
 #include "session.hpp"
+#include "game/ability_aim.hpp"
 #include "save_state/native_state.hpp"
 #include "psprecomp/sha256.hpp"
 #include "game_identity.hpp"
@@ -512,6 +513,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                     controls.save_state || controls.load_state;
                 controls = {};
             }
+            sarusaru::shell::apply_aiming(controls, sarusaru::game::ability_aiming(memory), current.controls.aim_sensitivity);
             if (!scripted) game.controller.set_pad(controls.pad);
             game.orbit_camera.set_input({controls.camera_x, controls.camera_y, controls.camera_reset});
 

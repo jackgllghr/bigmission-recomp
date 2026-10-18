@@ -101,7 +101,7 @@ class LinuxInstallTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"invented")
             prefix = Path(directory) / "app"
-            package.install_linux(build, prefix)
+            package.install_linux(build, prefix, "v1.2.3")
             self.assertEqual(Path(prefix / "bin/sarusaru").resolve(), (prefix / "lib/sarusaru/sarusaru").resolve())
             for name in ("lib/sarusaru/psp_recomp", "lib/sarusaru/lib/libpsprecomp_runtime.so",
                          "lib/sarusaru/sdk/include/game_abi.hpp", f"share/applications/{package.APP_ID}.desktop",
@@ -109,6 +109,8 @@ class LinuxInstallTests(unittest.TestCase):
                          f"share/icons/hicolor/256x256/apps/{package.APP_ID}.png",
                          f"share/licenses/{package.APP_ID}/LICENSE"):
                 self.assertTrue((prefix / name).is_file(), name)
+            metainfo = (prefix / f"share/metainfo/{package.APP_ID}.metainfo.xml").read_text(encoding="utf-8")
+            self.assertRegex(metainfo, r'<release version="1\.2\.3" date="\d{4}-\d{2}-\d{2}"/>')
 
 
 if __name__ == "__main__":

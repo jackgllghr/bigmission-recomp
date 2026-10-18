@@ -2,8 +2,35 @@
 //
 // Explorer, the task bar and Alt-Tab use the lowest numeric icon id in an
 // executable, so the application icon is id 1. sarusaru.ico is
-// include/image/logo.png at 16 to 256 pixels.
+// include/image/logo.png at 16 to 256 pixels. The version resource is what
+// Explorer's Details tab shows, from the release version (cmake/Version.cmake).
+
+#include "release_version_rc.h"
 
 #define SARUSARU_ICON 1
 
 SARUSARU_ICON ICON "sarusaru.ico"
+
+1 VERSIONINFO
+FILEVERSION SARUSARU_VERSION_NUMBERS
+PRODUCTVERSION SARUSARU_VERSION_NUMBERS
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "SaruSaru Recomp"
+            VALUE "FileVersion", SARUSARU_VERSION_STRING
+            VALUE "InternalName", "sarusaru"
+            VALUE "OriginalFilename", "sarusaru.exe"
+            VALUE "ProductName", "SaruSaru Recomp"
+            VALUE "ProductVersion", SARUSARU_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

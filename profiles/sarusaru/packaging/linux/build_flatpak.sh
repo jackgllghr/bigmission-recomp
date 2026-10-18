@@ -27,6 +27,8 @@ mkdir -p "$staging"
 cp "$here/$app.yml" "$staging/"
 # The tag identifies the launcher without changing the game-module ABI.
 sed -i "s/-DSARUSARU_GAME_MODULE=OFF /-DSARUSARU_RELEASE_VERSION=${version#v} -DSARUSARU_GAME_MODULE=OFF /" "$staging/$app.yml"
+# The AppStream release date, from the commit: the packed source has no git.
+sed -i "s|- python3 profiles/sarusaru/scripts/package.py |- SOURCE_DATE_EPOCH=$(git -C "$root" log -1 --format=%ct) python3 profiles/sarusaru/scripts/package.py |" "$staging/$app.yml"
 (cd "$root" && git ls-files -z --cached --others --exclude-standard |
     while IFS= read -r -d '' file; do [ -e "$file" ] && printf '%s\0' "$file"; done |
     tar --null -T - --transform 's|^|sarusaru-recomp/|' -czf "$staging/source.tar.gz")

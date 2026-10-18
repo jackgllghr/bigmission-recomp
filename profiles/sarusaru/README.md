@@ -327,6 +327,13 @@ analog stick, Tab (held) fast-forward, Escape the pause menu. Gamepads map by
 button position; Guide (Home), or L3 and R3 pressed together where the system
 keeps the Guide button for itself, opens the pause menu.
 
+While aiming a monkey ability, either analog stick moves the aim. The stronger
+stick takes priority when both move, and the right stick returns to camera
+control after leaving aim. **Settings → Controls → Aiming Sensitivity** adjusts
+both sticks from 25% to 200% and applies immediately. 100% keeps the original
+response; higher values reach the native maximum aiming speed sooner. The
+setting is stored as `[input] aim_sensitivity` (0.25–2).
+
 ### Pause menu
 
 The menu action pauses the game under a menu over its last picture: Resume,

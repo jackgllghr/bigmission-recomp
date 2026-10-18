@@ -24,6 +24,47 @@ int main() {
     using namespace sarusaru::shell;
     using namespace sarusaru::ctrl;
     const Settings defaults = default_settings();
+    require(defaults.controls.aim_sensitivity == 1.0f, "aim sensitivity defaults to native response");
+    const auto aiming = parse_settings("[input]\naim_sensitivity = 0.5\n");
+    require(aiming.controls.aim_sensitivity == 0.5f && parse_settings(serialize_settings(aiming)) == aiming,
+        "aim sensitivity round-trips");
+    rejects("[input]\naim_sensitivity = 0.1");
+    rejects("[input]\naim_sensitivity = 2.1");
+    rejects("[input]\naim_sensitivity = nan");
+    {
+        std::array<bool, SDL_SCANCODE_COUNT> keys{};
+        std::array<GamepadState, 1> pads{};
+        pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTX] = 20000;
+        pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTY] = -16000;
+        auto input = map_input(defaults.controls, keys, pads);
+        const auto normal = input;
+        apply_aiming(input, false, 0.5f);
+        require(input.pad.lx == 128 && input.pad.ly == 128 && input.camera_x == normal.camera_x,
+            "right stick keeps orbit behavior outside aiming");
+        apply_aiming(input, true, 1);
+        require(input.pad.lx > 128 && input.pad.ly < 128 && input.camera_x == 0 && input.camera_y == 0,
+            "right stick aims right/up and cannot also orbit");
+        const auto full = input.pad;
+        input = normal;
+        apply_aiming(input, true, 0.5f);
+        require(input.pad.lx > 128 && input.pad.lx < full.lx && input.pad.ly > full.ly && input.pad.ly < 128,
+            "lower aiming sensitivity reduces both right-stick axes");
+        pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTX] = pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTY] = 0;
+        pads[0].axes[SDL_GAMEPAD_AXIS_LEFTX] = 20000;
+        auto left = map_input(defaults.controls, keys, pads);
+        const auto native = left.pad.lx;
+        apply_aiming(left, true, 0.5f);
+        require(left.pad.lx > 128 && left.pad.lx < native, "aiming sensitivity applies to the left stick too");
+        pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTX] = -32768;
+        left = map_input(defaults.controls, keys, pads);
+        apply_aiming(left, true, 2);
+        require(left.pad.lx == 0, "stronger right stick wins without cancelling left input, and clamps safely");
+        pads[0] = {};
+        input = map_input(defaults.controls, keys, pads);
+        apply_aiming(input, true, 2);
+        require(input.pad.lx == 128 && input.pad.ly == 128, "neutral sticks stay exactly neutral");
+    }
+
     require(defaults.state_slot==1,"default state slot changed");
     for (unsigned slot=1;slot<=5;++slot) {
         auto selected=parse_settings("[game]\nstate_slot = "+std::to_string(slot));

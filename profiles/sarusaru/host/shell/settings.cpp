@@ -246,6 +246,8 @@ Settings parse_settings(std::string_view text) {
                 settings.translation_pack = value == "none" ? std::filesystem::path{} : std::filesystem::path(value);
             } else if (full == "translation.subtitles") {
                 settings.subtitles = integer(value, 0, 1) != 0;
+            } else if (full == "input.aim_sensitivity") {
+                settings.controls.aim_sensitivity = number(value, 0.25f, 2.0f);
             } else if (full == "input.dead_zone") {
                 settings.controls.dead_zone = number(value, 0.0f, 0.95f);
             } else if (full == "game.skip_intro_logos") {
@@ -318,7 +320,8 @@ std::string serialize_settings(const Settings &settings) {
         << "# Pack path relative to this settings file, or none.\npack = "
         << (settings.translation_pack.empty() ? "none" : settings.translation_pack.generic_string()) << '\n'
         << "# 1 = subtitles over the movies that have them.\nsubtitles = " << (settings.subtitles ? 1 : 0) << '\n'
-        << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone) << '\n'
+        << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone)
+        << "\naim_sensitivity = " << decimal(settings.controls.aim_sensitivity) << '\n'
         << "\n[game]\n# The disc image (.iso) the launcher plays; empty until one is chosen. % and # are written as %XX.\n"
         << "disc = " << encode_path(settings.game_disc) << '\n'
         << "# 1 = skip the opening logos. Start also skips them with this off.\nskip_intro_logos = "
