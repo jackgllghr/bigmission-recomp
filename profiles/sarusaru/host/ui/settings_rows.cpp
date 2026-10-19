@@ -16,8 +16,8 @@ constexpr SettingRow kUpdates[] = {SettingRow::AutomaticUpdates};
 constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabControls, kControls},
                                  {Text::TabInterface, kInterface}, {Text::TabUpdates, kUpdates}};
 
-// Native, a cap of 30 and 60 FPS motion (shell::interpolates).
-constexpr double kFrameRates[] = {0, 30, 60};
+// Native, 60 and 120 FPS motion (shell::interpolated_pictures).
+constexpr double kFrameRates[] = {0, 60, 120};
 // Native and how many times as far actors stay drawn (game/draw_distance.hpp).
 constexpr double kDrawDistances[] = {1, 1.5, 2, 3, 4, 6, 8};
 // Window widths at the PSP's aspect (the height follows): 2, 3, 4 and 6 times 480.
@@ -72,18 +72,26 @@ void set_offered_downloads(bool english, bool hd_textures) {
 Preset preset_of(const shell::Settings &settings) {
     const bool english = settings.translation_language == "en";
     if (settings.internal_resolution == 1u && settings.texture_pack.empty() && !english &&
-        settings.draw_distance == 1.0f && !settings.skip_intro_logos)
+        settings.draw_distance == 1.0f && !settings.skip_intro_logos && settings.fov_degrees == 0.0f &&
+        settings.frame_rate == 0u && settings.controls.aim_sensitivity == 1.0f)
         return Preset::Native;
-    if (settings.internal_resolution == kModernResolution &&
-        (offers_hd ? texture_scale(settings) == 4u : settings.texture_pack.empty()) && (english || !offers_english) &&
-        settings.draw_distance == kModernDrawDistance && settings.skip_intro_logos)
-        return Preset::Modern;
+    // Both Modern presets: 1080p, HD textures and English, where offered, and no intro logos.
+    if (settings.internal_resolution != kModernResolution ||
+        !(offers_hd ? texture_scale(settings) == 4u : settings.texture_pack.empty()) || !(english || !offers_english) ||
+        !settings.skip_intro_logos || settings.controls.aim_sensitivity != kModernAimSensitivity)
+        return Preset::Custom;
+    if (settings.draw_distance == kModernDrawDistance) return Preset::Modern;
+    if (settings.draw_distance == kModernLowDrawDistance && settings.fov_degrees == kModernLowFov &&
+        settings.frame_rate == 0u)
+        return Preset::ModernLow;
     return Preset::Custom;
 }
 
 Preset next_preset(Preset current, int direction) {
-    if (current == Preset::Custom) return direction > 0 ? Preset::Native : Preset::Modern;
-    return current == Preset::Native ? Preset::Modern : Preset::Native;
+    constexpr Preset kOrder[] = {Preset::Native, Preset::ModernLow, Preset::Modern};
+    if (current == Preset::Custom) return direction > 0 ? kOrder[0] : kOrder[2];
+    const auto index = static_cast<int>(std::find(std::begin(kOrder), std::end(kOrder), current) - std::begin(kOrder));
+    return kOrder[(index + (direction > 0 ? 1 : 2)) % 3];
 }
 
 void apply_preset(shell::Settings &settings, Preset preset) {
@@ -94,11 +102,23 @@ void apply_preset(shell::Settings &settings, Preset preset) {
         settings.translation_language = "ja";
         settings.draw_distance = 1.0f;
         settings.skip_intro_logos = false;
+        settings.fov_degrees = 0.0f;
+        settings.frame_rate = 0u;
+        settings.controls.aim_sensitivity = 1.0f;
+        break;
+    case Preset::ModernLow:
+        settings.internal_resolution = kModernResolution;
+        settings.draw_distance = kModernLowDrawDistance;
+        settings.skip_intro_logos = true;
+        settings.fov_degrees = kModernLowFov;
+        settings.frame_rate = 0u;
+        settings.controls.aim_sensitivity = kModernAimSensitivity;
         break;
     case Preset::Modern:
         settings.internal_resolution = kModernResolution;
         settings.draw_distance = kModernDrawDistance;
         settings.skip_intro_logos = true;
+        settings.controls.aim_sensitivity = kModernAimSensitivity;
         break;
     case Preset::Custom:
         break;
@@ -131,8 +151,10 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
     const auto text = [](Text id) { return std::string(tr(id)); };
     switch (row) {
     case SettingRow::Preset: {
-        constexpr Text values[] = {Text::ValuePresetNative, Text::ValuePresetModern, Text::ValuePresetCustom};
-        constexpr Text descriptions[] = {Text::DescPresetNative, Text::DescPresetModern, Text::DescPresetCustom};
+        constexpr Text values[] = {Text::ValuePresetNative, Text::ValuePresetModernLow, Text::ValuePresetModern,
+                                   Text::ValuePresetCustom};
+        constexpr Text descriptions[] = {Text::DescPresetNative, Text::DescPresetModernLow, Text::DescPresetModern,
+                                         Text::DescPresetCustom};
         const auto preset = static_cast<std::size_t>(preset_of(settings));
         view.label = text(Text::RowPreset);
         view.value = text(values[preset]);
@@ -152,6 +174,7 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
         view.value = text(settings.cel_shading == 0 ? Text::Off :
                           settings.cel_shading == 1 ? Text::ValueCelBanded : Text::ValueCelOutlined);
         view.description = text(settings.cel_shading == 2 ? Text::DescCelOutlined : Text::DescCelShading);
+        view.experimental = settings.cel_shading != 0;
         break;
     case SettingRow::Textures: {
         view.label = text(Text::RowTextures);
@@ -165,7 +188,10 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
         view.label = text(Text::RowFrameRate);
         view.value = settings.frame_rate == 0 ? text(Text::ValueFrameRateNative)
                                               : ui::format(Text::ValueFps, {std::to_string(settings.frame_rate)});
-        view.description = text(shell::interpolates(settings) ? Text::DescFrameRate60 : Text::DescFrameRate);
+        view.description = text(settings.frame_rate == 120u ? Text::DescFrameRate120
+                                : shell::interpolates(settings)  ? Text::DescFrameRate60
+                                                                 : Text::DescFrameRate);
+        view.experimental = settings.frame_rate != 0u;
         break;
     case SettingRow::Fov:
         view.label = text(Text::RowFov);

@@ -27,8 +27,9 @@ if(ANDROID)
         message(FATAL_ERROR "sarusaru: Android builds need the host shell (SARUSARU_RENDERER)")
     endif()
     # The app's storage is SDL's to report (SDL_GetAndroidInternalStoragePath),
-    # and the activity keeps long work running behind other apps.
-    target_sources(sarusaru_platform PRIVATE host/platform/background_work.cpp)
+    # and the activity keeps long work running behind other apps. It also
+    # copies the game's saves to and from the device's other storage.
+    target_sources(sarusaru_platform PRIVATE host/platform/background_work.cpp host/platform/save_transfer.cpp)
     target_link_libraries(sarusaru_platform PUBLIC SDL3::SDL3)
 endif()
 # Recognising the player's disc image, for the launcher and the game session.
@@ -57,13 +58,15 @@ if(SARUSARU_HAS_RENDERER)
     target_link_libraries(sarusaru_ui_logic PUBLIC sarusaru_controls sarusaru_ppst)
     add_library(sarusaru_ui STATIC host/ui/layer.cpp host/ui/ui_renderer.cpp host/ui/theme.cpp host/ui/widgets.cpp
         host/ui/launcher.cpp host/ui/ui_script.cpp host/ui/subtitles.cpp)
-    target_link_libraries(sarusaru_ui PUBLIC sarusaru_savedata sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install)
+    target_link_libraries(sarusaru_ui PUBLIC sarusaru_savedata sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install
+        sarusaru_translation)
     # Texture dump mode and on-device HD texture packs (PNG through SDL).
     add_library(sarusaru_textures STATIC host/textures/texture_dump.cpp host/textures/hd_pack.cpp
         host/textures/disc_textures.cpp host/textures/recipe.cpp host/textures/image.cpp)
     target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu sarusaru_disc SDL3::SDL3)
     add_library(sarusaru_install STATIC host/install/process.cpp host/install/download.cpp host/install/toolchain.cpp
-        host/install/game_builder.cpp host/install/pack_download.cpp host/install/texture_build.cpp host/install/update_check.cpp)
+        host/install/game_builder.cpp host/install/pack_download.cpp host/install/pack_versions.cpp host/install/texture_build.cpp
+        host/install/update_check.cpp)
     target_link_libraries(sarusaru_install PUBLIC sarusaru_game_module sarusaru_disc sarusaru_textures SDL3::SDL3)
     add_dependencies(sarusaru_install psp_recomp)
 endif()

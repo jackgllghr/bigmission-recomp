@@ -25,7 +25,10 @@
 // in-between one, opening cracks along the seams of the scenery.
 #include "gpu/ge_state.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -41,10 +44,18 @@ public:
 
     // The draws recorded since the last call become the previous frame.
     void end_frame();
+    // At most this many pictures between two frames (120 FPS motion's three).
+    static constexpr std::size_t kMaxPictures = 3u;
     // Records `call` as a draw of the current frame and writes to `out` the
     // draw at `t` between its previous-frame match (0) and itself (1).
     // Returns whether `out` was blended; otherwise it is a copy of `call`.
-    bool interpolate(const DrawCall &call, float t, DrawCall &out);
+    bool interpolate(const DrawCall &call, float t, DrawCall &out) {
+        return interpolate(call, std::span<const float>(&t, 1u), std::span<DrawCall>(&out, 1u));
+    }
+    // The same for several pictures at once: `out[i]` is the draw at `t[i]`
+    // (both of the same size, at most kMaxPictures). Every call of a frame
+    // must pass the same `t`.
+    bool interpolate(const DrawCall &call, std::span<const float> t, std::span<DrawCall> out);
     // Forgets both frames, as after a discontinuity the caller knows of.
     void reset();
 
@@ -67,10 +78,11 @@ private:
         std::size_t first_unused{};
     };
 
-    // A camera of the current frame and the in-between camera it is drawn with.
+    // A camera of the current frame and the in-between cameras it is drawn
+    // with, one for each picture.
     struct Camera {
         std::array<float, 16> view{}, projection{};
-        std::array<float, 16> blended_view{}, blended_projection{};
+        std::array<std::array<float, 16>, kMaxPictures> blended_view{}, blended_projection{};
     };
 
     [[nodiscard]] Record *match(const Record &current);

@@ -156,12 +156,15 @@ yellow and wears Pipo's red siren lamp.
   whose `BOOT.BIN` is the supported executable. Another PSP game, a damaged
   image or a different executable gets a sentence saying so above the
   buttons, as does a kept image that has since moved or changed.
-- **Settings** has Graphics, Controls and Interface tabs: full screen,
-  window size (not while full screen), resolution, frame rate (Native, 30 or
-  60 FPS motion), FOV, draw distance, cel shading, HD textures, the stick dead zone, the
-  launcher's language, the game's text (below) and the confirm button. Values
-  step with left/right, the row's arrows, or by activating it; each is saved
-  at once.
+- **Settings** has Graphics, Controls, Interface and Updates tabs: a preset
+  (Native, Modern Low or Modern), full screen, window size (not while full
+  screen), resolution, frame rate (Native, or 60 or 120 FPS motion), FOV, draw
+  distance, cel shading, HD textures, the stick dead zone, aiming
+  sensitivity, the launcher's language, the game's text (below) and the
+  confirm button. Values step with left/right, the row's arrows, or by
+  activating it; each is saved at once. Frame rates above Native and the cel
+  shading modes are marked **Experimental**. The Game Text and Textures rows
+  say which version of their pack is installed.
 - **Controls** (from Settings' Controls tab) lists every PSP control with
   its keyboard and gamepad inputs, drawn as keycaps and the pad's own glyphs.
   On a focused cell, confirm (or a click or tap) sets a new input, the north
@@ -188,7 +191,13 @@ button regions are replaced; captions retain their selected language.
 Settings' **Updates** tab shows the launcher version, checks published stable
 GitHub releases in the background once a day, and opens release downloads.
 Automatic checks can be disabled there. Android links to Obtainium for APK
-updates. See [release/update setup](docs/auto-updates.md), including Android
+updates. Under **Game content** it shows the installed version of the English
+text and HD texture packs (their release tag, recorded beside the pack as
+`<pack>.version`; a pack an earlier build downloaded reads as an earlier
+version), checks their repositories' latest GitHub releases on request, and
+installs a newer one, checked by the SHA-256 the release lists, in place of the
+one before. **Rebuild the Game** builds the game from the disc again, for when
+it misbehaves or will not start (a game that could not start offers it too). See [release/update setup](docs/auto-updates.md), including Android
 signing requirements and the desktop installation phases still to come.
 
 Every screen works with each device alone. The arrow keys, d-pad or left stick
@@ -332,7 +341,21 @@ stick takes priority when both move, and the right stick returns to camera
 control after leaving aim. **Settings → Controls → Aiming Sensitivity** adjusts
 both sticks from 25% to 200% and applies immediately. 100% keeps the original
 response; higher values reach the native maximum aiming speed sooner. The
-setting is stored as `[input] aim_sensitivity` (0.25–2).
+setting is stored as `[input] aim_sensitivity` (0.25–2); the default is the
+Modern presets' 150%.
+
+The right stick's vertical camera is inverted: pushing the stick up is Camera
+down (`camera_up = axis:righty+`). A settings file still on the earlier
+default is inverted once when it loads; `[input] camera_layout = 2` marks a
+file that has the current layout, so bindings changed after that are kept.
+
+The **Preset** row sets several rows together:
+
+| Preset | Resolution | Textures | Game text | Draw distance | FOV | Frame rate | Aiming | Intro logos |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Native | 1× | original | Japanese | native | native | native | 100% | shown |
+| Modern Low | 4× (1080p) | HD | English | 2× | 45° | native | 150% | skipped |
+| Modern | 4× (1080p) | HD | English | 8× | any | any | 150% | skipped |
 
 ### Pause menu
 
@@ -342,7 +365,11 @@ are saved as they are made and apply when the game resumes, including the
 resolution, frame rate, FOV, cel shading, HD textures and bindings; the game
 text and skipping the intro logos say they apply the next time the game
 starts. Making HD textures and downloading English stay in the launcher. A
-settings file from an earlier version keeps its `quit` key for the menu. Saves go to the same per-user memory stick as the bootstrap's.
+settings file from an earlier version keeps its `quit` key for the menu. Saves go to the same per-user memory stick as the bootstrap's. The
+Saves screen opens that folder; on Android, where no file manager reaches it,
+it instead exports the game's save folders to a `.zip` and imports them from a
+`.zip` or a folder (such as PPSSPP's `PSP/SAVEDATA`) through the system's
+document picker, replacing saves of the same name (in the launcher only).
 
 ### Settings and rebinding
 
@@ -408,8 +435,9 @@ actions. The launcher edits all of these, bindings included.
 native cadence (two PSP vblanks per frame, about 29.97 Hz), so guest vblank
 timing, input sampling, render submissions, audio and movie timing are never
 changed. 0 (Native) presents at every PSP vblank (about 59.94 Hz); 1 to 59 is a
-**presentation cap** (the launcher offers 30), which in fast-forward still
-selects frames on guest time, so it is not a wall-clock cap.
+**presentation cap** (set in the file; the launcher offers Native, 60 and 120),
+which in fast-forward still selects frames on guest time, so it is not a
+wall-clock cap.
 
 `frame_rate = 60` gives **60 FPS motion at the original game speed**.
 Movement, animation, scripts, audio and movies keep their original timing;
@@ -424,6 +452,12 @@ is shown at the vblank where the new frame first appears and the new frame one
 vblank later, so the picture is about 17 ms later than native. Full-motion
 video plays at its own rate. Measured on the title screen and the stage hub,
 about 99% of draws are matched.
+
+`frame_rate = 120` gives **120 FPS motion** the same way, for 120 Hz displays:
+three in-between pictures per game frame (a quarter, half and three quarters
+of the way), two presented at each vblank half a vblank apart, the game's own
+frame last. Each picture has its own targets, so it needs more GPU memory and
+time than 60. Both are experimental.
 
 Settings files from earlier versions still load: `frame_interpolation = 1`
 becomes `frame_rate = 60`, and `experimental_game_frame_rate` is ignored (the

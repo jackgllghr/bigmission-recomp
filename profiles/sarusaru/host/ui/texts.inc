@@ -20,6 +20,20 @@ X(EmptySlot, "Empty", "空き")
 X(NoThumbnail, "No preview", "画像なし")
 X(OpenSavesFolder, "Open saves folder", "セーブフォルダーを開く")
 X(OpenSavesFailed, "Could not open saves folder: {0}", "セーブフォルダーを開けません：{0}")
+X(ExportSaves, "Export saves", "セーブを書き出す")
+X(ImportSavesArchive, "Import .zip", ".zip から読み込む")
+X(ImportSavesFolder, "Import folder", "フォルダーから読み込む")
+X(SavesExported, "Exported {0} saves.", "{0} 個のセーブを書き出しました。")
+X(SavesImported, "Imported {0} saves. They replace this game's saves of the same name.",
+  "{0} 個のセーブを読み込みました。同じ名前のセーブは置き換えられました。")
+X(SavesNothingFound, "No saves for this game were found there.", "このゲームのセーブが見つかりませんでした。")
+X(SavesTransferFailed, "The saves could not be copied: {0}", "セーブをコピーできませんでした：{0}")
+X(SavesTransferUnavailable, "The document picker could not open.", "ファイル選択の画面を開けませんでした。")
+X(SavesTransferHelp,
+  "Game saves are PSP save folders, as on a PSP or in PPSSPP's PSP/SAVEDATA: export them to a .zip, or import a .zip or a folder holding them. Importing replaces saves of the same name.",
+  "ゲームのセーブは PSP や PPSSPP の PSP/SAVEDATA と同じ形式のセーブフォルダーです。.zip に書き出すか、それを含む .zip やフォルダーから読み込めます。読み込むと同じ名前のセーブは置き換えられます。")
+X(SavesImportInLauncher, "Saves are imported from the launcher, before the game starts.",
+  "セーブはゲームを始める前にランチャーから読み込んでください。")
 X(StateSlotShortcuts, "Save/load shortcuts use slot {0}.", "ステートの保存・読み込みショートカットはスロット {0} を使います。")
 X(SaveState, "Save state", "ステートを保存")
 X(LoadState, "Load state", "ステートを読み込む")
@@ -66,11 +80,11 @@ X(On, "On", "オン")
 X(Off, "Off", "オフ")
 X(ValueCelBanded, "Banded", "階調")
 X(ValueCelOutlined, "Outlined", "輪郭線付き")
-X(DescCelOutlined, "Banded shading with black outlines around characters and the world, like a cartoon. HUD and menus keep their original edges.",
-    "段階的な陰影と黒い輪郭線でキャラクターと背景をアニメ風に描画します。HUD とメニューの輪郭はそのままです。")
+X(DescCelOutlined, "Banded shading with black outlines around characters and the world, like a cartoon. HUD and menus keep their original edges. Experimental: some scenes can look wrong.",
+    "段階的な陰影と黒い輪郭線でキャラクターと背景をアニメ風に描画します。HUD とメニューの輪郭はそのままです。実験的な機能のため、一部の場面で表示がおかしくなることがあります。")
 X(RowCelShading, "Cel Shading", "セルシェーディング")
-X(DescCelShading, "Gives 3D shading distinct bands for a cartoon look. Keeps textures, HUD and menus intact.",
-    "3D の陰影を段階的にして、アニメ風に描画します。テクスチャ、HUD、メニューはそのままです。")
+X(DescCelShading, "Gives 3D shading distinct bands for a cartoon look. Keeps textures, HUD and menus intact. The cel shading modes are experimental.",
+    "3D の陰影を段階的にして、アニメ風に描画します。テクスチャ、HUD、メニューはそのままです。セルシェーディングは実験的な機能です。")
 X(RowResolution, "Resolution", "解像度")
 X(DescResolution, "Draws the game at this many times the PSP's 480×272. Higher is sharper and needs a faster GPU.",
   "PSP の 480×272 の何倍で描画するかを選びます。高いほど鮮明になりますが、より高性能な GPU が必要です。")
@@ -80,20 +94,28 @@ X(ValueFrameRateNative, "Native", "標準")
 X(DescFrameRate, "How often pictures are shown. The game itself keeps its speed.",
   "画面を表示する頻度です。ゲームの速さは変わりません。")
 X(DescFrameRate60,
-  "Shows a blended picture between the game's own 30 FPS frames, at the original game speed. Adds about 17 ms of delay.",
-  "ゲーム本来の 30 FPS のフレームの間に補間した画面を表示します。ゲームの速さは変わりません。遅延が約 17 ms 増えます。")
+  "Shows a blended picture between the game's own 30 FPS frames, at the original game speed. Adds about 17 ms of delay. Experimental: fast motion can show artifacts.",
+  "ゲーム本来の 30 FPS のフレームの間に補間した画面を表示します。ゲームの速さは変わりません。遅延が約 17 ms 増えます。実験的な機能のため、速い動きで表示が乱れることがあります。")
+X(DescFrameRate120,
+  "Shows three blended pictures between the game's own 30 FPS frames, at the original game speed, for 120 Hz displays. Adds about 25 ms of delay. Experimental: fast motion can show artifacts.",
+  "ゲーム本来の 30 FPS のフレームの間に補間した画面を3枚表示します（120 Hz のディスプレイ向け）。ゲームの速さは変わりません。遅延が約 25 ms 増えます。実験的な機能のため、速い動きで表示が乱れることがあります。")
+X(Experimental, "Experimental", "実験的")
 X(RowPreset, "Preset", "プリセット")
 X(ValuePresetNative, "Native", "オリジナル")
+X(ValuePresetModernLow, "Modern Low", "モダン（軽量）")
 X(ValuePresetModern, "Modern", "モダン")
 X(ValuePresetCustom, "Custom", "カスタム")
 X(DescPresetNative,
-  "The game as the PSP drew it: original resolution and textures, Japanese text, native draw distance and the intro logos.",
-  "PSPと同じ見た目です。元の解像度とテクスチャ、日本語の文章、標準の描画距離で、オープニングのロゴも表示します。")
+  "The game as the PSP drew it: original resolution, textures, field of view and frame rate, Japanese text, native draw distance and aiming, and the intro logos.",
+  "PSPと同じ見た目です。元の解像度・テクスチャ・視野角・フレームレート、日本語の文章、標準の描画距離と照準感度で、オープニングのロゴも表示します。")
+X(DescPresetModernLow,
+  "For slower devices: 1080p rendering, HD textures, English game text, a 45° field of view, twice the draw distance, the original frame rate, 150% aiming sensitivity and no intro logos. Downloads the textures and English the first time.",
+  "軽めの設定です。1080pで描画し、HDテクスチャ・英語の文章・視野角45°・2倍の描画距離・元のフレームレート・照準感度150%を使い、オープニングのロゴを飛ばします。はじめて選んだときにテクスチャと英語をダウンロードします。")
 X(DescPresetModern,
-  "1080p rendering, HD textures, English game text, the farthest draw distance and no intro logos. Downloads the textures and English the first time.",
-  "1080pで描画し、HDテクスチャ・英語の文章・最大の描画距離を使い、オープニングのロゴを飛ばします。はじめて選んだときにテクスチャと英語をダウンロードします。")
-X(DescPresetCustom, "Your own mix of the settings below. Choose Native or Modern to set them all at once.",
-  "下の設定を個別に選んでいます。オリジナルかモダンを選ぶと、まとめて設定されます。")
+  "1080p rendering, HD textures, English game text, the farthest draw distance, 150% aiming sensitivity and no intro logos. Downloads the textures and English the first time.",
+  "1080pで描画し、HDテクスチャ・英語の文章・最大の描画距離・照準感度150%を使い、オープニングのロゴを飛ばします。はじめて選んだときにテクスチャと英語をダウンロードします。")
+X(DescPresetCustom, "Your own mix of the settings below. Choose a preset to set them all at once.",
+  "下の設定を個別に選んでいます。プリセットを選ぶと、まとめて設定されます。")
 X(RowFov, "Field of View", "視野角")
 X(ValueFovNative, "Native (36.5°)", "標準 (36.5°)")
 X(DescFov, "Widens the camera in stages and the hub. Menus and cutscenes keep the original view.",
@@ -314,3 +336,41 @@ X(UpdatesDownloadHelp, "Download the package for your system, then close the gam
 X(UpdatesFlatpak, "Update Flatpak through its configured repository, or install a newer bundle from the release page.", "Flatpak版は設定済みのリポジトリから更新するか、リリースページから新しいバンドルをインストールしてください。")
 X(UpdatesAndroid, "Obtainium can check GitHub Releases and install Android updates. Add this app to Obtainium to get started.", "ObtainiumでGitHubリリースの確認とAndroid版の更新ができます。このアプリをObtainiumに追加してください。")
 X(UpdatesObtainium, "Add to Obtainium", "Obtainiumに追加")
+
+// Game content: the English text and HD texture packs, and rebuilding the game
+X(ContentHeading, "Game content", "ゲームデータ")
+X(ContentEnglish, "English text: {0}", "英語の文章：{0}")
+X(ContentHd, "HD textures: {0}", "HDテクスチャ：{0}")
+X(ContentNotInstalled, "not downloaded", "未ダウンロード")
+X(ContentCustomPack, "a pack of your own", "独自のパック")
+X(ContentEarlierVersion, "an earlier version ({0})", "以前のバージョン（{0}）")
+X(ContentVersion, "version {0}", "バージョン {0}")
+X(ContentVersionDated, "version {0} ({1})", "バージョン {0}（{1}）")
+X(ContentCheck, "Check for Newer Game Content", "新しいゲームデータを確認")
+X(DescContentCheck, "Asks GitHub for the newest English text and HD textures. Nothing is downloaded until you choose to install one.",
+  "最新の英語の文章とHDテクスチャをGitHubに確認します。インストールを選ぶまで何もダウンロードしません。")
+X(DescContentInstall, "Downloads this release and replaces the one installed now.",
+  "このリリースをダウンロードして、今のものと置き換えます。")
+X(ContentFailed, "Could not check for newer game content. Check your connection and try again later.",
+  "新しいゲームデータを確認できませんでした。接続を確認し、後でもう一度お試しください。")
+X(ContentEnglishCurrent, "The latest English text is installed.", "最新の英語の文章がインストールされています。")
+X(ContentHdCurrent, "The latest HD textures are installed.", "最新のHDテクスチャがインストールされています。")
+X(ContentInstallEnglish, "Install English Text {0}", "英語の文章 {0} をインストール")
+X(ContentInstallHd, "Install HD Textures {0}", "HDテクスチャ {0} をインストール")
+X(ContentInLauncher, "Game content is installed from the launcher's settings.",
+  "ゲームデータはランチャーの設定からインストールします。")
+X(PackVersion, "Downloads {0}, {1} MB, from {2}.", "{2} から{0}をダウンロードします（{1} MB）。")
+X(DescInstalledEnglish, "Installed: {0}.", "インストール済み：{0}。")
+X(DescInstalledHd, "Installed: {0}.", "インストール済み：{0}。")
+X(PackNeedsNewerPort, "This English text needs a newer version of the port; the one installed before is kept.",
+  "この英語の文章には新しいバージョンのポートが必要です。以前の文章をそのまま使います。")
+X(RebuildGame, "Rebuild the Game", "ゲームを作り直す")
+X(DescRebuild, "If the game misbehaves or will not start, build it again from your disc. It takes as long as installing it did; saves, settings and downloads are kept.",
+  "ゲームの動作がおかしいときや起動しないときは、ディスクからもう一度作り直します。インストールと同じくらい時間がかかります。セーブデータ・設定・ダウンロードはそのままです。")
+X(RebuildTitle, "Rebuild the Game", "ゲームの再構築")
+X(RebuildIntro, "This builds the game from your disc again and replaces the installed copy. Your saves, settings, English text and HD textures are kept.",
+  "ディスクからゲームをもう一度作り、インストール済みのゲームと置き換えます。セーブデータ・設定・英語の文章・HDテクスチャはそのままです。")
+X(RebuildStart, "Rebuild", "作り直す")
+X(RebuildDone, "The game was rebuilt.", "ゲームを作り直しました。")
+X(RebuildNeedsDisc, "Choose your game disc first; the game is rebuilt from it.",
+  "先にゲームディスクを選んでください。ディスクから作り直します。")

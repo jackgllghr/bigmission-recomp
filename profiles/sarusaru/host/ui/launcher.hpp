@@ -15,6 +15,7 @@
 #include "save_state/slots.hpp"
 #include "install/game_builder.hpp"
 #include "install/pack_download.hpp"
+#include "install/pack_versions.hpp"
 #include "install/texture_build.hpp"
 #include "install/toolchain.hpp"
 #include "install/update_check.hpp"
@@ -97,10 +98,28 @@ private:
     std::unique_ptr<install::GameBuilder> builder_;
     std::string install_error_;
     bool xcode_requested_{};
+    // Rebuilding the game already installed (Updates tab, or a game that
+    // could not start): the Install screen, which then returns to the settings.
+    bool rebuild_{};
+    Screen rebuild_return_{Screen::Settings};
+    void rebuild(Screen return_to);
+    std::string rebuild_notice_;
 
     // Downloading the English game text, and why the last download failed.
     std::unique_ptr<install::PackDownload> pack_download_;
     std::string pack_error_;
+    // The newest releases of the packs, when the player has checked, and the
+    // ones the Pack and Textures screens install (the build's own otherwise).
+    std::unique_ptr<install::PackUpdateCheck> pack_check_;
+    std::optional<install::PackRelease> english_offer_, hd_offer_;
+    [[nodiscard]] install::PackRelease english_release() const;
+    [[nodiscard]] install::PackRelease hd_release() const;
+    // What the Updates tab says about the packs installed, and offers of newer
+    // ones; with what its focused row does, for the settings' description.
+    void content(float width);
+    std::string content_description_;
+    // The installed pack's version, as a row's description says it.
+    [[nodiscard]] std::string installed_description(install::PackKind kind) const;
 
     // Making HD textures: the scale chosen, the build under way, and why the last one failed.
     std::uint32_t texture_scale_{4};

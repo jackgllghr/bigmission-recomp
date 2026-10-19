@@ -8,7 +8,9 @@
 #include <ctime>
 #include "platform/background_work.hpp"
 #include "platform/documents.hpp"
+#include "platform/save_transfer.hpp"
 
+#include "translation/texture_pack.hpp"
 #include "ui/text.hpp"
 #include "ui/theme.hpp"
 #include "ui/ui_script.hpp"
@@ -468,9 +470,36 @@ void Launcher::saves() {
     const bool can_load=(in_game() || (disc_check_ && disc_check_->supported() && find_game_module().has_value())) && slots_[settings_.state_slot-1].occupied;
     if (menu_button(layer_,"load_state",tr(Text::LoadState),ImVec2(save_width,36*u),false,can_load)) outcome_=Outcome::LoadState;
     ImGui::SetCursorScreenPos(ImVec2(action_x+2*(save_width+action_gap),action_y));
-    if (menu_button(layer_,"open_saves",tr(Text::OpenSavesFolder),ImVec2(folder_width,36*u))) open_saves_folder();
-    ImGui::SetCursorScreenPos(ImVec2(x,action_y+48*u));
-    const auto help=format(Text::StateSlotShortcuts,{std::to_string(settings_.state_slot)});
+    float help_y=action_y+48*u;
+    std::string help=format(Text::StateSlotShortcuts,{std::to_string(settings_.state_slot)});
+    if constexpr (platform::kSaveTransfer) {
+        // No file manager reaches the app's storage: the saves are copied out and in through the picker.
+        const auto transfer=[&](platform::SaveTransfer kind) {
+            const platform::SaveTransferTexts texts{std::string(tr(Text::SavesExported)),std::string(tr(Text::SavesImported)),
+                std::string(tr(Text::SavesNothingFound)),std::string(tr(Text::SavesTransferFailed))};
+            std::string prefix(identity_.disc_id);
+            saves_error_.clear();
+            try {
+                if (!platform::start_save_transfer(kind,savedata::savedata_root(utility::default_memory_stick()),prefix,texts))
+                    saves_error_=tr(Text::SavesTransferUnavailable);
+            } catch (const std::exception &error) {
+                saves_error_=format(Text::SavesTransferFailed,{error.what()});
+            }
+        };
+        if (menu_button(layer_,"export_saves",tr(Text::ExportSaves),ImVec2(folder_width,36*u))) transfer(platform::SaveTransfer::Export);
+        const float import_width=(2*save_width+folder_width+2*action_gap-action_gap)*0.5f;
+        ImGui::SetCursorScreenPos(ImVec2(action_x,action_y+48*u));
+        if (menu_button(layer_,"import_saves_zip",tr(Text::ImportSavesArchive),ImVec2(import_width,36*u),false,!in_game()))
+            transfer(platform::SaveTransfer::ImportArchive);
+        ImGui::SetCursorScreenPos(ImVec2(action_x+import_width+action_gap,action_y+48*u));
+        if (menu_button(layer_,"import_saves_folder",tr(Text::ImportSavesFolder),ImVec2(import_width,36*u),false,!in_game()))
+            transfer(platform::SaveTransfer::ImportFolder);
+        help_y+=48*u;
+        help+=" "+std::string(tr(in_game() ? Text::SavesImportInLauncher : Text::SavesTransferHelp));
+    } else {
+        if (menu_button(layer_,"open_saves",tr(Text::OpenSavesFolder),ImVec2(folder_width,36*u))) open_saves_folder();
+    }
+    ImGui::SetCursorScreenPos(ImVec2(x,help_y));
     paragraph(layer_,saves_error_.empty() ? help : saves_error_,width,saves_error_.empty() ? colors::kInkDim : colors::kRed);
     if (layer_.back() || back_button(layer_,ImVec2(24*u,size.y-70*u)))
         go(in_game() ? Screen::Paused : Screen::Home,"saves");
@@ -601,15 +630,22 @@ void Launcher::install() {
     using Status = install::ToolchainCheck::Status;
     using Step = install::Progress::Step;
     const float u = layer_.unit();
-    const float top = screen_title(layer_, tr(Text::InstallTitle));
+    const float top = screen_title(layer_, tr(rebuild_ ? Text::RebuildTitle : Text::InstallTitle));
     const ImRect inner = content_panel(layer_, top, 700.0f);
     const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
 
-    // An installation that ended: on to the game, or back to the choices with why.
+    // An installation that ended: on to the game (or back from a rebuild), or
+    // back to the choices with why.
     if (builder_) {
         const auto progress = builder_->progress();
         if (progress.step == Step::Done) {
             builder_.reset();
+            if (rebuild_) {
+                rebuild_ = false;
+                rebuild_notice_ = tr(Text::RebuildDone);
+                go(rebuild_return_, rebuild_return_ == Screen::Home ? "play" : "rebuild");
+                return;
+            }
             outcome_ = Outcome::Play;
             return;
         }
@@ -623,7 +659,7 @@ void Launcher::install() {
 
     ImGui::SetCursorScreenPos(ImVec2(inner.Min.x + pad, inner.Min.y + pad * 0.8f));
     begin_list("##install", ImVec2(inner.GetWidth() - 2.0f * pad, inner.GetHeight() - 1.6f * pad));
-    paragraph(layer_, tr(Text::InstallIntro), width, colors::kInkDim);
+    paragraph(layer_, tr(rebuild_ ? Text::RebuildIntro : Text::InstallIntro), width, colors::kInkDim);
     ImGui::Dummy(ImVec2(0, 8.0f * u));
     if (builder_) {
         const auto progress = builder_->progress();
@@ -633,19 +669,24 @@ void Launcher::install() {
         ImGui::Dummy(ImVec2(0, 8.0f * u));
         if (action_row(layer_, "install_cancel", tr(Text::InstallCancel), "", width)) builder_->cancel();
     } else {
-        paragraph(layer_, tr(Text::InstallOptions), width, colors::kInkDim);
-        for (const auto row : {SettingRow::Textures, SettingRow::GameText}) {
-            const auto id = row == SettingRow::Textures ? "install_textures" : "install_game_text";
-            const int change = setting_row(layer_, id, describe(row, settings_), width);
-            if (ImGui::IsItemFocused())
-                paragraph(layer_, describe(row, settings_).description, width, colors::kInkDim);
-            if (change != 0) {
-                pack_return_screen_ = Screen::Install;
-                if (row == SettingRow::Textures) choose_textures(change);
-                else choose_game_text(change);
+        if (!rebuild_) {
+            paragraph(layer_, tr(Text::InstallOptions), width, colors::kInkDim);
+            for (const auto row : {SettingRow::Textures, SettingRow::GameText}) {
+                const auto id = row == SettingRow::Textures ? "install_textures" : "install_game_text";
+                const int change = setting_row(layer_, id, describe(row, settings_), width);
+                if (ImGui::IsItemFocused())
+                    paragraph(layer_, describe(row, settings_).description +
+                                          installed_description(row == SettingRow::Textures ? install::PackKind::HdTextures
+                                                                                            : install::PackKind::English),
+                              width, colors::kInkDim);
+                if (change != 0) {
+                    pack_return_screen_ = Screen::Install;
+                    if (row == SettingRow::Textures) choose_textures(change);
+                    else choose_game_text(change);
+                }
             }
+            ImGui::Dummy(ImVec2(0, 8.0f * u));
         }
-        ImGui::Dummy(ImVec2(0, 8.0f * u));
         if (!settings_error_.empty()) paragraph(layer_, settings_error_, width, colors::kRed);
         if (!toolchain_) {
             install::ProcessGroup probe;
@@ -657,14 +698,15 @@ void Launcher::install() {
                                                               install_notification());
             focus_control("install_cancel");
         };
+        const std::string_view start_label = tr(rebuild_ ? Text::RebuildStart : Text::InstallStart);
         switch (toolchain_->status) {
         case Status::Ready:
-            if (action_row(layer_, "install_start", tr(Text::InstallStart), "", width)) start();
+            if (action_row(layer_, "install_start", start_label, "", width)) start();
             break;
         case Status::Download:
             paragraph(layer_, format(Text::InstallDownloadNote, {megabytes(toolchain_->download_bytes)}), width);
             ImGui::Dummy(ImVec2(0, 4.0f * u));
-            if (action_row(layer_, "install_start", tr(Text::InstallStart), "", width)) start();
+            if (action_row(layer_, "install_start", start_label, "", width)) start();
             break;
         case Status::NeedXcode:
             paragraph(layer_, tr(xcode_requested_ ? Text::InstallXcodeWaiting : Text::InstallNeedXcode), width);
@@ -693,13 +735,19 @@ void Launcher::install() {
 
     // Back stops an installation under way rather than leaving it running.
     if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) {
-        if (builder_)
+        if (builder_) {
             builder_->cancel();
-        else
+        } else if (rebuild_) {
+            rebuild_ = false;
+            go(rebuild_return_, rebuild_return_ == Screen::Home ? "play" : "rebuild");
+        } else {
             go(Screen::Home, "play");
+        }
     }
     if (builder_)
         hints(layer_, {{Control::Back, tr(Text::HintCancel)}});
+    else if (rebuild_)
+        hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Back, tr(Text::HintBack)}});
     else
         hints(layer_, {{Control::Confirm, tr(Text::HintSelect)}, {Control::Change, tr(Text::HintChange)},
                        {Control::Back, tr(Text::HintBack)}});
@@ -748,7 +796,11 @@ void Launcher::settings() {
                                   static_cast<int>(settings_.window_height));
             save();
         }
-        if (ImGui::IsItemFocused()) description = describe(rows[i], settings_, in_game()).description;
+        if (ImGui::IsItemFocused()) {
+            description = describe(rows[i], settings_, in_game()).description;
+            if (rows[i] == SettingRow::GameText) description += installed_description(install::PackKind::English);
+            if (rows[i] == SettingRow::Textures) description += installed_description(install::PackKind::HdTextures);
+        }
     }
     if (tabs[static_cast<std::size_t>(tab_)].title == Text::TabControls) {
         if (action_row(layer_, "bindings", tr(Text::Bindings), tr(Text::BindingsDetail), row_width))
@@ -756,7 +808,10 @@ void Launcher::settings() {
         if (ImGui::IsItemFocused())
             description = tr(Text::BindingsDescription);
     }
-    if (tabs[static_cast<std::size_t>(tab_)].title == Text::TabUpdates) updates(row_width);
+    if (tabs[static_cast<std::size_t>(tab_)].title == Text::TabUpdates) {
+        updates(row_width);
+        if (!content_description_.empty()) description = std::exchange(content_description_, {});
+    }
     end_list(layer_);
 
     // What the focused setting does.
@@ -779,6 +834,28 @@ void Launcher::settings() {
 
 namespace {
 
+// Whether the textures are a prebuilt HD pack (install/texture_build.hpp).
+bool prebuilt_pack_in_use(const shell::Settings &settings) {
+    auto pack = settings.texture_pack.lexically_normal();
+    if (pack.filename().empty()) pack = pack.parent_path();
+    return pack.filename().string().starts_with("4x-prebuilt-");
+}
+
+// A pack release's version, with its date when known.
+std::string version_text(const install::PackRelease &release) {
+    return release.published.empty() ? format(Text::ContentVersion, {release.version})
+                                     : format(Text::ContentVersionDated, {release.version, release.published});
+}
+
+// The version of the pack installed at `pack`: its release's, an earlier
+// build's download (without a record of its release), or the player's own.
+std::string installed_version_text(install::PackKind kind, const std::filesystem::path &pack) {
+    if (const auto release = install::installed_release(kind, pack)) return version_text(*release);
+    if (const auto id = install::installed_pack_id(kind, pack); !id.empty())
+        return format(Text::ContentEarlierVersion, {id.substr(0u, 8u)});
+    return std::string(tr(Text::ContentCustomPack));
+}
+
 // The host a URL names, to say where a download comes from.
 std::string url_host(std::string_view url) {
     if (const auto scheme = url.find("://"); scheme != std::string_view::npos) url.remove_prefix(scheme + 3u);
@@ -800,7 +877,8 @@ void Launcher::choose_preset(int direction) {
     apply_preset(settings_, preset);
     save();
     preset_pending_.clear();
-    if (preset == Preset::Modern) preset_pending_ = {SettingRow::GameText, SettingRow::Textures};
+    if (preset == Preset::Modern || preset == Preset::ModernLow)
+        preset_pending_ = {SettingRow::GameText, SettingRow::Textures};
     preset_active_ = true;
     continue_preset();
 }
@@ -827,9 +905,12 @@ void Launcher::continue_preset() {
 
 void Launcher::choose_game_text(int direction) {
     if (settings_.translation_language != "en" && !pack_ready()) {
-        // English needs its pack: one downloaded before, or the download screen.
+        // English needs its pack: one downloaded before (the newest), or the download screen.
         const auto source = install::english_pack_source();
-        const auto kept = source ? install::english_pack_path(*source) : std::nullopt;
+        const auto installed = install::installed_packs(install::PackKind::English);
+        const auto kept = !installed.empty() ? std::optional(installed.front())
+                        : source             ? install::english_pack_path(*source)
+                                             : std::nullopt;
         std::error_code missing;
         if (kept && std::filesystem::is_regular_file(*kept, missing)) {
             settings_.translation_pack = *kept;
@@ -839,6 +920,7 @@ void Launcher::choose_game_text(int direction) {
             settings_error_ = tr(Text::GameTextInLauncher);
         } else {
             pack_error_.clear();
+            english_offer_.reset();
             go(Screen::Pack, "pack_download");
         }
     } else {
@@ -859,7 +941,9 @@ void Launcher::select_textures(std::uint32_t scale) {
     }
     // HD is the prebuilt pack, downloaded once, when the build offers one.
     if (const auto prebuilt = install::prebuilt_pack_source(); prebuilt && scale == 4u) {
-        const auto directory = install::prebuilt_pack_directory(*prebuilt);
+        // The newest one downloaded, else the build's own.
+        const auto installed = install::installed_packs(install::PackKind::HdTextures);
+        const auto directory = !installed.empty() ? std::optional(installed.front()) : install::prebuilt_pack_directory(*prebuilt);
         if (directory && install::texture_pack_state(*directory) != install::TexturePackState::Missing) {
             settings_.texture_pack = *directory;
             save();
@@ -868,6 +952,7 @@ void Launcher::select_textures(std::uint32_t scale) {
         } else {
             texture_scale_ = scale;
             texture_error_.clear();
+            hd_offer_.reset();
             go(Screen::Textures, "textures_make");
         }
         return;
@@ -997,15 +1082,21 @@ void Launcher::prebuilt_textures() {
     const float top = screen_title(layer_, tr(Text::TexturesTitle));
     const ImRect inner = content_panel(layer_, top, 700.0f);
     const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
-    const auto source = install::prebuilt_pack_source();
+    const install::PackRelease release = hd_release();
+    const auto *source = &release.source;
     const auto directory = install::prebuilt_pack_directory(*source);
 
     // A download that ended: HD on and back to the settings, or the choice again with why.
     if (prebuilt_download_) {
         const auto progress = prebuilt_download_->progress();
         if (progress.step == Step::Done) {
-            settings_.texture_pack = prebuilt_download_->destination();
+            const auto destination = prebuilt_download_->destination();
             prebuilt_download_.reset();
+            install::record_release(destination, release);
+            // A newer release replaces the one before, and turns HD on only where that was on.
+            if (!hd_offer_ || prebuilt_pack_in_use(settings_)) settings_.texture_pack = destination;
+            install::remove_other_packs(install::PackKind::HdTextures, destination);
+            hd_offer_.reset();
             save();
             return_from_pack(SettingRow::Textures);
             return;
@@ -1037,7 +1128,8 @@ void Launcher::prebuilt_textures() {
         ImGui::Dummy(ImVec2(0, 8.0f * u));
         if (action_row(layer_, "textures_cancel", tr(Text::InstallCancel), "", width)) prebuilt_download_->cancel();
     } else {
-        paragraph(layer_, format(Text::PackSource, {url_host(source->url), megabytes(source->bytes)}), width);
+        paragraph(layer_, format(Text::PackVersion, {version_text(release), megabytes(source->bytes), url_host(source->url)}),
+                  width);
         ImGui::Dummy(ImVec2(0, 4.0f * u));
         if (action_row(layer_, "textures_make", tr(Text::TexturesDownload), "", width)) {
             texture_error_.clear();
@@ -1054,10 +1146,12 @@ void Launcher::prebuilt_textures() {
 
     // Back stops a download under way rather than leaving it running.
     if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) {
-        if (prebuilt_download_)
+        if (prebuilt_download_) {
             prebuilt_download_->cancel();
-        else
+        } else {
+            hd_offer_.reset();
             return_from_pack(SettingRow::Textures);
+        }
     }
     hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
                    {Control::Back, tr(prebuilt_download_ ? Text::HintCancel : Text::HintBack)}});
@@ -1077,18 +1171,33 @@ void Launcher::pack() {
     const float top = screen_title(layer_, tr(Text::PackTitle));
     const ImRect inner = content_panel(layer_, top, 700.0f);
     const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
-    const auto source = install::english_pack_source();
+    const auto release = install::english_pack_source() ? std::optional(english_release()) : std::nullopt;
+    const auto source = release ? std::optional(release->source) : std::nullopt;
 
     // A download that ended: English on and back to the settings, or the choice again with why.
     if (pack_download_) {
         const auto progress = pack_download_->progress();
         if (progress.step == Step::Done) {
-            settings_.translation_language = "en";
-            settings_.translation_pack = pack_download_->destination();
+            const auto destination = pack_download_->destination();
             pack_download_.reset();
-            save();
-            return_from_pack(SettingRow::GameText);
-            return;
+            if (!translation::TexturePack::readable_format(destination)) {
+                // A newer release in a format this version cannot read.
+                std::error_code ignored;
+                std::filesystem::remove(destination, ignored);
+                pack_error_ = tr(Text::PackNeedsNewerPort);
+                english_offer_.reset();
+                focus_control("pack_download");
+            } else {
+                install::record_release(destination, *release);
+                install::remove_other_packs(install::PackKind::English, destination);
+                // A newer release replaces the one before, which turns English on only where it was on.
+                if (!english_offer_ || settings_.translation_language == "en") settings_.translation_language = "en";
+                settings_.translation_pack = destination;
+                english_offer_.reset();
+                save();
+                return_from_pack(SettingRow::GameText);
+                return;
+            }
         }
         if (progress.step == Step::Failed || progress.step == Step::Cancelled) {
             pack_error_ = progress.step == Step::Failed ? format(Text::PackFailed, {progress.error}) : "";
@@ -1113,7 +1222,8 @@ void Launcher::pack() {
         ImGui::Dummy(ImVec2(0, 8.0f * u));
         if (action_row(layer_, "pack_cancel", tr(Text::InstallCancel), "", width)) pack_download_->cancel();
     } else {
-        paragraph(layer_, format(Text::PackSource, {url_host(source->url), megabytes(source->bytes)}), width);
+        paragraph(layer_, format(Text::PackVersion, {version_text(*release), megabytes(source->bytes), url_host(source->url)}),
+                  width);
         ImGui::Dummy(ImVec2(0, 4.0f * u));
         if (action_row(layer_, "pack_download", tr(Text::PackDownload), "", width)) {
             if (const auto destination = install::english_pack_path(*source)) {
@@ -1133,10 +1243,12 @@ void Launcher::pack() {
 
     // Back stops a download under way rather than leaving it running.
     if (back_button(layer_, ImVec2(18.0f * u, 18.0f * u)) || layer_.back()) {
-        if (pack_download_)
+        if (pack_download_) {
             pack_download_->cancel();
-        else
+        } else {
+            english_offer_.reset();
             return_from_pack(SettingRow::GameText);
+        }
     }
     if (source)
         hints(layer_, {{Control::Confirm, tr(Text::HintSelect)},
@@ -1161,10 +1273,22 @@ void Launcher::problem() {
     ImGui::SetCursorScreenPos(ImVec2(min.x + pad, min.y + pad));
     paragraph(layer_, message, width - 2.0f * pad);
     const ImVec2 button(200.0f * u, 50.0f * u);
-    ImGui::SetCursorScreenPos(ImVec2(min.x + (width - button.x) * 0.5f, min.y + height - pad - button.y + 6.0f * u));
+    // A game that would not start can be built again from the disc.
+    const bool can_rebuild = !in_game() && disc_check_ && disc_check_->supported() && find_game_module().has_value();
+    const ImVec2 rebuild_button(260.0f * u, 50.0f * u);
+    const float buttons = can_rebuild ? button.x + 16.0f * u + rebuild_button.x : button.x;
+    const float buttons_y = min.y + height - pad - button.y + 6.0f * u;
+    ImGui::SetCursorScreenPos(ImVec2(min.x + (width - buttons) * 0.5f, buttons_y));
     if (menu_button(layer_, "problem_ok", tr(Text::Ok), button) || layer_.back()) {
         start_failure_.clear();
         go(screen_, screen_ == Screen::Home ? "play" : "");
+    }
+    if (can_rebuild) {
+        ImGui::SetCursorScreenPos(ImVec2(min.x + (width - buttons) * 0.5f + button.x + 16.0f * u, buttons_y));
+        if (menu_button(layer_, "problem_rebuild", tr(Text::RebuildGame), rebuild_button)) {
+            start_failure_.clear();
+            rebuild(Screen::Home);
+        }
     }
     hints(layer_, {{Control::Confirm, tr(Text::HintOk)}});
 }
@@ -1423,5 +1547,111 @@ void Launcher::updates(float width) {
 #endif
     if (action_row(layer_, "update_download", tr(Text::UpdatesDownloads), "", width))
         SDL_OpenURL(std::string(install::kReleasePage).c_str());
+    content(width);
+}
+
+install::PackRelease Launcher::english_release() const {
+    return english_offer_ ? *english_offer_ : *install::pinned_release(install::PackKind::English);
+}
+
+install::PackRelease Launcher::hd_release() const {
+    return hd_offer_ ? *hd_offer_ : *install::pinned_release(install::PackKind::HdTextures);
+}
+
+namespace {
+// The pack of `kind` the settings use, else the newest installed.
+std::optional<std::filesystem::path> content_pack(install::PackKind kind, const shell::Settings &settings,
+                                                  const std::filesystem::path &settings_path) {
+    auto in_use = kind == install::PackKind::English ? settings.translation_pack : settings.texture_pack;
+    if (!in_use.empty() && in_use.is_relative()) in_use = settings_path.parent_path() / in_use;
+    std::error_code missing;
+    if (kind == install::PackKind::English && !in_use.empty() && std::filesystem::is_regular_file(in_use, missing))
+        return in_use;
+    if (kind == install::PackKind::HdTextures && prebuilt_pack_in_use(settings) &&
+        std::filesystem::is_directory(in_use, missing))
+        return in_use;
+    const auto installed = install::installed_packs(kind);
+    if (!installed.empty()) return installed.front();
+    return std::nullopt;
+}
+} // namespace
+
+std::string Launcher::installed_description(install::PackKind kind) const {
+    if (!install::pinned_release(kind)) return {};
+    const auto pack = content_pack(kind, settings_, settings_path_);
+    if (!pack) return {};
+    return " " + format(kind == install::PackKind::English ? Text::DescInstalledEnglish : Text::DescInstalledHd,
+                        {installed_version_text(kind, *pack)});
+}
+
+void Launcher::content(float width) {
+    const float u = layer_.unit();
+    ImGui::Dummy(ImVec2(0, 10.0f * u));
+    paragraph(layer_, tr(Text::ContentHeading), width, colors::kBlue);
+    using Kind = install::PackKind;
+    for (const auto kind : {Kind::English, Kind::HdTextures}) {
+        if (!install::pinned_release(kind)) continue;
+        const auto pack = content_pack(kind, settings_, settings_path_);
+        const std::string status = pack ? installed_version_text(kind, *pack) : std::string(tr(Text::ContentNotInstalled));
+        paragraph(layer_, format(kind == Kind::English ? Text::ContentEnglish : Text::ContentHd, {status}), width);
+    }
+    const auto result = pack_check_ ? pack_check_->result() : install::PackUpdateCheck::Result{};
+    const bool checking = pack_check_ && result.state == install::PackUpdateCheck::Result::State::Checking;
+    if (action_row(layer_, "content_check", tr(checking ? Text::UpdatesChecking : Text::ContentCheck), "", width, !checking))
+        pack_check_ = std::make_unique<install::PackUpdateCheck>();
+    if (ImGui::IsItemFocused()) content_description_ = tr(Text::DescContentCheck);
+    if (pack_check_ && result.state == install::PackUpdateCheck::Result::State::Failed)
+        paragraph(layer_, tr(Text::ContentFailed), width, colors::kRed);
+    if (pack_check_ && result.state == install::PackUpdateCheck::Result::State::Done) {
+        for (const auto kind : {Kind::English, Kind::HdTextures}) {
+            const auto &latest = kind == Kind::English ? result.english : result.hd_textures;
+            if (!latest) continue;
+            const auto pack = content_pack(kind, settings_, settings_path_);
+            if (pack && install::is_installed(kind, *latest, *pack)) {
+                paragraph(layer_, tr(kind == Kind::English ? Text::ContentEnglishCurrent : Text::ContentHdCurrent), width,
+                          colors::kGood);
+                continue;
+            }
+            const auto label = format(kind == Kind::English ? Text::ContentInstallEnglish : Text::ContentInstallHd,
+                                      {latest->version});
+            const auto id = kind == Kind::English ? "content_english" : "content_hd";
+            const bool chosen = action_row(layer_, id, label, megabytes(latest->source.bytes) + " MB", width, !in_game());
+            if (ImGui::IsItemFocused()) content_description_ = tr(Text::DescContentInstall);
+            if (chosen) {
+                pack_return_screen_ = Screen::Settings;
+                if (kind == Kind::English) {
+                    english_offer_ = latest;
+                    pack_error_.clear();
+                    go(Screen::Pack, "pack_download");
+                } else {
+                    hd_offer_ = latest;
+                    texture_scale_ = 4u;
+                    texture_error_.clear();
+                    go(Screen::Textures, "textures_make");
+                }
+            }
+        }
+        if (in_game()) paragraph(layer_, tr(Text::ContentInLauncher), width, colors::kInkDim);
+    }
+    if (in_game()) return;
+    ImGui::Dummy(ImVec2(0, 6.0f * u));
+    if (action_row(layer_, "rebuild", tr(Text::RebuildGame), "", width, find_game_module().has_value()))
+        rebuild(Screen::Settings);
+    if (ImGui::IsItemFocused()) content_description_ = tr(Text::DescRebuild);
+    if (!rebuild_notice_.empty())
+        paragraph(layer_, rebuild_notice_, width, rebuild_notice_ == tr(Text::RebuildDone) ? colors::kGood : colors::kRed);
+}
+
+void Launcher::rebuild(Screen return_to) {
+    rebuild_notice_.clear();
+    if (!disc_check_ || !disc_check_->supported()) {
+        rebuild_notice_ = tr(Text::RebuildNeedsDisc);
+        return;
+    }
+    rebuild_ = true;
+    rebuild_return_ = return_to;
+    install_error_.clear();
+    toolchain_.reset();
+    go(Screen::Install, "install_start");
 }
 } // namespace sarusaru::ui

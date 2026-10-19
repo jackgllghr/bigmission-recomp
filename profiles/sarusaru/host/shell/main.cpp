@@ -38,6 +38,7 @@
 #include <unistd.h>
 #endif
 
+#include <array>
 #include <cstdint>
 #include <charconv>
 #include <filesystem>
@@ -48,6 +49,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -171,8 +173,10 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         button_prompts.configure(current.controls, prompt_device, layer.pad_type());
     };
     update_prompts();
-    // 60 FPS motion shows a picture at every vblank: the game's frames and those in between.
+    // 60 FPS motion shows a picture at every vblank: the game's frames and
+    // those in between; 120 FPS motion shows two at each.
     bool interpolating = sarusaru::shell::interpolates(current);
+    std::size_t pictures = sarusaru::shell::interpolated_pictures(current);
     sarusaru::shell::PresentationClock presentation(interpolating ? 0u : current.frame_rate);
     sarusaru::shell::Buffer capture;
     try {
@@ -292,7 +296,12 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         // the previous game frame, for the in-between picture. A game frame
         // ends when the game hands the display its next framebuffer.
         sarusaru::gpu::FrameInterpolator interpolator;
-        sarusaru::gpu::DrawCall between;
+        std::array<sarusaru::gpu::DrawCall, sarusaru::gpu::FrameInterpolator::kMaxPictures> between;
+        // Where each in-between picture lies between the older frame (0) and the newer (1).
+        const auto picture_times = [&]() -> std::span<const float> {
+            static constexpr float kOne[] = {0.5f}, kThree[] = {0.25f, 0.5f, 0.75f};
+            return pictures == 3u ? std::span<const float>(kThree) : std::span<const float>(kOne);
+        };
         std::uint64_t frame_requests = game.display.framebuffer_requests();
         // FOV: the gameplay cameras' own frustum widens (game/camera_fov.hpp),
         // so the game culls for the view it draws. The title, menus and
@@ -307,14 +316,18 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 frame_requests = requests;
                 interpolator.end_frame();
             }
-            interpolator.interpolate(call, 0.5f, between);
-            renderer->queue_interpolated(memory, between);
+            const auto times = picture_times();
+            const std::span<sarusaru::gpu::DrawCall> pictured(between.data(), times.size());
+            interpolator.interpolate(call, times, pictured);
+            renderer->queue_interpolated(memory, pictured);
         };
         game.ge.state().set_draw_sink([&](const sarusaru::gpu::DrawCall &call) {
             if (translation_pack) translation_pack->translate_draw(memory, call, render_draw);
             else render_draw(call);
         });
         std::uint64_t latches = game.display.framebuffer_latches(game.kernel.now_us()), latch_vblank = 0u;
+        // 120 FPS motion: the vblank after a new game frame shows the rest of its pictures.
+        bool later_half = false;
         game.audio.set_sink([&](std::int32_t channel, std::span<const std::int16_t> samples, bool mono,
                                 std::uint32_t left, std::uint32_t right) {
             audio.play(channel, samples, mono, left, right);
@@ -328,6 +341,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             if (next.draw_distance != current.draw_distance) game.draw_distance.set_scale(next.draw_distance);
             if (next.frame_rate != current.frame_rate) {
                 interpolating = sarusaru::shell::interpolates(next);
+                pictures = sarusaru::shell::interpolated_pictures(next);
+                later_half = false;
                 presentation = sarusaru::shell::PresentationClock(interpolating ? 0u : next.frame_rate);
                 // The next game frame starts the in-between pictures afresh.
                 interpolator.reset();
@@ -441,7 +456,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                             throw;
                         }
                         renderer->destroy(); renderer = std::move(replacement);
-                        audio.clear(); interpolator.reset(); between = {};
+                        audio.clear(); interpolator.reset(); between = {}; later_half = false;
                         frame_requests = game.display.framebuffer_requests();
                         latches = game.display.framebuffer_latches(game.kernel.now_us());
                         latch_vblank = sarusaru::kernel::vblanks_by(game.kernel.now_us());
@@ -523,18 +538,43 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             // between it and the one before, then as itself at the next
             // vblank. Only for frames of two or more vblanks: a game frame
             // of one leaves no vblank to show the in-between picture at.
-            bool in_between = false;
+            // 120 FPS motion shows two pictures a vblank, half a vblank
+            // apart: the first and second in-between pictures, then the
+            // third and the frame itself.
+            std::size_t picture = 0u;
+            std::optional<std::size_t> second_picture;
             if (interpolating) {
                 renderer->draw_interpolated();
                 const auto now = game.kernel.now_us();
+                bool in_between = false;
                 if (const auto latched = game.display.framebuffer_latches(now); latched != latches) {
                     const auto vblank = sarusaru::kernel::vblanks_by(now);
                     in_between = vblank - latch_vblank >= 2u;
                     latches = latched;
                     latch_vblank = vblank;
+                    later_half = false;
+                }
+                if (pictures == 3u && in_between) {
+                    picture = 1u;
+                    second_picture = 2u;
+                    later_half = true;
+                } else if (pictures == 3u && later_half) {
+                    picture = 3u;
+                    second_picture = 0u;
+                    later_half = false;
+                } else if (in_between) {
+                    picture = 1u;
                 }
             }
-            const auto *image = renderer->presentable(memory, framebuffer, width, height, in_between);
+            // Pictures shown more than once a vblank are each shown at their time.
+            const auto pace_presentation = [&](std::uint64_t after_vblank_ns) {
+                if (pictures != 3u || controls.fast_forward) return;
+                const std::uint64_t target_ns =
+                    real_origin_ns + (game.kernel.now_us() - guest_origin_us) * 1000u + after_vblank_ns;
+                const std::uint64_t now_ns = SDL_GetTicksNS();
+                if (target_ns > now_ns && target_ns - now_ns < kMaxLagNs) SDL_DelayPrecise(target_ns - now_ns);
+            };
+            const auto *image = renderer->presentable(memory, framebuffer, width, height, picture);
             const bool capturing = capture.buffer != VK_NULL_HANDLE && image != nullptr &&
                                    game.kernel.now_us() >= next_capture_us;
             if (capturing) {
@@ -549,26 +589,36 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 if (const auto movie = game.psmf_player.playing()) cue = subtitles.at(movie->path, movie->position_ms);
             const bool due = presentation.due(game.kernel.now_us());
             const bool show_state_notice = !state_notice.empty() && SDL_GetTicksNS() < notice_until;
-            if ((cue != nullptr || show_state_notice) && due && image != nullptr) {
-                vulkan.end_frame(image, width, height, false);
-                if (capturing) {
-                    char name[64];
-                    std::snprintf(name, sizeof name, "/subtitled_%04u_%08llums.bmp", captures,
-                                  static_cast<unsigned long long>(game.kernel.now_us() / 1000u));
-                    layer.capture_next(std::string(capture_directory) + name);
-                }
-                layer.present_over(image, width, height, [&](ImVec2 origin, ImVec2 size) {
-                    if (cue) sarusaru::ui::draw_subtitle(cue->text, origin, size);
-                    if (show_state_notice) {
-                        const auto extent = ImGui::CalcTextSize(state_notice.c_str());
-                        const ImVec2 at(origin.x + (size.x - extent.x) * 0.5f, origin.y + 24.0f);
-                        auto *draw = ImGui::GetForegroundDrawList();
-                        draw->AddRectFilled(ImVec2(at.x-12,at.y-8),ImVec2(at.x+extent.x+12,at.y+extent.y+8),IM_COL32(0,0,0,210),6);
-                        draw->AddText(at,IM_COL32(255,255,255,255),state_notice.c_str());
+            const auto show = [&](const sarusaru::shell::Image *shown, bool capture_overlay) {
+                if ((cue != nullptr || show_state_notice) && due && shown != nullptr) {
+                    vulkan.end_frame(shown, width, height, false);
+                    if (capture_overlay) {
+                        char name[64];
+                        std::snprintf(name, sizeof name, "/subtitled_%04u_%08llums.bmp", captures,
+                                      static_cast<unsigned long long>(game.kernel.now_us() / 1000u));
+                        layer.capture_next(std::string(capture_directory) + name);
                     }
-                });
-            } else {
-                vulkan.end_frame(image, width, height, due);
+                    layer.present_over(shown, width, height, [&](ImVec2 origin, ImVec2 size) {
+                        if (cue) sarusaru::ui::draw_subtitle(cue->text, origin, size);
+                        if (show_state_notice) {
+                            const auto extent = ImGui::CalcTextSize(state_notice.c_str());
+                            const ImVec2 at(origin.x + (size.x - extent.x) * 0.5f, origin.y + 24.0f);
+                            auto *draw = ImGui::GetForegroundDrawList();
+                            draw->AddRectFilled(ImVec2(at.x-12,at.y-8),ImVec2(at.x+extent.x+12,at.y+extent.y+8),IM_COL32(0,0,0,210),6);
+                            draw->AddText(at,IM_COL32(255,255,255,255),state_notice.c_str());
+                        }
+                    });
+                } else {
+                    vulkan.end_frame(shown, width, height, due);
+                }
+            };
+            pace_presentation(0u);
+            show(image, capturing);
+            if (second_picture) {
+                renderer->begin_frame(vulkan.begin_frame());
+                image = renderer->presentable(memory, framebuffer, width, height, *second_picture);
+                pace_presentation(sarusaru::kernel::vblank_time_us(1u) * 500u);
+                show(image, false);
             }
             if (open_menu) {
                 // The game waits in this callback until the menu closes, over

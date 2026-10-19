@@ -132,7 +132,9 @@ void rows() {
     require(!settings.cel_shading, "cel shading did not turn off");
 
     step(SettingRow::CelShading, settings, -1);
-    require(settings.cel_shading == 2 && describe(SettingRow::CelShading, settings).value == "Outlined", "cel preset did not wrap backwards");
+    require(settings.cel_shading == 2 && describe(SettingRow::CelShading, settings).value == "Outlined" &&
+                describe(SettingRow::CelShading, settings).experimental,
+            "cel preset did not wrap backwards to an experimental Outlined");
     step(SettingRow::CelShading, settings, 1);
     require(settings.cel_shading == 0, "outlined preset did not wrap to off");
     step(SettingRow::CelShading, settings, 1);
@@ -170,6 +172,7 @@ void rows() {
     settings.fullscreen = false;
 
     settings.controls.dead_zone = 0.2f;
+    settings.controls.aim_sensitivity = 1.0f;
     step(SettingRow::AimSensitivity, settings, -1);
     require(settings.controls.aim_sensitivity == 0.75f && describe(SettingRow::AimSensitivity, settings).value == "75%" &&
         !restart_only(SettingRow::AimSensitivity), "aim sensitivity row updates and applies in game");
@@ -177,15 +180,29 @@ void rows() {
     require(std::abs(settings.controls.dead_zone - 0.25f) < 1e-6f && describe(SettingRow::DeadZone, settings).value == "25%",
             "dead zone step wrong");
 
-    // Frame rate: native, 30, then 60 FPS motion.
+    // Frame rate: native, then 60 and 120 FPS motion, both experimental.
     settings.frame_rate = 0;
-    require(describe(SettingRow::FrameRate, settings).value == "Native" && !interpolates(settings), "frame rate not native");
+    require(describe(SettingRow::FrameRate, settings).value == "Native" && !interpolates(settings) &&
+                !describe(SettingRow::FrameRate, settings).experimental,
+            "frame rate not native, or native marked experimental");
     step(SettingRow::FrameRate, settings, 1);
-    require(settings.frame_rate == 30 && describe(SettingRow::FrameRate, settings).value == "30 FPS", "frame rate after native is not 30");
+    require(settings.frame_rate == 60 && interpolates(settings) && interpolated_pictures(settings) == 1u &&
+                describe(SettingRow::FrameRate, settings).value == "60 FPS" &&
+                describe(SettingRow::FrameRate, settings).experimental,
+            "60 FPS after native is not experimental 60 FPS motion");
     step(SettingRow::FrameRate, settings, 1);
-    require(settings.frame_rate == 60 && interpolates(settings), "60 FPS is not 60 FPS motion");
+    require(settings.frame_rate == 120 && interpolated_pictures(settings) == 3u &&
+                describe(SettingRow::FrameRate, settings).value == "120 FPS" &&
+                describe(SettingRow::FrameRate, settings).experimental,
+            "120 FPS after 60 is not experimental 120 FPS motion");
     step(SettingRow::FrameRate, settings, 1);
     require(settings.frame_rate == 0, "frame rate did not wrap to native");
+    step(SettingRow::FrameRate, settings, -1);
+    require(settings.frame_rate == 120, "frame rate did not wrap back to 120");
+    settings.frame_rate = 30;
+    require(!interpolates(settings), "an earlier cap of 30 interpolates");
+    step(SettingRow::FrameRate, settings, 1);
+    require(settings.frame_rate == 60, "an earlier cap of 30 did not step up to 60");
     settings.frame_rate = 20;
     step(SettingRow::FrameRate, settings, -1);
     require(settings.frame_rate == 0, "hand-set frame rate not snapped down to native");
@@ -274,7 +291,7 @@ void rows() {
             "Graphics rows not in order: preset, then full screen and window size, cel shading and textures last");
 }
 
-// Native and Modern set their rows together; anything else reads Custom.
+// Native, Modern Low and Modern set their rows together; anything else reads Custom.
 void presets() {
     using namespace sarusaru::ui;
     using sarusaru::shell::Settings;
@@ -291,23 +308,57 @@ void presets() {
     set_offered_downloads(true, true);
     settings = sarusaru::shell::default_settings();
     require(next_preset(Preset::Custom, 1) == Preset::Native && next_preset(Preset::Custom, -1) == Preset::Modern &&
-                next_preset(Preset::Native, 1) == Preset::Modern && next_preset(Preset::Modern, 1) == Preset::Native &&
-                next_preset(Preset::Native, -1) == Preset::Modern,
-            "presets do not cycle between Native and Modern");
+                next_preset(Preset::Native, 1) == Preset::ModernLow && next_preset(Preset::ModernLow, 1) == Preset::Modern &&
+                next_preset(Preset::Modern, 1) == Preset::Native && next_preset(Preset::Native, -1) == Preset::Modern &&
+                next_preset(Preset::Modern, -1) == Preset::ModernLow,
+            "presets do not cycle Native, Modern Low, Modern");
 
     settings.texture_pack = "/data/textures/8x-0123456789abcdef";
     settings.translation_language = "en";
     settings.translation_pack = "/data/translations/english.sstp";
     step(SettingRow::Preset, settings, 1);
     require(preset_of(settings) == Preset::Native && settings.internal_resolution == 1u && settings.texture_pack.empty() &&
-                settings.translation_language == "ja" && settings.draw_distance == 1.0f && !settings.skip_intro_logos,
+                settings.translation_language == "ja" && settings.draw_distance == 1.0f && !settings.skip_intro_logos &&
+                settings.fov_degrees == 0.0f && settings.frame_rate == 0u && settings.controls.aim_sensitivity == 1.0f,
             "Native did not set its rows");
     require(settings.translation_pack == "/data/translations/english.sstp", "Native forgot the downloaded English pack");
     require(describe(SettingRow::Preset, settings).value == "Native", "Native not named");
 
+    // Modern Low: 1080p, 45 degrees, twice the draw distance, the native frame rate and 150% aiming.
+    step(SettingRow::Preset, settings, 1);
+    require(settings.internal_resolution == kModernResolution && settings.draw_distance == 2.0f &&
+                settings.fov_degrees == 45.0f && settings.frame_rate == 0u && settings.skip_intro_logos &&
+                settings.controls.aim_sensitivity == 1.5f && settings.translation_language == "ja" &&
+                settings.texture_pack.empty(),
+            "Modern Low did not set its rows without downloads");
+    require(preset_of(settings) == Preset::Custom, "Modern Low without English and HD is not Custom");
+    settings.translation_language = "en";
+    settings.texture_pack = "/data/textures/4x-prebuilt-0123456789abcdef";
+    require(preset_of(settings) == Preset::ModernLow && describe(SettingRow::Preset, settings).value == "Modern Low",
+            "Modern Low with English and HD not recognised");
+    step(SettingRow::Fov, settings, 1);
+    require(preset_of(settings) == Preset::Custom, "a wider FOV still reads as Modern Low");
+    step(SettingRow::Fov, settings, -1);
+    step(SettingRow::FrameRate, settings, 1);
+    require(preset_of(settings) == Preset::Custom, "60 FPS still reads as Modern Low");
+    step(SettingRow::FrameRate, settings, -1);
+    require(preset_of(settings) == Preset::ModernLow, "Modern Low not recognised again");
+    {
+        Settings wide = settings;
+        wide.fov_degrees = 75.0f;
+        wide.frame_rate = 120u;
+        apply_preset(wide, Preset::ModernLow);
+        require(wide.fov_degrees == 45.0f && wide.frame_rate == 0u, "Modern Low kept another FOV or frame rate");
+    }
+
     // Modern's own step sets what needs no download; the launcher adds English and HD.
     step(SettingRow::Preset, settings, 1);
+    require(preset_of(settings) == Preset::Modern, "Modern does not follow Modern Low");
+    settings = sarusaru::shell::default_settings();
+    apply_preset(settings, Preset::Native);
+    apply_preset(settings, Preset::Modern);
     require(settings.internal_resolution == kModernResolution && settings.draw_distance == kModernDrawDistance &&
+                settings.controls.aim_sensitivity == 1.5f &&
                 settings.skip_intro_logos && settings.translation_language == "ja" && settings.texture_pack.empty(),
             "Modern did not set its rows without downloads");
     require(describe(SettingRow::InternalResolution, settings).value == "4× (1920×1088)", "Modern is not 1080p");
@@ -323,8 +374,11 @@ void presets() {
     step(SettingRow::DrawDistance, settings, -1);
     require(preset_of(settings) == Preset::Custom && describe(SettingRow::Preset, settings).value == "Custom",
             "a changed row did not make the preset Custom");
-    // Rows outside the preset leave it alone.
     step(SettingRow::DrawDistance, settings, 1);
+    step(SettingRow::AimSensitivity, settings, 1);
+    require(preset_of(settings) == Preset::Custom, "a changed aiming sensitivity did not make Modern Custom");
+    step(SettingRow::AimSensitivity, settings, -1);
+    // Rows outside the preset leave it alone.
     step(SettingRow::Fov, settings, 1);
     step(SettingRow::FrameRate, settings, 1);
     require(preset_of(settings) == Preset::Modern, "rows outside the preset changed it");

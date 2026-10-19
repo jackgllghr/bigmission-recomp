@@ -120,8 +120,9 @@ FrameInterpolator::Camera *FrameInterpolator::camera(const DrawCall &call) {
     return nullptr;
 }
 
-bool FrameInterpolator::interpolate(const DrawCall &call, float t, DrawCall &out) {
-    out = call;
+bool FrameInterpolator::interpolate(const DrawCall &call, std::span<const float> t, std::span<DrawCall> out) {
+    const std::size_t pictures = std::min({t.size(), out.size(), kMaxPictures});
+    for (std::size_t k = 0; k < pictures; ++k) out[k] = call;
     if (current_count_ == current_.size()) current_.emplace_back();
     Record &record = current_[current_count_++];
     // Where the vertices come from tells instances of static meshes apart;
@@ -166,16 +167,18 @@ bool FrameInterpolator::interpolate(const DrawCall &call, float t, DrawCall &out
             Camera &added = cameras_.emplace_back();
             added.view = call.view;
             added.projection = call.projection;
-            for (int i = 0; i < 16; ++i) {
-                added.blended_view[i] = lerp(previous->view[i], call.view[i], t);
-                added.blended_projection[i] = lerp(previous->projection[i], call.projection[i], t);
-            }
+            for (std::size_t k = 0; k < pictures; ++k)
+                for (int i = 0; i < 16; ++i) {
+                    added.blended_view[k][i] = lerp(previous->view[i], call.view[i], t[k]);
+                    added.blended_projection[k][i] = lerp(previous->projection[i], call.projection[i], t[k]);
+                }
             view = &added;
         }
-        if (view != nullptr) {
-            out.view = view->blended_view;
-            out.projection = view->blended_projection;
-        }
+        if (view != nullptr)
+            for (std::size_t k = 0; k < pictures; ++k) {
+                out[k].view = view->blended_view[k];
+                out[k].projection = view->blended_projection[k];
+            }
     }
 
     if (previous == nullptr) {
@@ -186,20 +189,24 @@ bool FrameInterpolator::interpolate(const DrawCall &call, float t, DrawCall &out
         ++stats_.snapped;
         return false;
     }
-    if (!call.through) {
-        for (int i = 0; i < 16; ++i) out.world[i] = lerp(previous->world[i], call.world[i], t);
-        if (view == nullptr)
-            for (int i = 0; i < 16; ++i) {
-                out.view[i] = lerp(previous->view[i], call.view[i], t);
-                out.projection[i] = lerp(previous->projection[i], call.projection[i], t);
-            }
+    for (std::size_t k = 0; k < pictures; ++k) {
+        DrawCall &blended = out[k];
+        const float at = t[k];
+        if (!call.through) {
+            for (int i = 0; i < 16; ++i) blended.world[i] = lerp(previous->world[i], call.world[i], at);
+            if (view == nullptr)
+                for (int i = 0; i < 16; ++i) {
+                    blended.view[i] = lerp(previous->view[i], call.view[i], at);
+                    blended.projection[i] = lerp(previous->projection[i], call.projection[i], at);
+                }
+        }
+        // Scrolling textures; a wrap back to the start is not motion.
+        if (std::fabs(call.texture.offset_u - previous->offset_u) < 0.25f)
+            blended.texture.offset_u = lerp(previous->offset_u, call.texture.offset_u, at);
+        if (std::fabs(call.texture.offset_v - previous->offset_v) < 0.25f)
+            blended.texture.offset_v = lerp(previous->offset_v, call.texture.offset_v, at);
+        blended.material_color = lerp_color(previous->material_color, call.material_color, at);
     }
-    // Scrolling textures; a wrap back to the start is not motion.
-    if (std::fabs(call.texture.offset_u - previous->offset_u) < 0.25f)
-        out.texture.offset_u = lerp(previous->offset_u, call.texture.offset_u, t);
-    if (std::fabs(call.texture.offset_v - previous->offset_v) < 0.25f)
-        out.texture.offset_v = lerp(previous->offset_v, call.texture.offset_v, t);
-    out.material_color = lerp_color(previous->material_color, call.material_color, t);
 
     // Vertices the CPU moved (skinned meshes, particles, 2D layout).
     // Texture coordinates stay: blending them would show a mixture of
@@ -218,11 +225,15 @@ bool FrameInterpolator::interpolate(const DrawCall &call, float t, DrawCall &out
                              transform(view_world, call.vertices[i].position), false);
         }
         if (motion) {
-            for (std::size_t i = 0; i < before.size(); ++i) {
-                auto &vertex = out.vertices[i];
-                for (int c = 0; c < 4; ++c) vertex.position[c] = lerp(before[i].position[c], vertex.position[c], t);
-                for (int c = 0; c < 3; ++c) vertex.normal[c] = lerp(before[i].normal[c], vertex.normal[c], t);
-                vertex.color = lerp_color(before[i].color, vertex.color, t);
+            for (std::size_t k = 0; k < pictures; ++k) {
+                const float at = t[k];
+                for (std::size_t i = 0; i < before.size(); ++i) {
+                    auto &vertex = out[k].vertices[i];
+                    const auto &newer = call.vertices[i];
+                    for (int c = 0; c < 4; ++c) vertex.position[c] = lerp(before[i].position[c], newer.position[c], at);
+                    for (int c = 0; c < 3; ++c) vertex.normal[c] = lerp(before[i].normal[c], newer.normal[c], at);
+                    vertex.color = lerp_color(before[i].color, newer.color, at);
+                }
             }
         }
     }
