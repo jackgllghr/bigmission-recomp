@@ -224,8 +224,8 @@ void GeRenderer::destroy() {
         }
         layer.clear();
     }
-    queued_.clear();
-    queued_count_ = 0u;
+    for (auto &queue : queued_) queue.clear();
+    queued_count_ = {};
     for (auto &[key, texture] : textures_) {
         (void)key;
         vk_.destroy_image(texture.image);
@@ -707,33 +707,43 @@ void GeRenderer::draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall 
     draw_into(kGame, &memory, call, nullptr);
 }
 
-void GeRenderer::queue_interpolated(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call) {
-    if (call.vertices.empty() || call.primitive == gpu::PrimitiveType::Points) return;
-    if (queued_count_ == queued_.size()) queued_.emplace_back();
-    QueuedDraw &queued = queued_[queued_count_++];
-    queued.call = call;
-    queued.texture = {};
-    if (!call.texture.enabled || call.clear_mode || call.texture.width == 0u || call.texture.height == 0u) return;
-    const auto &game = targets_[kGame];
-    if (const auto found = game.find(canonical(call.texture.address)); found != game.end() &&
-        found->first != canonical(call.target.color_address)) {
-        queued.texture.render_target = true;
-        return;
+void GeRenderer::queue_interpolated(const psprecomp::GuestMemory &memory, std::span<const gpu::DrawCall> calls) {
+    if (calls.empty() || calls.front().vertices.empty() || calls.front().primitive == gpu::PrimitiveType::Points) return;
+    // Every picture's draw samples the same texture: it is looked up once.
+    const gpu::DrawCall &call = calls.front();
+    QueuedTexture texture;
+    if (call.texture.enabled && !call.clear_mode && call.texture.width != 0u && call.texture.height != 0u) {
+        const auto &game = targets_[kGame];
+        if (const auto found = game.find(canonical(call.texture.address)); found != game.end() &&
+            found->first != canonical(call.target.color_address)) {
+            texture.render_target = true;
+        } else if (last_game_texture_.valid) {
+            // The game's own draw has just looked this texture up: it is the
+            // texture as guest memory holds it now.
+            texture.view = last_game_texture_.view;
+            texture.u_scale = last_game_texture_.u_scale;
+            texture.v_scale = last_game_texture_.v_scale;
+        } else {
+            texture.view = texture_view(memory, call, texture.u_scale, texture.v_scale);
+        }
     }
-    // The game's own draw has just looked this texture up: it is the texture
-    // as guest memory holds it now.
-    if (last_game_texture_.valid) {
-        queued.texture.view = last_game_texture_.view;
-        queued.texture.u_scale = last_game_texture_.u_scale;
-        queued.texture.v_scale = last_game_texture_.v_scale;
-        return;
+    for (std::size_t picture = 0; picture < calls.size() && picture < kMaxPictures; ++picture) {
+        auto &queue = queued_[picture];
+        auto &count = queued_count_[picture];
+        if (count == queue.size()) queue.emplace_back();
+        QueuedDraw &queued = queue[count++];
+        queued.call = calls[picture];
+        queued.texture = texture;
     }
-    queued.texture.view = texture_view(memory, call, queued.texture.u_scale, queued.texture.v_scale);
 }
 
 void GeRenderer::draw_interpolated() {
-    for (std::size_t i = 0; i < queued_count_; ++i) draw_into(kInterpolated, nullptr, queued_[i].call, &queued_[i].texture);
-    queued_count_ = 0u;
+    for (std::size_t picture = 0; picture < kMaxPictures; ++picture) {
+        auto &queue = queued_[picture];
+        for (std::size_t i = 0; i < queued_count_[picture]; ++i)
+            draw_into(kInterpolated + picture, nullptr, queue[i].call, &queue[i].texture);
+        queued_count_[picture] = 0u;
+    }
 }
 
 void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memory, const gpu::DrawCall &call,
@@ -1157,11 +1167,12 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
 }
 
 const Image *GeRenderer::presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,
-                                     std::uint32_t &width, std::uint32_t &height, bool interpolated) {
+                                     std::uint32_t &width, std::uint32_t &height, std::size_t picture) {
     end_pass();
     if (framebuffer.address == 0u) return nullptr;
     auto *layer = &targets_[kGame];
-    if (interpolated && targets_[kInterpolated].contains(canonical(framebuffer.address))) layer = &targets_[kInterpolated];
+    if (picture != 0u && picture <= kMaxPictures && targets_[kInterpolated + picture - 1u].contains(canonical(framebuffer.address)))
+        layer = &targets_[kInterpolated + picture - 1u];
     if (const auto found = layer->find(canonical(framebuffer.address)); found != layer->end()) {
         Target &target = *found->second;
         vk_.transition(commands_, target.color.image, VK_IMAGE_ASPECT_COLOR_BIT, target.color_layout,

@@ -172,7 +172,7 @@ Settings default_settings() {
     const char *pads[] = {"dpup", "dpdown", "dpleft", "dpright", "b", "a", "x", "y",
                          "leftshoulder, axis:lefttrigger+", "rightshoulder, axis:righttrigger+", "start", "back",
                          "axis:leftx-", "axis:leftx+", "axis:lefty-", "axis:lefty+", "none", "guide, leftstick+rightstick",
-                         "axis:rightx-", "axis:rightx+", "axis:righty-", "axis:righty+", "rightstick", "back+rightshoulder", "back+leftshoulder"};
+                         "axis:rightx-", "axis:rightx+", "axis:righty+", "axis:righty-", "rightstick", "back+rightshoulder", "back+leftshoulder"};
     for (std::size_t i = 0; i < kActionCount; ++i) {
         settings.controls.keyboard[i] = bindings(keys[i], true);
         settings.controls.gamepad[i] = bindings(pads[i], false);
@@ -187,6 +187,7 @@ Settings parse_settings(std::string_view text) {
     std::set<std::string> seen;
     std::size_t line_number = 0;
     std::optional<bool> legacy_interpolation;
+    bool camera_layout = false;
     // Only a file that says so still offers Modern's downloads.
     settings.modern_downloads_pending = false;
     std::array<std::optional<std::vector<Binding>>, 2> legacy_quit;  // keyboard, gamepad
@@ -221,7 +222,9 @@ Settings parse_settings(std::string_view text) {
             } else if (full == "graphics.fullscreen") {
                 settings.fullscreen = integer(value, 0, 1) != 0;
             } else if (full == "graphics.frame_rate") {
-                settings.frame_rate = static_cast<std::uint32_t>(integer(value, 0, 60));
+                settings.frame_rate = static_cast<std::uint32_t>(integer(value, 0, 120));
+                if (settings.frame_rate > 60u && settings.frame_rate != 120u)
+                    throw std::runtime_error("frame_rate must be 0-60 or 120");
             } else if (full == "graphics.experimental_game_frame_rate") {
                 // No longer a setting: the game always updates at its native rate.
             } else if (full == "graphics.cel_shading") {
@@ -248,6 +251,8 @@ Settings parse_settings(std::string_view text) {
                 settings.subtitles = integer(value, 0, 1) != 0;
             } else if (full == "input.aim_sensitivity") {
                 settings.controls.aim_sensitivity = number(value, 0.25f, 2.0f);
+            } else if (full == "input.camera_layout") {
+                camera_layout = integer(value, 1, 2) == 2;
             } else if (full == "input.dead_zone") {
                 settings.controls.dead_zone = number(value, 0.0f, 0.95f);
             } else if (full == "game.skip_intro_logos") {
@@ -287,6 +292,13 @@ Settings parse_settings(std::string_view text) {
             (i == 0u ? settings.controls.keyboard : settings.controls.gamepad)[static_cast<std::size_t>(Action::Menu)] =
                 *legacy_quit[i];
     }
+    // The earlier default camera stick, where up was Camera up: now inverted, once.
+    if (!camera_layout) {
+        auto &pad = settings.controls.gamepad;
+        const auto up = static_cast<std::size_t>(Action::CameraUp), down = static_cast<std::size_t>(Action::CameraDown);
+        if (pad[up] == bindings("axis:righty-", false) && pad[down] == bindings("axis:righty+", false))
+            std::swap(pad[up], pad[down]);
+    }
     // An earlier version's interpolation; its cap of 60 alone showed the game's own frames.
     if (legacy_interpolation && *legacy_interpolation) settings.frame_rate = 60u;
     else if (legacy_interpolation && settings.frame_rate == 60u) settings.frame_rate = 0u;
@@ -306,8 +318,8 @@ std::string serialize_settings(const Settings &settings) {
         << "window_width = " << settings.window_width << "\nwindow_height = " << settings.window_height << '\n'
         << "# 1 = fullscreen at the desktop resolution (Alt+Enter or F11 toggles while playing).\n"
         << "fullscreen = " << (settings.fullscreen ? 1 : 0) << '\n'
-        << "# 0 = native; 30 = capped at 30; 60 = 60 FPS motion at native game speed, an interpolated\n"
-        << "# picture between game frames (adds one vblank of latency).\nframe_rate = " << settings.frame_rate << '\n'
+        << "# 0 = native; 1-59 = a cap; 60 or 120 = 60 or 120 FPS motion at native game speed, interpolated\n"
+        << "# pictures between game frames (adds one vblank of latency).\nframe_rate = " << settings.frame_rate << '\n'
         << "# Gameplay camera vertical FOV: 0 = native (about 36.5); 30-120. Menus, cutscenes and HUD stay native.\n"
         << "fov_degrees = " << decimal(settings.fov_degrees) << '\n'
         << "# Actor draw distance: 1 = native (enemies and monkeys fade out 250-350 units from the camera);\n"
@@ -321,7 +333,9 @@ std::string serialize_settings(const Settings &settings) {
         << (settings.translation_pack.empty() ? "none" : settings.translation_pack.generic_string()) << '\n'
         << "# 1 = subtitles over the movies that have them.\nsubtitles = " << (settings.subtitles ? 1 : 0) << '\n'
         << "\n[input]\ndead_zone = " << decimal(settings.controls.dead_zone)
-        << "\naim_sensitivity = " << decimal(settings.controls.aim_sensitivity) << '\n'
+        << "\naim_sensitivity = " << decimal(settings.controls.aim_sensitivity)
+        << "\n# 2 = the gamepad camera bindings are this version's (stick up is Camera down); 1 = an earlier one's.\n"
+        << "camera_layout = 2\n"
         << "\n[game]\n# The disc image (.iso) the launcher plays; empty until one is chosen. % and # are written as %XX.\n"
         << "disc = " << encode_path(settings.game_disc) << '\n'
         << "# 1 = skip the opening logos. Start also skips them with this off.\nskip_intro_logos = "

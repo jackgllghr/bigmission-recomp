@@ -405,6 +405,21 @@ int setting_row(const Layer &layer, std::string_view id, const RowView &row, flo
 
     // The value between its arrows, in the right part of the row.
     const float value_width = std::min(300.0f * u, width * 0.48f);
+
+    // An experimental value: a yellow tag after the label, where there is room for it.
+    if (row.experimental) {
+        const std::string_view tag = tr(Text::Experimental);
+        const float tag_size = 13.0f * u, pad_x = 7.0f * u, pad_y = 3.0f * u;
+        const ImVec2 tag_extent = text_size(strong, tag_size, tag);
+        const ImVec2 min(bb.Min.x + 40.0f * u + label_size.x + 10.0f * u, bb.GetCenter().y - tag_extent.y * 0.5f - pad_y);
+        const ImVec2 max(min.x + tag_extent.x + 2.0f * pad_x, min.y + tag_extent.y + 2.0f * pad_y);
+        if (max.x < bb.Max.x - value_width - 16.0f * u) {
+            draw->AddRectFilled(min, max, colors::kYellow, (max.y - min.y) * 0.5f);
+            draw->AddRect(min, max, colors::kYellowShade, (max.y - min.y) * 0.5f, 1.5f * u);
+            draw->AddText(strong, tag_size, ImVec2(min.x + pad_x, min.y + pad_y), colors::kInk, tag.data(),
+                          tag.data() + tag.size());
+        }
+    }
     const ImRect value(ImVec2(bb.Max.x - value_width - 12.0f * u, bb.Min.y), ImVec2(bb.Max.x - 12.0f * u, bb.Max.y));
     const float arrow = 22.0f * u;
     const ImU32 arrow_color = row.enabled ? mix(colors::kBlueLight, colors::kBlue, focus) : colors::kDisabled;

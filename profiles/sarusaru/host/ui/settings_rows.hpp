@@ -37,6 +37,8 @@ struct RowView {
     bool warning{};
     // Another setting makes this one moot (description says which); step() leaves it.
     bool enabled{true};
+    // Marked as experimental beside the label: the value may misbehave.
+    bool experimental{};
     // A gamepad face button drawn before the value, as the player's pad labels it.
     SDL_GamepadButton face{SDL_GAMEPAD_BUTTON_INVALID};
 };
@@ -60,29 +62,34 @@ void step(SettingRow row, shell::Settings &settings, int direction);
 // The next of original (0), 4x and 8x in `direction`.
 [[nodiscard]] std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direction);
 
-// The Preset row: Native (the game as the PSP drew it) and Modern set the
-// rows below together; any other mix of them is Custom. Derived from the
-// settings, never stored, so changing one of those rows makes it Custom.
+// The Preset row: Native (the game as the PSP drew it), Modern Low and Modern
+// set the rows below together; any other mix of them is Custom. Derived from
+// the settings, never stored, so changing one of those rows makes it Custom.
 //
-//              resolution    textures  game text  draw distance  intro logos
-//   Native     1x (480x272)  original  Japanese   native         shown
-//   Modern     4x (1080p)    HD (4x)   English    8x (most)      skipped
-enum class Preset { Native, Modern, Custom };
+//              resolution    textures  game text  draw distance  intro logos  FOV     frame rate  aiming
+//   Native     1x (480x272)  original  Japanese   native         shown        native  native      100%
+//   Modern Low 4x (1080p)    HD (4x)   English    2x             skipped      45°     native      150%
+//   Modern     4x (1080p)    HD (4x)   English    8x (most)      skipped      (any)   (any)       150%
+enum class Preset { Native, ModernLow, Modern, Custom };
 // Which of Modern's downloads this build offers (both, until the launcher
 // says otherwise). Modern asks only for those: a build without an HD pack or
 // recipe is Modern with the original textures.
 void set_offered_downloads(bool english, bool hd_textures);
 [[nodiscard]] Preset preset_of(const shell::Settings &settings);
-// The next of Native and Modern in `direction` (Custom is never chosen; it is
-// what is left when the rows are set one by one).
+// The next of Native, Modern Low and Modern in `direction` (Custom is never
+// chosen; it is what is left when the rows are set one by one).
 [[nodiscard]] Preset next_preset(Preset current, int direction);
 // Sets the preset's rows that need nothing downloaded: resolution, draw
-// distance and intro logos, and for Native the original textures and
-// Japanese text too. The launcher turns on Modern's HD textures and English,
-// downloading them first if need be.
+// distance, intro logos and aiming (and FOV and frame rate, which Modern
+// leaves), and for Native the original textures and Japanese text too. The
+// launcher turns on the Modern presets' HD textures and English, downloading
+// them first if need be.
 void apply_preset(shell::Settings &settings, Preset preset);
 inline constexpr std::uint32_t kModernResolution = 4u;  // 1920x1088
 inline constexpr float kModernDrawDistance = 8.0f;
+inline constexpr float kModernAimSensitivity = 1.5f;
+inline constexpr float kModernLowDrawDistance = 2.0f;
+inline constexpr float kModernLowFov = 45.0f;
 
 // The general rule step() follows, for a sorted list of values.
 [[nodiscard]] double step_value(std::span<const double> values, double current, int direction);

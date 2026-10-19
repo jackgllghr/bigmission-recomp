@@ -24,7 +24,7 @@ int main() {
     using namespace sarusaru::shell;
     using namespace sarusaru::ctrl;
     const Settings defaults = default_settings();
-    require(defaults.controls.aim_sensitivity == 1.0f, "aim sensitivity defaults to native response");
+    require(defaults.controls.aim_sensitivity == 1.5f, "aim sensitivity does not default to the Modern preset's 150%");
     const auto aiming = parse_settings("[input]\naim_sensitivity = 0.5\n");
     require(aiming.controls.aim_sensitivity == 0.5f && parse_settings(serialize_settings(aiming)) == aiming,
         "aim sensitivity round-trips");
@@ -158,6 +158,10 @@ int main() {
     require(parse_settings("[graphics]\nframe_interpolation = 0\nframe_rate = 60").frame_rate == 0,
             "old cap of 60 without interpolation turned interpolation on");
     require(parse_settings("[graphics]\nframe_rate = 30\nframe_interpolation = 0").frame_rate == 30, "old cap of 30 lost");
+    const auto motion120 = parse_settings("[graphics]\nframe_rate = 120\n");
+    require(motion120.frame_rate == 120 && interpolated_pictures(motion120) == 3u &&
+                parse_settings(serialize_settings(motion120)) == motion120,
+            "120 FPS motion did not load or round-trip");
     // Earlier versions' quit action: the pause menu took its place and its key.
     {
         constexpr auto menu = static_cast<std::size_t>(Action::Menu);
@@ -198,7 +202,8 @@ int main() {
             "removed settings still written");
     for (const auto text : {
         "[graphics]\ninternal_resolution = 0", "[graphics]\nframe_rate = 61",
-        "[graphics]\nframe_rate = 30junk", "[graphics]\nframe_interpolation = 2", "[graphics]\nwindow_width = 100",
+        "[graphics]\nframe_rate = 30junk", "[graphics]\nframe_rate = 90", "[graphics]\nframe_rate = 121",
+        "[input]\ncamera_layout = 3", "[graphics]\nframe_interpolation = 2", "[graphics]\nwindow_width = 100",
         "[graphics]\nwindow_height = 99999", "[graphics]\nfullscreen = yes", "[graphics]\nfov_degrees = 10",
         "[graphics]\nfov_degrees = nan", "[graphics]\ndraw_distance = 0.5", "[graphics]\ndraw_distance = 9", "[graphics]\nframe_rate = 30\nframe_rate = 60",
         "[input]\ndead_zone = 1", "[input]\ndead_zone = -0.1", "[input]\nunknown = 1",
@@ -272,9 +277,19 @@ int main() {
     pads[0].axes[SDL_GAMEPAD_AXIS_RIGHTY] = -32768;
     pads[0].buttons[SDL_GAMEPAD_BUTTON_RIGHT_STICK] = true;
     state = map_input(defaults.controls, keys, pads);
-    require(std::abs(state.camera_x - 0.5f) < 0.001f && state.camera_y == -1 && state.camera_reset &&
+    // The camera's vertical is inverted: the stick pushed up is Camera down.
+    require(std::abs(state.camera_x - 0.5f) < 0.001f && state.camera_y == 1 && state.camera_reset &&
                 state.pad.buttons == 0 && state.pad.lx == 128 && state.pad.ly == 128,
-            "camera stick was not proportional or changed the PSP pad");
+            "camera stick was not proportional, not inverted vertically, or changed the PSP pad");
+    // A file from before the inversion, on the earlier default, is inverted once;
+    // one that says it has the current layout, or bound the camera itself, is kept.
+    const auto earlier = parse_settings("[gamepad]\ncamera_up = axis:righty-\ncamera_down = axis:righty+\n");
+    require(earlier.controls.gamepad == defaults.controls.gamepad, "the earlier camera default was not inverted");
+    const auto chosen = parse_settings("[input]\ncamera_layout = 2\n[gamepad]\ncamera_up = axis:righty-\ncamera_down = axis:righty+\n");
+    constexpr auto camera_up = static_cast<std::size_t>(Action::CameraUp);
+    require(chosen.controls.gamepad[camera_up] != defaults.controls.gamepad[camera_up],
+            "a camera layout chosen with the current version was inverted");
+    require(parse_settings(serialize_settings(chosen)) == chosen, "the camera layout did not survive a save");
     pads = {}; keys[SDL_SCANCODE_KP_4] = true; keys[SDL_SCANCODE_KP_8] = true;
     state = map_input(defaults.controls, keys, pads);
     require(state.camera_x == -1 && state.camera_y == -1 && state.pad.buttons == 0,

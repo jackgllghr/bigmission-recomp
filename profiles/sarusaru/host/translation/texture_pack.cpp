@@ -60,6 +60,19 @@ private:
 };
 }
 
+namespace {
+// "SSTEXPK" and the format version, 1 to 8.
+bool supported_magic(std::string_view magic) {
+    return magic.size() == 8u && magic.starts_with("SSTEXPK") && magic[7] >= '1' && magic[7] <= '8';
+}
+} // namespace
+
+bool TexturePack::readable_format(const std::filesystem::path &path) {
+    std::ifstream in(path, std::ios::binary);
+    char magic[8]{};
+    return in.read(magic, sizeof magic) && supported_magic(std::string_view(magic, sizeof magic));
+}
+
 TexturePack TexturePack::load(const std::filesystem::path &path, std::string_view disc_id,
                               std::string_view executable_hash, const SourceReader &read_source) {
     std::ifstream in(path, std::ios::binary | std::ios::ate);
@@ -71,7 +84,7 @@ TexturePack TexturePack::load(const std::filesystem::path &path, std::string_vie
     if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) invalid("short read");
     Reader reader(bytes);
     const auto magic = reader.text(8);
-    if (!magic.starts_with("SSTEXPK") || magic[7] < '1' || magic[7] > '8') invalid("unsupported format/version");
+    if (!supported_magic(magic)) invalid("unsupported format/version");
     const int version = magic[7] - '0';
     if (disc_id.size() != 9 || reader.text(9) != disc_id || reader.digest() != executable_hash) invalid("incompatible game");
     TexturePack pack;

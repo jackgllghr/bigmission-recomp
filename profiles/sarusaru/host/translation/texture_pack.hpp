@@ -23,6 +23,9 @@ public:
     using SourceReader = std::function<std::vector<std::uint8_t>(std::string_view)>;
     static TexturePack load(const std::filesystem::path &path, std::string_view disc_id,
                             std::string_view executable_hash, const SourceReader &read_source);
+    // Whether the file at `path` is a pack in a format this version reads
+    // (its content is checked only by load()).
+    [[nodiscard]] static bool readable_format(const std::filesystem::path &path);
 
     // Called only on a renderer cache miss for a non-render-target texture.
     // Unmatched images retain their Japanese pixels. Only the logical source

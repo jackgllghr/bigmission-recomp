@@ -170,6 +170,23 @@ int main() {
         after_cut.texture.address = 0x09500000u;
         require(!interpolator.interpolate(after_cut, 0.5f, out) && near(out.view[12], -60.0f), "draw after a cut blended");
     }
+    {
+        // 120 FPS motion: three pictures of one draw at once, each at its own
+        // time, and a later draw with the same camera sees each picture's camera.
+        constexpr float times[] = {0.25f, 0.5f, 0.75f};
+        std::array<DrawCall, 3> pictures;
+        FrameInterpolator interpolator;
+        interpolator.interpolate(mesh(0.0f, 0.0f), times, pictures);
+        interpolator.interpolate(mesh(0.0f, 0.0f, 0x08910000u), times, pictures);
+        interpolator.end_frame();
+        require(interpolator.interpolate(mesh(0.0f, 1.0f), times, pictures) && near(pictures[0].view[12], -0.25f) &&
+                    near(pictures[1].view[12], -0.5f) && near(pictures[2].view[12], -0.75f),
+                "the three pictures' cameras are not at their times");
+        require(interpolator.interpolate(mesh(2.0f, 1.0f, 0x08910000u), times, pictures) &&
+                    near(pictures[0].world[12], 0.5f) && near(pictures[1].world[12], 1.0f) &&
+                    near(pictures[2].world[12], 1.5f) && near(pictures[2].view[12], -0.75f),
+                "the three pictures of a moved mesh are not at their times");
+    }
     std::cout << "frame interpolator tests passed\n";
     return 0;
 }

@@ -25,6 +25,7 @@
 #include "psprecomp/guest_memory.hpp"
 
 #include <array>
+#include <span>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -56,16 +57,20 @@ public:
     // `presentable` for the image VulkanContext::end_frame shows.
     void begin_frame(VkCommandBuffer commands);
     void draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call);
-    // Queues a draw of the in-between picture, to be drawn by draw_interpolated.
-    void queue_interpolated(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call);
+    // At most this many in-between pictures between two game frames.
+    static constexpr std::size_t kMaxPictures = 3u;
+    // Queues a draw of each in-between picture (`calls[i]` for picture i + 1),
+    // to be drawn by draw_interpolated.
+    void queue_interpolated(const psprecomp::GuestMemory &memory, std::span<const gpu::DrawCall> calls);
     // Draws the queued in-between draws into their own targets.
     void draw_interpolated();
     // Ends any render pass and returns the displayed framebuffer as an image in
     // TRANSFER_SRC layout (uploaded from guest memory when the GPU never drew
     // it), with its size in pixels; nullptr when nothing is displayed.
-    // `interpolated` picks the in-between picture, when one was drawn there.
+    // `picture` 1 to kMaxPictures picks that in-between picture, when one
+    // was drawn there; 0 is the game's own.
     const Image *presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,
-                             std::uint32_t &width, std::uint32_t &height, bool interpolated = false);
+                             std::uint32_t &width, std::uint32_t &height, std::size_t picture = 0u);
 
     // Lossless native render-target snapshot, including depth. Calls require
     // an active command buffer and no guest frames running.
@@ -118,7 +123,8 @@ private:
         gpu::DrawCall call;
         QueuedTexture texture;
     };
-    enum Layer : std::size_t { kGame = 0u, kInterpolated = 1u, kLayers = 2u };
+    // The game's own targets, then those of each in-between picture.
+    enum Layer : std::size_t { kGame = 0u, kInterpolated = 1u, kLayers = kInterpolated + kMaxPictures };
     struct GpuVertex {
         float position[4];
         float texcoord[2];
@@ -165,8 +171,8 @@ private:
     Image upload_;  // the displayed framebuffer when the CPU drew it
 
     std::array<std::map<std::uint32_t, std::unique_ptr<Target>>, kLayers> targets_;
-    std::vector<QueuedDraw> queued_;
-    std::size_t queued_count_{};
+    std::array<std::vector<QueuedDraw>, kMaxPictures> queued_;
+    std::array<std::size_t, kMaxPictures> queued_count_{};
     std::unordered_map<std::uint64_t, Texture> textures_;
     VkCommandBuffer commands_{VK_NULL_HANDLE};
     Target *pass_target_{};

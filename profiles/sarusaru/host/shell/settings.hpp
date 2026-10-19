@@ -34,7 +34,8 @@ struct Binding {
 struct ControlSettings {
     std::array<std::vector<Binding>, kActionCount> keyboard, gamepad;
     float dead_zone{0.2f};
-    float aim_sensitivity{1.0f}; // both sticks while aiming, 0.25–2; 1 is native response
+    // Both sticks while aiming, 0.25–2; 1 is the native response. The default is the Modern preset's.
+    float aim_sensitivity{1.5f};
     bool operator==(const ControlSettings &) const = default;
 };
 // The launcher's language; Auto follows the system's preferred language.
@@ -73,8 +74,10 @@ struct Settings {
     bool fullscreen{false};
     // 0 = every PSP vblank (the game's own frames), 1-59 = a presentation
     // cap, 60 = 60 FPS motion: an in-between picture for each game frame,
-    // at the original game speed, one vblank later. The game always updates
-    // at its native rate; guest timing stays 60000/1001 Hz.
+    // at the original game speed, one vblank later; 120 = 120 FPS motion:
+    // three in-between pictures for each game frame, two shown per vblank.
+    // The game always updates at its native rate; guest timing stays
+    // 60000/1001 Hz.
     std::uint32_t frame_rate{0};
     // 0 = native; otherwise the gameplay camera's vertical FOV (game/camera_fov.hpp), 30-120 degrees.
     float fov_degrees{0.0f};
@@ -102,15 +105,23 @@ struct Settings {
     bool operator==(const Settings &) const = default;
 };
 
-// Whether `frame_rate` asks for 60 FPS motion (interpolated in-between pictures).
-[[nodiscard]] constexpr bool interpolates(const Settings &settings) { return settings.frame_rate == 60u; }
+// How many in-between pictures `frame_rate` asks for between two game frames
+// (of two vblanks): 1 for 60 FPS motion, 3 for 120, 0 for none.
+[[nodiscard]] constexpr std::uint32_t interpolated_pictures(const Settings &settings) {
+    return settings.frame_rate == 120u ? 3u : settings.frame_rate == 60u ? 1u : 0u;
+}
+// Whether `frame_rate` asks for 60 or 120 FPS motion (interpolated in-between pictures).
+[[nodiscard]] constexpr bool interpolates(const Settings &settings) { return interpolated_pictures(settings) != 0u; }
 
 [[nodiscard]] Settings default_settings();
 // Partial files inherit defaults. Unknown/duplicate keys and invalid bindings throw.
 // An earlier version's quit binding becomes the menu's, unless the file binds menu too
 // or unbinds quit (the overlay's Quit game replaced it).
 // Files from earlier versions still load: experimental_game_frame_rate is
-// ignored, and frame_interpolation = 1 becomes frame_rate = 60.
+// ignored, frame_interpolation = 1 becomes frame_rate = 60, and a gamepad
+// camera still on the earlier default (stick up for Camera up) is inverted
+// once, as the new default (stick up for Camera down); camera_layout marks
+// files that have had that.
 [[nodiscard]] Settings parse_settings(std::string_view text);
 [[nodiscard]] std::string serialize_settings(const Settings &settings);
 [[nodiscard]] std::filesystem::path default_settings_path();
