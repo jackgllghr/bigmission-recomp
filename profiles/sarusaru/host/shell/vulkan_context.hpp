@@ -98,6 +98,10 @@ public:
     VkCommandBuffer begin_frame();
     // The slot being recorded, 0 to kFramesInFlight - 1.
     [[nodiscard]] std::uint32_t slot() const noexcept { return slot_; }
+    // A second command buffer for this slot, submitted ahead of the one
+    // begin_frame() returned: for uploads that must land before draws already
+    // recorded. Begun on first use.
+    VkCommandBuffer prologue();
     // Ends the frame: copies `source` (in TRANSFER_SRC layout, or nothing when
     // null) letterboxed into the swapchain image and presents it.
     // With present=false, still submits all GE/capture work without acquiring a swapchain image.
@@ -140,7 +144,8 @@ private:
     VkPhysicalDeviceMemoryProperties memory_properties_{};
 
     struct Slot {
-        VkCommandBuffer commands{VK_NULL_HANDLE};
+        VkCommandBuffer commands{VK_NULL_HANDLE}, prologue{VK_NULL_HANDLE};
+        bool prologue_open{};
         VkFence fence{VK_NULL_HANDLE};
         VkSemaphore acquired{VK_NULL_HANDLE};
         bool submitted{};

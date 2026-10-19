@@ -33,6 +33,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <condition_variable>
 #include <mutex>
 #include <set>
 #include <string>
@@ -108,26 +109,35 @@ private:
         VkImageLayout color_layout{VK_IMAGE_LAYOUT_UNDEFINED};
     };
     // A texture's HD image and translation lettering, made on a worker
-    // thread from its decoded texels. The worker writes only the outputs,
-    // and only before `done`; the renderer reads them only after.
+    // thread from its decoded texels (hashes included). The worker writes
+    // only the outputs, and only before `done`; the renderer reads them only
+    // after.
     struct TextureJob {
         gpu::TextureState texture;
         std::vector<std::uint32_t> texels;  // as decoded
-        std::uint64_t source_key{};
-        bool identify_prompts{};
-        unsigned prompt_atlas{};
-        // Outputs: `art` (width x height) when `changed`, else the texels stand.
+        bool look_hd{};                     // the HD pack has images of its size
+        bool wait{};                        // translated: worth waiting for
+        unsigned prompt_atlas{};            // button prompts lettered over the art, on the renderer's thread
+        std::uint64_t queued_ns{}, started_ns{};
+        // Outputs: `art`, width x height, or nothing (no HD image, no translation).
         gpu::TextureIdentity identity;
         std::vector<std::uint32_t> art;
-        std::uint32_t width{}, height{}, translation_scale{};
-        bool completion_numbers{}, changed{};
+        std::uint32_t width{}, height{};
         std::atomic<bool> done{};
+    };
+    // Wakes the renderer waiting for jobs at the end of a frame.
+    struct JobSignal {
+        std::mutex mutex;
+        std::condition_variable finished;
     };
     struct Texture {
         Image image;
         std::uint64_t last_frame{};
-        std::shared_ptr<TextureJob> job;  // until its art replaces the image
-        unsigned prompt_atlas{};
+        // Until its art is in the image. Draws may use the image meanwhile:
+        // nothing recorded with it is submitted before resolve_art() has
+        // filled it, with the art or, when that is late, the decoded texels.
+        std::shared_ptr<TextureJob> job;
+        bool filled{};
     };
     std::unordered_map<std::uint32_t, Texture> host_textures_;
     struct PipelineKey {
@@ -223,17 +233,9 @@ private:
     VkCommandBuffer commands_{VK_NULL_HANDLE};
     Target *pass_target_{};
     std::unique_ptr<WorkerPool> workers_;  // made on first use
-    // Textures (by address and size) whose art differed from their decoded
-    // texels, with the frame it was made. The game rewrites some in place
-    // every few frames (an animated menu heading): a new version of one made
-    // within kArtRewriteFrames is made at once, not shown untranslated until
-    // a worker catches up. (Memory reused for another texture later is not
-    // a rewrite, and goes to a worker as usual.)
-    static constexpr std::uint64_t kArtRewriteFrames = 8u;
-    std::unordered_map<std::uint64_t, std::uint64_t> art_textures_;
-    [[nodiscard]] static std::uint64_t art_key(const gpu::TextureState &texture) noexcept {
-        return std::uint64_t{canonical(texture.address)} << 32u | std::uint64_t{texture.width} << 16u | texture.height;
-    }
+    // Keys of textures waiting for their art, and what wakes the wait.
+    std::vector<std::uint64_t> pending_;
+    std::shared_ptr<JobSignal> job_signal_ = std::make_shared<JobSignal>();
     std::uint64_t frame_{};
     std::uint64_t draws_{};
     std::uint32_t trace_{};
@@ -270,15 +272,41 @@ private:
     // The image view to sample for the draw's texture, uploading it if needed.
     VkImageView texture_view(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call, float &u_scale, float &v_scale);
     VkDescriptorSet texture_set(VkImageView view, VkSampler sampler);
-    // On a worker thread: fills `job`'s outputs.
+    // Makes `job.art`, on a worker thread.
     static void build_art(TextureJob &job, const textures::HdTexturePack *hd_pack,
-                          const translation::TexturePack *translation_pack, bool identify, std::uint32_t scale);
-    // Replaces the entry's image with its finished job's art.
-    void complete(Texture &entry);
-    // Letters the entry's button prompts into `texels` (width x height, a
-    // multiple of the GE's `texture_width`), then creates and uploads its image.
+                          const translation::TexturePack *translation_pack, std::uint32_t scale);
+    // Puts finished art into the images waiting for it, ahead of the draws
+    // recorded with them. Before anything is submitted. When `wait`, first
+    // waits a little for this frame's unfinished translation jobs
+    // (kArtWait*); images still without art get their decoded texels,
+    // enlarged, meanwhile.
+    void resolve_art(bool wait);
+    // Uploads into `image` (its whole size) in the slot's prologue.
+    void upload_before(Image &image, std::span<const std::uint32_t> texels);
+    // Fills `image` in the prologue with `texels` (width x height) enlarged.
+    void fill_before(Image &image, std::span<const std::uint32_t> texels, std::uint32_t width, std::uint32_t height);
+    // Stages `bytes` for a copy recorded now: in the slot's staging buffer,
+    // or a buffer of its own retired with the slot. Never moves on a slot.
+    VkBuffer stage(const void *data, VkDeviceSize bytes, VkDeviceSize &offset);
+    // Letters `prompt_atlas`'s button prompts into `texels` (width x height,
+    // a multiple of the GE's `texture_width`) at `prompt_scale` times the
+    // texture's size, enlarging the art to that first.
+    void letter_prompts(std::vector<std::uint32_t> &texels, std::uint32_t &width, std::uint32_t &height,
+                        std::uint32_t texture_width, unsigned prompt_atlas, unsigned prompt_scale);
+    // The scale button prompts are lettered at over art of `art_scale`.
+    [[nodiscard]] unsigned prompt_scale(unsigned art_scale) const noexcept { return std::max({4u, scale_, art_scale}); }
+    // Puts a finished (or, when `late`, unfinished) job's result in its
+    // image. Art of another size than the image (made at the lettering's
+    // size, or the texture's own while HD art may still come) is fitted into
+    // it for this frame, and a finished job's texture then gets an image of
+    // the art's own size.
+    void fill_art(Texture &entry, TextureJob &job, bool late);
+    // Letters the button prompts, then creates and uploads the entry's image.
     bool make_image(Texture &entry, std::vector<std::uint32_t> &texels, std::uint32_t &width, std::uint32_t &height,
-                    std::uint32_t texture_width);
+                    std::uint32_t texture_width, unsigned prompt_atlas);
+    // How long a frame's end may wait for art, and how long art may take
+    // from being queued before its texture is first shown without it.
+    static constexpr std::uint64_t kArtWaitNs = 5'000'000u, kArtLatencyNs = 12'000'000u;
     void upload(Image &image, const std::uint32_t *texels, std::uint32_t width, std::uint32_t height);
 };
 

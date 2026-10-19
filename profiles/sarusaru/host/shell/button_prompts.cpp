@@ -1,4 +1,5 @@
 #include "shell/button_prompts.hpp"
+#include "gpu/texture_hash.hpp"
 #include "psprecomp/sha256.hpp"
 #include "ui/theme.hpp"
 
@@ -42,13 +43,9 @@ unsigned ButtonPrompts::identify(const gpu::TextureState &t, std::span<const std
         expected = "7f671a0a9144af43fac976c60efa3c075208a6e8df33e4fc601de7569dcac471";
     } else return 0;
     if (pixels.size() < static_cast<std::size_t>(t.width) * height) return 0;
-    std::vector<std::uint8_t> bytes;
-    bytes.reserve(width * height * 4);
-    for (unsigned y = 0; y < height; ++y)
-        for (unsigned x = 0; x < width; ++x)
-            for (unsigned shift = 0; shift < 32; shift += 8)
-                bytes.push_back(static_cast<std::uint8_t>(pixels[y * t.width + x] >> shift));
-    return psprecomp::sha256(bytes) == expected ? atlas : 0;
+    gpu::Sha256 hasher;
+    gpu::hash_texels(hasher, pixels, t.width, width, height);
+    return hasher.hex() == expected ? atlas : 0;
 }
 void ButtonPrompts::draw(std::vector<std::uint32_t> &pixels, unsigned width, unsigned scale,
                          int x, int y, int w, int h, Action action) const {

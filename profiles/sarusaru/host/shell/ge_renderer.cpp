@@ -1,4 +1,6 @@
 #include "shell/ge_renderer.hpp"
+#include <SDL3/SDL_timer.h>
+#include <chrono>
 #include "shell/hitch_trace.hpp"
 #include "shell/pipeline_store.hpp"
 #include "save_state/ppst.hpp"
@@ -214,6 +216,16 @@ bool GeRenderer::create(std::string &error) {
         return false;
     }
     load_pipelines();
+    // The translation's HD lettering is made ahead, so the first texture to
+    // use an entry is not late for its first frame.
+    if (translation_pack_ != nullptr)
+        workers().post([pack = translation_pack_, scale = scale_] {
+            const std::uint64_t start = SDL_GetTicksNS();
+            const std::size_t bytes = pack->prepare(scale);
+            if (hitch::enabled())
+                std::fprintf(stderr, "translation lettering: %.1f MB made in %.0f ms\n", static_cast<double>(bytes) / 1e6,
+                             static_cast<double>(SDL_GetTicksNS() - start) / 1e6);
+        });
     return true;
 }
 
@@ -368,8 +380,7 @@ void GeRenderer::begin_frame(VkCommandBuffer commands) {
     use_slot();
     pass_target_ = nullptr;
     ++frame_;
-    // Textures unused for a while go, once the GPU is done with them; art
-    // finished since the last frame replaces what it was made for.
+    // Textures unused for a while go, once the GPU is done with them.
     for (auto it = textures_.begin(); it != textures_.end();) {
         if (frame_ - it->second.last_frame > kTextureLifetimeFrames) {
             action_hint_views_.erase(it->second.image.view);
@@ -377,7 +388,6 @@ void GeRenderer::begin_frame(VkCommandBuffer commands) {
             vk_.retire(it->second.image);
             it = textures_.erase(it);
         } else {
-            if (it->second.job && it->second.job->done.load(std::memory_order_acquire)) complete(it->second);
             ++it;
         }
     }
@@ -411,12 +421,14 @@ void GeRenderer::use_slot() {
 
 void GeRenderer::flush() {
     end_pass();
+    resolve_art(true);
     commands_ = vk_.flush();
     use_slot();
 }
 
 void GeRenderer::next_slot() {
     end_pass();
+    resolve_art(true);
     commands_ = vk_.submit();
     use_slot();
 }
@@ -627,173 +639,289 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     std::uint64_t key = source_key ^ (known_prompt != prompt_atlases_.end() ? prompt_revision : 0ull);
     if (const auto found = textures_.find(key); found != textures_.end()) {
         found->second.last_frame = frame_;
-        if (found->second.job && found->second.job->done.load(std::memory_order_acquire)) {
-            complete(found->second);
-            // Found to be a prompt atlas: keyed by the prompts' revision from now on.
-            if (found->second.prompt_atlas && known_prompt == prompt_atlases_.end()) {
-                auto node = textures_.extract(found);
-                node.key() = source_key ^ prompt_revision;
-                const VkImageView view = node.mapped().image.view;
-                if (const auto inserted = textures_.insert(std::move(node)); !inserted.inserted)
-                    vk_.retire(inserted.node.mapped().image);
-                return view;
-            }
-        }
         return found->second.image.view;
     }
+    hitch::Timer miss_timer(hitch::kMiss);
     std::vector<std::uint32_t> texels;
     {
         hitch::Timer timer(hitch::kDecode);
         if (!gpu::decode_texture(memory, texture, texels) || texels.size() < static_cast<std::size_t>(texture.width) * texture.height)
             return VK_NULL_HANDLE;
     }
-    // A texture not yet known to be a button-prompt atlas is checked on the
-    // worker (a SHA-256 of every texture of the atlases' sizes).
-    const unsigned prompt_atlas = known_prompt != prompt_atlases_.end() ? known_prompt->second : 0u;
-    const bool identify_prompts = button_prompts_ != nullptr && known_prompt == prompt_atlases_.end();
-    Texture entry;
-    entry.prompt_atlas = prompt_atlas;
-    entry.last_frame = frame_;
-    // HD art, translation lettering and the dump's identity are made on a
-    // worker thread: until then the texture is drawn as decoded, and the
-    // finished art replaces it at its next use (see complete()).
-    if (hd_pack_ != nullptr || translation_pack_ != nullptr || texture_dump_ != nullptr || identify_prompts) {
-        auto job = std::make_shared<TextureJob>();
-        job->texture = texture;
-        job->texels = texels;
-        job->source_key = source_key;
-        job->identify_prompts = identify_prompts;
-        entry.job = job;
-        if (const auto art = art_textures_.find(art_key(texture));
-            art != art_textures_.end() && frame_ - art->second <= kArtRewriteFrames) {
-            hitch::Timer timer(hitch::kArt);
-            build_art(*job, hd_pack_, translation_pack_, texture_dump_ != nullptr, scale_);
-            complete(entry);
-            if (entry.image.image == VK_NULL_HANDLE) return VK_NULL_HANDLE;
-            const VkImageView view = entry.image.view;
-            textures_.emplace(entry.prompt_atlas && !prompt_atlas ? source_key ^ prompt_revision : key, std::move(entry));
-            return view;
-        }
-        hitch::Timer timer(hitch::kJob);
-        workers().post([job, hd = hd_pack_, translation = translation_pack_, dump = texture_dump_ != nullptr,
-                        scale = scale_] { build_art(*job, hd, translation, dump, scale); });
+    // What the texture becomes is decided here (hashes only: the hardware
+    // SHA-256 makes them cheap), so its image has its final size from the
+    // start; the costly part, the art itself, is made on a worker.
+    unsigned prompt_atlas = 0u;
+    if (button_prompts_ != nullptr) {
+        hitch::Timer timer(hitch::kPrompt);
+        prompt_atlas = known_prompt != prompt_atlases_.end() ? known_prompt->second : ButtonPrompts::identify(texture, texels);
     }
-    std::uint32_t width = texture.width, height = texture.height;
-    if (!make_image(entry, texels, width, height, texture.width)) return VK_NULL_HANDLE;
+    if (prompt_atlas) {
+        prompt_atlases_[source_key] = prompt_atlas;
+        key = source_key ^ prompt_revision;
+    }
+    auto job = std::make_shared<TextureJob>();
+    job->texture = texture;
+    // Whether the texture is translated is settled here (one hash, of a
+    // texture with a translated one's layout): its image gets the
+    // lettering's size, and the frame's end waits for the lettering, so text
+    // never shows untranslated. Whether it has HD art takes a hash of every
+    // texture of a size the pack has images for (most have none), so that is
+    // settled on the worker; meanwhile the texture keeps its own size, and
+    // resolve_art() gives it an image of the art's size once there is art.
+    const std::uint32_t logical_width =
+        texture.buffer_width != 0u && texture.buffer_width < texture.width ? texture.buffer_width : texture.width;
+    job->look_hd = hd_pack_ != nullptr && hd_pack_->may_contain(logical_width, texture.height);
+    bool completion_numbers = false;
+    std::uint32_t translation_scale = 0u;
+    if (translation_pack_ != nullptr && translation_pack_->possible_scale(texture, scale_) != 0u) {
+        hitch::Timer timer(hitch::kHash);
+        translation_scale = translation_pack_->scaled_match(texture, texels, scale_);
+        if (translation_scale && texture.width == 512 && texture.height == 128 && texture.buffer_width == 480) {
+            // The gold atlas's translated digits are placed differently (see
+            // draw_into). Ignore the unused power-of-two padding, which can
+            // change as other assets are loaded beside the 480x96 atlas.
+            auto logical = texture;
+            logical.height = 96;
+            completion_numbers = gpu::identify_texture(logical, texels).hash == "48109b51873459127a82bcca79469cd0";
+        }
+    }
+    job->wait = translation_scale != 0u;
+    const std::uint32_t guess = translation_scale != 0u ? translation_scale : job->look_hd ? 1u : 0u;
+    if (texture_dump_ != nullptr) {
+        // Identified and written on a worker.
+        hitch::Timer timer(hitch::kJob);
+        workers().post([dump = texture_dump_, texture, texels] {
+            dump->record(texture, gpu::identify_texture(texture, texels), texels);
+        });
+    }
+    Texture entry;
+    entry.last_frame = frame_;
+    if (guess != 0u) {
+        job->prompt_atlas = prompt_atlas;
+        const unsigned final_scale = prompt_atlas && prompt_atlas != 4u ? prompt_scale(guess) : guess;
+        job->texels = std::move(texels);
+        if (!vk_.create_image(texture.width * final_scale, texture.height * final_scale, kColorFormat,
+                              VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
+                              entry.image))
+            return VK_NULL_HANDLE;
+        if (prompt_atlas == 4u) action_hint_views_.insert(entry.image.view);
+        hitch::Timer timer(hitch::kJob);
+        job->queued_ns = SDL_GetTicksNS();
+        entry.job = job;
+        pending_.push_back(key);
+        workers().post([job, hd = hd_pack_, translation = translation_pack_, scale = scale_, signal = job_signal_] {
+            job->started_ns = SDL_GetTicksNS();
+            build_art(*job, hd, translation, scale);
+            job->done.store(true, std::memory_order_release);
+            { const std::lock_guard lock(signal->mutex); }
+            signal->finished.notify_all();
+        });
+    } else {
+        std::uint32_t width = texture.width, height = texture.height;
+        if (!make_image(entry, texels, width, height, texture.width, prompt_atlas)) return VK_NULL_HANDLE;
+    }
     const VkImageView view = entry.image.view;
+    if (translation_scale && completion_numbers) completion_number_views_.insert(view);
     textures_.emplace(key, std::move(entry));
     return view;
 }
 
 void GeRenderer::build_art(TextureJob &job, const textures::HdTexturePack *hd_pack,
-                           const translation::TexturePack *translation_pack, bool identify, std::uint32_t scale) {
+                           const translation::TexturePack *translation_pack, std::uint32_t scale) {
     const auto &texture = job.texture;
     const auto &texels = job.texels;
-    std::uint32_t width = texture.width, height = texture.height;
-    if (job.identify_prompts) job.prompt_atlas = ButtonPrompts::identify(texture, texels);
-    // Dumps and HD art identify the texture as the game drew it, before any
+    // HD art identifies the texture as the game drew it, before any
     // translation, so a translated menu's art comes from the original's HD
     // image and the translation letters its authored regions over it.
     std::optional<std::vector<std::uint32_t>> hd;
-    if (translation_pack != nullptr && texture.width == 512 && texture.height == 128 && texture.buffer_width == 480) {
-        // Ignore the unused power-of-two padding, which can change as other
-        // assets are loaded beside the 480x96 gold atlas.
-        auto logical = texture;
-        logical.height = 96;
-        job.completion_numbers = gpu::identify_texture(logical, texels).hash == "48109b51873459127a82bcca79469cd0";
-    }
-    if (hd_pack != nullptr || identify) {
+    if (job.look_hd && hd_pack != nullptr) {
         job.identity = gpu::identify_texture(texture, texels);
-        if (hd_pack != nullptr) hd = hd_pack->find(job.identity);
+        hd = hd_pack->find(job.identity);
     }
     const auto &identity = job.identity;
     std::vector<std::uint32_t> art = texels;
     const translation::TexturePack::BaseArt base{hd ? std::span<const std::uint32_t>(*hd) : std::span<const std::uint32_t>(),
                                                   identity.width, identity.height, hd ? hd_pack->scale() : 0u};
-    job.translation_scale = translation_pack != nullptr
+    const std::uint32_t translation_scale = translation_pack != nullptr
         ? translation_pack->apply_scaled(texture, art, scale, hd ? &base : nullptr) : 0u;
-    if (job.translation_scale) {
-        width *= job.translation_scale;
-        height *= job.translation_scale;
+    if (translation_scale) {
+        job.width = texture.width * translation_scale;
+        job.height = texture.height * translation_scale;
     } else if (hd) {
         // The UVs are normalized, so the larger image samples in place
         // of the original. Columns past the logical width (a row
         // stride narrower than the GE extent) keep the original texels.
         const std::uint32_t hd_scale = hd_pack->scale();
-        width = texture.width * hd_scale;
-        height = texture.height * hd_scale;
+        job.width = texture.width * hd_scale;
+        job.height = texture.height * hd_scale;
         const std::uint32_t hd_width = identity.width * hd_scale;
-        std::vector<std::uint32_t> scaled(static_cast<std::size_t>(width) * height);
-        for (std::uint32_t y = 0; y < height; ++y)
-            for (std::uint32_t x = 0; x < width; ++x)
-                scaled[static_cast<std::size_t>(y) * width + x] =
-                    x < hd_width ? (*hd)[static_cast<std::size_t>(y) * hd_width + x]
-                                 : texels[static_cast<std::size_t>(y / hd_scale) * texture.width + x / hd_scale];
-        art = std::move(scaled);
+        art.assign(static_cast<std::size_t>(job.width) * job.height, 0u);
+        for (std::uint32_t y = 0; y < job.height; ++y) {
+            std::uint32_t *out = art.data() + static_cast<std::size_t>(y) * job.width;
+            std::copy_n(hd->data() + static_cast<std::size_t>(y) * hd_width, hd_width, out);
+            const std::uint32_t *row = texels.data() + static_cast<std::size_t>(y / hd_scale) * texture.width;
+            for (std::uint32_t x = hd_width; x < job.width; ++x) out[x] = row[x / hd_scale];
+        }
+    } else {
+        art.clear();
     }
-    job.changed = job.translation_scale != 0u || hd.has_value();
-    if (job.changed) {
-        job.art = std::move(art);
-        job.width = width;
-        job.height = height;
-    }
-    job.done.store(true, std::memory_order_release);
+    job.art = std::move(art);
 }
 
-void GeRenderer::complete(Texture &entry) {
-    const auto job = std::move(entry.job);
-    if (texture_dump_ != nullptr) texture_dump_->record(job->texture, job->identity, job->texels);
-    if (job->prompt_atlas) {
-        prompt_atlases_[job->source_key] = job->prompt_atlas;
-        entry.prompt_atlas = job->prompt_atlas;
+void GeRenderer::resolve_art(bool wait) {
+    if (pending_.empty()) return;
+    const std::uint64_t now = SDL_GetTicksNS();
+    std::erase_if(pending_, [&](std::uint64_t key) {
+        const auto found = textures_.find(key);
+        if (found == textures_.end() || !found->second.job) return true;
+        Texture &entry = found->second;
+        TextureJob &job = *entry.job;
+        // A job queued this frame gets until kArtLatencyNs after it was
+        // queued, but the frame's end waits at most kArtWaitNs.
+        if (wait && job.wait && !entry.filled && !job.done.load(std::memory_order_acquire)) {
+            const std::uint64_t until = std::min(job.queued_ns + kArtLatencyNs, now + kArtWaitNs);
+            const std::uint64_t current = SDL_GetTicksNS();
+            if (until > current) {
+                hitch::Timer timer(hitch::kArtWait);
+                std::unique_lock lock(job_signal_->mutex);
+                job_signal_->finished.wait_until(
+                    lock, std::chrono::steady_clock::now() + std::chrono::nanoseconds(until - current),
+                    [&] { return job.done.load(std::memory_order_acquire); });
+            }
+        }
+        if (job.done.load(std::memory_order_acquire)) {
+            fill_art(entry, job, false);
+            entry.job.reset();
+            return true;
+        }
+        if (!entry.filled) {
+            if (hitch::enabled() && job.wait)
+                std::fprintf(stderr, "  art late: %ux%u%s translation?, queued %.1f ms ago, %s\n", job.texture.width,
+                             job.texture.height, job.look_hd ? " hd?" : "",
+                             static_cast<double>(SDL_GetTicksNS() - job.queued_ns) / 1e6,
+                             job.started_ns != 0u ? "running" : "not started");
+            fill_art(entry, job, true);
+            entry.filled = true;
+        }
+        return false;
+    });
+}
+
+VkBuffer GeRenderer::stage(const void *data, VkDeviceSize bytes, VkDeviceSize &offset) {
+    offset = (staging_cursor_ + 15u) & ~VkDeviceSize{15u};
+    VkBuffer buffer = staging_.buffer;
+    void *mapped = staging_.mapped;
+    if (offset + bytes <= staging_.size) {
+        staging_cursor_ = offset + bytes;
+    } else {
+        Buffer dedicated;
+        if (!vk_.create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, dedicated)) return VK_NULL_HANDLE;
+        buffer = dedicated.buffer;
+        mapped = dedicated.mapped;
+        offset = 0u;
+        vk_.retire(dedicated);  // freed with the slot, after the copy has run
     }
-    if (job->changed) art_textures_[art_key(job->texture)] = frame_;
-    else art_textures_.erase(art_key(job->texture));
-    // Nothing new to draw, unless there is no image yet (made at once).
-    if (!job->changed && !job->prompt_atlas && entry.image.image != VK_NULL_HANDLE) return;
-    std::uint32_t width = job->changed ? job->width : job->texture.width;
-    std::uint32_t height = job->changed ? job->height : job->texture.height;
-    auto &art = job->changed ? job->art : job->texels;
-    Texture replacement;
-    replacement.prompt_atlas = entry.prompt_atlas;
-    if (!make_image(replacement, art, width, height, job->texture.width)) return;
-    action_hint_views_.erase(entry.image.view);
-    completion_number_views_.erase(entry.image.view);
-    if (job->translation_scale && job->completion_numbers) completion_number_views_.insert(replacement.image.view);
+    hitch::Timer timer(hitch::kUpload);
+    std::memcpy(static_cast<std::uint8_t *>(mapped) + offset, data, bytes);
+    return buffer;
+}
+
+void GeRenderer::upload_before(Image &image, std::span<const std::uint32_t> texels) {
+    VkDeviceSize offset = 0u;
+    const VkBuffer buffer = stage(texels.data(), texels.size_bytes(), offset);
+    if (buffer == VK_NULL_HANDLE) return;
+    const VkCommandBuffer commands = vk_.prologue();
+    // Whatever the image held is replaced whole.
+    vk_.transition(commands, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkBufferImageCopy copy{};
+    copy.bufferOffset = offset;
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+    copy.imageExtent = {image.width, image.height, 1u};
+    vk_.vkCmdCopyBufferToImage(commands, buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &copy);
+    vk_.transition(commands, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+void GeRenderer::fill_before(Image &image, std::span<const std::uint32_t> texels, std::uint32_t width, std::uint32_t height) {
+    Image small;
+    if (!vk_.create_image(width, height, kColorFormat, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                          VK_IMAGE_ASPECT_COLOR_BIT, small))
+        return;
+    upload_before(small, texels);
+    const VkCommandBuffer commands = vk_.prologue();
+    vk_.transition(commands, small.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    vk_.transition(commands, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkImageBlit blit{};
+    blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+    blit.srcOffsets[1] = {static_cast<std::int32_t>(width), static_cast<std::int32_t>(height), 1};
+    blit.dstOffsets[1] = {static_cast<std::int32_t>(image.width), static_cast<std::int32_t>(image.height), 1};
+    vk_.vkCmdBlitImage(commands, small.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &blit, VK_FILTER_NEAREST);
+    vk_.transition(commands, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    vk_.retire(small);
+}
+
+void GeRenderer::fill_art(Texture &entry, TextureJob &job, bool late) {
+    const bool art = !late && !job.art.empty();
+    const std::uint32_t texture_width = job.texture.width;
+    std::vector<std::uint32_t> texels = art ? std::move(job.art) : job.texels;
+    std::uint32_t width = art ? job.width : texture_width, height = art ? job.height : job.texture.height;
+    if (job.prompt_atlas && job.prompt_atlas != 4u)
+        letter_prompts(texels, width, height, texture_width, job.prompt_atlas, prompt_scale(width / texture_width));
+    if (width == entry.image.width && height == entry.image.height) {
+        upload_before(entry.image, texels);
+        return;
+    }
+    // Draws this frame already use the image: it gets the result fitted.
+    fill_before(entry.image, texels, width, height);
+    if (late) return;
+    Image fitted;
+    if (!vk_.create_image(width, height, kColorFormat, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                          VK_IMAGE_ASPECT_COLOR_BIT, fitted))
+        return;
+    upload_before(fitted, texels);
+    if (action_hint_views_.erase(entry.image.view) != 0u) action_hint_views_.insert(fitted.view);
+    if (completion_number_views_.erase(entry.image.view) != 0u) completion_number_views_.insert(fitted.view);
     vk_.retire(entry.image);
-    entry.image = replacement.image;
+    entry.image = fitted;
+}
+
+void GeRenderer::letter_prompts(std::vector<std::uint32_t> &texels, std::uint32_t &width, std::uint32_t &height,
+                                std::uint32_t texture_width, unsigned prompt_atlas, unsigned prompt_scale) {
+    hitch::Timer timer(hitch::kPrompt);
+    // Host glyphs need their own resolution even without a translation or HD
+    // pack. Keep normalized UVs and nearest-scale the surrounding art.
+    const unsigned texture_height = height * texture_width / width;
+    const unsigned current_scale = width / texture_width;
+    if (prompt_scale > current_scale) {
+        const unsigned new_width = texture_width * prompt_scale;
+        const unsigned new_height = texture_height * prompt_scale;
+        std::vector<std::uint32_t> scaled(static_cast<std::size_t>(new_width) * new_height);
+        for (unsigned y = 0; y < new_height; ++y)
+            for (unsigned x = 0; x < new_width; ++x)
+                scaled[static_cast<std::size_t>(y) * new_width + x] =
+                    texels[static_cast<std::size_t>(y * current_scale / prompt_scale) * width + x * current_scale / prompt_scale];
+        texels = std::move(scaled);
+        width = new_width;
+        height = new_height;
+    }
+    button_prompts_->apply(prompt_atlas, texels, width, prompt_scale);
 }
 
 bool GeRenderer::make_image(Texture &entry, std::vector<std::uint32_t> &texels, std::uint32_t &width,
-                            std::uint32_t &height, std::uint32_t texture_width) {
-    const unsigned prompt_atlas = entry.prompt_atlas;
-    if (prompt_atlas && prompt_atlas != 4) {
-        hitch::Timer timer(hitch::kPrompt);
-        // Host glyphs need their own resolution even without a translation or
-        // HD pack. Keep normalized UVs and nearest-scale the surrounding art.
-        const unsigned texture_height = height * texture_width / width;
-        const unsigned current_scale = width / texture_width;
-        const unsigned prompt_scale = std::max({4u, scale_, current_scale});
-        if (prompt_scale > current_scale) {
-            const unsigned new_width = texture_width * prompt_scale;
-            const unsigned new_height = texture_height * prompt_scale;
-            std::vector<std::uint32_t> scaled(static_cast<std::size_t>(new_width) * new_height);
-            for (unsigned y = 0; y < new_height; ++y)
-                for (unsigned x = 0; x < new_width; ++x)
-                    scaled[static_cast<std::size_t>(y) * new_width + x] =
-                        texels[static_cast<std::size_t>(y * current_scale / prompt_scale) * width +
-                               x * current_scale / prompt_scale];
-            texels = std::move(scaled);
-            width = new_width;
-            height = new_height;
-        }
-        button_prompts_->apply(prompt_atlas, texels, width, prompt_scale);
-    }
+                            std::uint32_t &height, std::uint32_t texture_width, unsigned prompt_atlas) {
+    if (prompt_atlas && prompt_atlas != 4u)
+        letter_prompts(texels, width, height, texture_width, prompt_atlas, prompt_scale(width / texture_width));
     if (!vk_.create_image(width, height, kColorFormat,
                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, entry.image))
         return false;
     upload(entry.image, texels.data(), width, height);
-    if (prompt_atlas == 4) action_hint_views_.insert(entry.image.view);
+    if (prompt_atlas == 4u) action_hint_views_.insert(entry.image.view);
     return true;
 }
 
@@ -1396,7 +1524,10 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
 
 const Image *GeRenderer::presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,
                                      std::uint32_t &width, std::uint32_t &height, std::size_t picture) {
+    hitch::Timer frame_end_timer(hitch::kFrameEnd);
     end_pass();
+    // The frame is about to be submitted (VulkanContext::end_frame).
+    resolve_art(true);
     if (framebuffer.address == 0u) return nullptr;
     auto *layer = &targets_[kGame];
     if (picture != 0u && picture <= kMaxPictures && targets_[kInterpolated + picture - 1u].contains(canonical(framebuffer.address)))

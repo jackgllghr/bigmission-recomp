@@ -1,8 +1,12 @@
+#include "gpu/sha256.hpp"
 #include "gpu/texture_hash.hpp"
+#include "psprecomp/sha256.hpp"
 #include "textures/hd_pack.hpp"
 #include "textures/texture_dump.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <span>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -32,6 +36,27 @@ sarusaru::gpu::TextureState texture(std::uint16_t width, std::uint16_t height, s
 
 int main() {
     using namespace sarusaru;
+    // The renderer's SHA-256 (hardware rounds where there are any, given in
+    // pieces) gives psprecomp's digests around every block boundary.
+    {
+        std::vector<std::uint8_t> varied(4099u);
+        for (std::size_t i = 0; i < varied.size(); ++i) varied[i] = static_cast<std::uint8_t>(i * 131u + (i >> 7u));
+        for (const std::size_t length : {0u, 1u, 55u, 56u, 57u, 63u, 64u, 65u, 119u, 120u, 127u, 128u, 1000u, 4099u}) {
+            const std::span<const std::uint8_t> part(varied.data(), length);
+            const auto expected = psprecomp::sha256(part);
+            require(gpu::sha256_portable(part) == expected, "portable SHA-256 differs");
+            gpu::Sha256 whole;
+            whole.update(part);
+            require(whole.hex() == expected, "SHA-256 differs from psprecomp's");
+            gpu::Sha256 pieces;
+            for (std::size_t at = 0; at < length;) {
+                const std::size_t take = std::min<std::size_t>(length - at, 1u + (at * 7u) % 97u);
+                pieces.update(part.subspan(at, take));
+                at += take;
+            }
+            require(pieces.hex() == expected, "piecewise SHA-256 differs");
+        }
+    }
     // Identity: the logical rectangle only, and the shape counts.
     std::vector<std::uint32_t> texels(8 * 4);
     for (std::size_t i = 0; i < texels.size(); ++i) texels[i] = 0xFF000000u | static_cast<std::uint32_t>(i * 0x010203u);
@@ -109,9 +134,25 @@ int main() {
     require(found && *found == doubled, "HD image not returned as written");
     require(!pack.find(full), "wrongly sized HD image accepted");
     require(!pack.find(gpu::identify_texture(texture(4, 8, 4), texels)), "unknown texture found");
+    require(pack.may_contain(narrow.width, narrow.height) && !pack.may_contain(narrow.width + 1u, narrow.height),
+            "pack sizes from the PNG headers");
     require(pack.contains(narrow) && pack.contains(full) && !pack.contains(gpu::identify_texture(texture(4, 8, 4), texels)),
             "pack index lookup");
 
+    // Decoded images are kept, answered from there next time, and decoded
+    // again once their PNG changes.
+    {
+        const auto cached = pack_directory / textures::HdTexturePack::kDecodedName / (narrow.hash + ".zst");
+        require(std::filesystem::exists(cached), "decoded HD image not kept");
+        const auto again = textures::HdTexturePack::load(pack_directory, "ULJS00001").find(narrow);
+        require(again && *again == doubled, "kept HD image differs");
+        std::vector<std::uint32_t> changed(doubled.size(), 0xFF00FF00u);
+        changed[0] = 0x12345678u;
+        require(textures::write_png(pack_directory / (narrow.hash + ".png"), changed, 8, 8, 8), "rewrite HD image");
+        const auto fresh = textures::HdTexturePack::load(pack_directory, "ULJS00001").find(narrow);
+        require(fresh && *fresh == changed, "a changed HD image was answered from the kept one");
+        require(textures::write_png(pack_directory / (narrow.hash + ".png"), doubled, 8, 8, 8), "restore HD image");
+    }
     // The renderer decodes on worker threads: concurrent lookups, rejected
     // images included, all see what one thread would.
     {

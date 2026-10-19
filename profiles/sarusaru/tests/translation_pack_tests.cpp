@@ -141,6 +141,11 @@ int main() {
     auto hd_pack = load(hd_fixture());
     for (unsigned requested = 1; requested <= 8; ++requested) {
         actual = native;
+        require(hd_pack.possible_scale(texture, requested) == hd_pack.scaled_match(texture, native, requested),
+                "possible_scale disagrees with the only entry's scale");
+        require(hd_pack.scaled_match(texture, native, requested) ==
+                    (requested == 1 ? 1u : requested <= 2 ? 2u : requested <= 4 ? 4u : 8u),
+                "scaled_match disagrees with apply_scaled");
         const auto scale = hd_pack.apply_scaled(texture, actual, requested);
         const auto expected_scale = requested == 1 ? 1u : requested <= 2 ? 2u : requested <= 4 ? 4u : 8u;
         require(scale == expected_scale && actual.size() == native.size() * scale * scale,
@@ -172,6 +177,7 @@ int main() {
             }
     }
     actual = native; actual[0] ^= 1; const auto unmatched_hd = actual;
+    require(hd_pack.scaled_match(texture, unmatched_hd, 8) == 0, "scaled_match skipped source verification");
     require(hd_pack.apply_scaled(texture, actual, 8) == 0 && actual == unmatched_hd,
             "HD replacement skipped source verification");
     actual = native;

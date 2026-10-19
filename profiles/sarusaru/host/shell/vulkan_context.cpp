@@ -113,6 +113,7 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     for (auto &slot : slots_) {
         vkAllocateCommandBuffers(device, &allocate, &slot.commands);
+        vkAllocateCommandBuffers(device, &allocate, &slot.prologue);
         vkCreateFence(device, &fence_info, nullptr, &slot.fence);
         vkCreateSemaphore(device, &semaphore_info, nullptr, &slot.acquired);
     }
@@ -282,11 +283,36 @@ VkCommandBuffer VulkanContext::begin_frame() {
     return commands_;
 }
 
+VkCommandBuffer VulkanContext::prologue() {
+    Slot &slot = slots_[slot_];
+    if (!slot.prologue_open) {
+        vkResetCommandBuffer(slot.prologue, 0u);
+        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(slot.prologue, &begin);
+        slot.prologue_open = true;
+    }
+    return slot.prologue;
+}
+
 void VulkanContext::submit_slot(const VkSubmitInfo &submit) {
     Slot &slot = slots_[slot_];
     vkEndCommandBuffer(slot.commands);
+    // The prologue runs first: command buffers of one submission run in order.
+    VkCommandBuffer buffers[2] = {slot.commands, VK_NULL_HANDLE};
+    VkSubmitInfo info = submit;
+    if (slot.prologue_open) {
+        vkEndCommandBuffer(slot.prologue);
+        slot.prologue_open = false;
+        buffers[0] = slot.prologue;
+        buffers[1] = slot.commands;
+        info.commandBufferCount = 2u;
+    } else {
+        info.commandBufferCount = 1u;
+    }
+    info.pCommandBuffers = buffers;
     vkResetFences(device, 1u, &slot.fence);
-    vkQueueSubmit(queue, 1u, &submit, slot.fence);
+    vkQueueSubmit(queue, 1u, &info, slot.fence);
     recording_ = false;
 }
 

@@ -21,7 +21,7 @@ enum Category : std::size_t {
     kPrompt,      // host button-prompt art
     kHost,        // translation lines drawn by the host (TexturePack::host_image)
     kJob,         // queueing a texture's art for a worker
-    kArt,         // making a rewritten texture's art at once (see GeRenderer::art_textures_)
+    kArtWait,     // the frame's end waiting for art
     kFlush,       // VulkanContext::flush, submit and wait
     kFence,       // begin_frame waiting for a frame slot
     kAlloc,       // create_image / create_buffer (vkAllocateMemory)
@@ -29,12 +29,16 @@ enum Category : std::size_t {
     kAcquire,     // vkAcquireNextImageKHR (waits for a free swapchain image)
     kSubmit,      // vkQueueSubmit
     kPresent,     // vkQueuePresentKHR
-    kDraw,        // all of GeRenderer's draws, including the above: not summed
+    // Totals including the above, so not summed:
+    kDraw,        // all of GeRenderer's draws
+    kMiss,        // making new textures (GeRenderer::texture_view on a cache miss)
+    kFrameEnd,    // GeRenderer::presentable, art put in place included
     kCategories,
 };
 
-inline constexpr const char *kNames[kCategories] = {"pipeline", "decode", "hash", "prompt", "host", "job", "art",
-                                                     "flush", "fence", "alloc", "upload", "acquire", "submit", "present", "draw-total"};
+inline constexpr const char *kNames[kCategories] = {"pipeline", "decode", "hash", "prompt", "host", "job", "art-wait",
+                                                     "flush", "fence", "alloc", "upload", "acquire", "submit", "present", "draw-total",
+                                                     "miss-total", "frame-end-total"};
 
 struct State {
     bool enabled{};
