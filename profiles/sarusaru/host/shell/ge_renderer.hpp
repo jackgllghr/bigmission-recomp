@@ -19,16 +19,22 @@
 #include "shell/button_prompts.hpp"
 #include "gpu/ge_state.hpp"
 #include "shell/vulkan_context.hpp"
+#include "shell/worker_pool.hpp"
 #include "textures/hd_pack.hpp"
 #include "textures/texture_dump.hpp"
 #include "translation/texture_pack.hpp"
 #include "psprecomp/guest_memory.hpp"
 
 #include <array>
+#include <atomic>
+#include <optional>
 #include <span>
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -52,6 +58,10 @@ public:
     // (after any translation), by their gpu::TextureIdentity.
     void set_hd_textures(const textures::HdTexturePack *pack) noexcept { hd_pack_ = pack; }
     void set_texture_dump(textures::TextureDump *dump) noexcept { texture_dump_ = dump; }
+    // Also before create(): where the pipeline cache and the pipeline states
+    // used so far are kept between runs (shell/pipeline_store.hpp). The
+    // states recorded there are built on a worker thread from create() on.
+    void set_pipeline_directory(std::filesystem::path directory) { pipeline_directory_ = std::move(directory); }
 
     // Per frame: `begin_frame` with the frame's command buffer, draws, then
     // `presentable` for the image VulkanContext::end_frame shows.
@@ -97,9 +107,27 @@ private:
         VkFramebuffer framebuffer{VK_NULL_HANDLE};
         VkImageLayout color_layout{VK_IMAGE_LAYOUT_UNDEFINED};
     };
+    // A texture's HD image and translation lettering, made on a worker
+    // thread from its decoded texels. The worker writes only the outputs,
+    // and only before `done`; the renderer reads them only after.
+    struct TextureJob {
+        gpu::TextureState texture;
+        std::vector<std::uint32_t> texels;  // as decoded
+        std::uint64_t source_key{};
+        bool identify_prompts{};
+        unsigned prompt_atlas{};
+        // Outputs: `art` (width x height) when `changed`, else the texels stand.
+        gpu::TextureIdentity identity;
+        std::vector<std::uint32_t> art;
+        std::uint32_t width{}, height{}, translation_scale{};
+        bool completion_numbers{}, changed{};
+        std::atomic<bool> done{};
+    };
     struct Texture {
         Image image;
         std::uint64_t last_frame{};
+        std::shared_ptr<TextureJob> job;  // until its art replaces the image
+        unsigned prompt_atlas{};
     };
     std::unordered_map<std::uint32_t, Texture> host_textures_;
     struct PipelineKey {
@@ -149,7 +177,25 @@ private:
     VkPipelineLayout pipeline_layout_{VK_NULL_HANDLE};
     VkShaderModule vertex_shader_{VK_NULL_HANDLE}, fragment_shader_{VK_NULL_HANDLE};
     std::map<PipelineKey, VkPipeline> pipelines_;
+    VkPipelineCache pipeline_cache_{VK_NULL_HANDLE};
+    std::filesystem::path pipeline_directory_;
+    // Every state built, saved for the next run's warm-up when changed.
+    std::set<PipelineKey> known_keys_;
+    bool keys_dirty_{};
+    std::uint64_t keys_saved_frame_{};
+    // Built by the warm-up on a worker; pipeline() takes them from here.
+    std::mutex warm_mutex_;
+    std::map<PipelineKey, VkPipeline> warmed_;
+    std::atomic<bool> stop_warming_{};
     std::map<std::uint32_t, VkSampler> samplers_;
+    // What the CPU writes for a submission, one set per VulkanContext slot;
+    // the members below name the current slot's.
+    struct SlotResources {
+        Buffer vertices, uniforms, staging;
+        VkDescriptorPool frame_pool{VK_NULL_HANDLE};
+        VkDescriptorSet uniform_set{VK_NULL_HANDLE};
+    };
+    std::array<SlotResources, VulkanContext::kFramesInFlight> slots_{};
     VkDescriptorPool persistent_pool_{VK_NULL_HANDLE}, frame_pool_{VK_NULL_HANDLE};
     VkDescriptorSet uniform_set_{VK_NULL_HANDLE};
     Buffer vertices_, uniforms_, staging_;
@@ -176,6 +222,18 @@ private:
     std::unordered_map<std::uint64_t, Texture> textures_;
     VkCommandBuffer commands_{VK_NULL_HANDLE};
     Target *pass_target_{};
+    std::unique_ptr<WorkerPool> workers_;  // made on first use
+    // Textures (by address and size) whose art differed from their decoded
+    // texels, with the frame it was made. The game rewrites some in place
+    // every few frames (an animated menu heading): a new version of one made
+    // within kArtRewriteFrames is made at once, not shown untranslated until
+    // a worker catches up. (Memory reused for another texture later is not
+    // a rewrite, and goes to a worker as usual.)
+    static constexpr std::uint64_t kArtRewriteFrames = 8u;
+    std::unordered_map<std::uint64_t, std::uint64_t> art_textures_;
+    [[nodiscard]] static std::uint64_t art_key(const gpu::TextureState &texture) noexcept {
+        return std::uint64_t{canonical(texture.address)} << 32u | std::uint64_t{texture.width} << 16u | texture.height;
+    }
     std::uint64_t frame_{};
     std::uint64_t draws_{};
     std::uint32_t trace_{};
@@ -192,14 +250,35 @@ private:
     void begin_pass(Target &target);
     void end_pass();
     void draw_world_contours();
+    // Submits what is recorded and waits for it (to read back GPU output).
     void flush();
-    // Ensures `bytes` of room in a per-frame buffer, flushing the frame when full.
+    // Submits what is recorded without waiting, continuing in the next slot:
+    // for when this slot's buffers or descriptor sets run out.
+    void next_slot();
+    // Makes the context's current slot's resources the ones written, empty.
+    void use_slot();
+    // Ensures `bytes` of room in a per-slot buffer, moving to the next slot when full.
     VkDeviceSize reserve(Buffer &buffer, VkDeviceSize &cursor, VkDeviceSize bytes, VkDeviceSize alignment);
     VkPipeline pipeline(const PipelineKey &key);
+    // Safe on any thread once create() has run.
+    VkPipeline create_pipeline(const PipelineKey &key) const;
+    void load_pipelines();
+    // Writes the cache and the known states, on a worker unless `now`.
+    void save_pipelines(bool now);
+    WorkerPool &workers();
     VkSampler sampler(const gpu::TextureState &texture);
     // The image view to sample for the draw's texture, uploading it if needed.
     VkImageView texture_view(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call, float &u_scale, float &v_scale);
     VkDescriptorSet texture_set(VkImageView view, VkSampler sampler);
+    // On a worker thread: fills `job`'s outputs.
+    static void build_art(TextureJob &job, const textures::HdTexturePack *hd_pack,
+                          const translation::TexturePack *translation_pack, bool identify, std::uint32_t scale);
+    // Replaces the entry's image with its finished job's art.
+    void complete(Texture &entry);
+    // Letters the entry's button prompts into `texels` (width x height, a
+    // multiple of the GE's `texture_width`), then creates and uploads its image.
+    bool make_image(Texture &entry, std::vector<std::uint32_t> &texels, std::uint32_t &width, std::uint32_t &height,
+                    std::uint32_t texture_width);
     void upload(Image &image, const std::uint32_t *texels, std::uint32_t width, std::uint32_t height);
 };
 

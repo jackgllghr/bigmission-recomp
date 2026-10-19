@@ -1,4 +1,5 @@
 #include "shell/vulkan_context.hpp"
+#include "shell/hitch_trace.hpp"
 
 #include <SDL3/SDL_vulkan.h>
 
@@ -107,12 +108,15 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     allocate.commandPool = pool_;
     allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocate.commandBufferCount = 1u;
-    vkAllocateCommandBuffers(device, &allocate, &commands_);
     VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    vkCreateFence(device, &fence_info, nullptr, &fence_);
     VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    vkCreateSemaphore(device, &semaphore_info, nullptr, &acquired_);
+    for (auto &slot : slots_) {
+        vkAllocateCommandBuffers(device, &allocate, &slot.commands);
+        vkCreateFence(device, &fence_info, nullptr, &slot.fence);
+        vkCreateSemaphore(device, &semaphore_info, nullptr, &slot.acquired);
+    }
+    vk.vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties_);
     return create_swapchain(error);
 }
 
@@ -240,8 +244,14 @@ void VulkanContext::destroy() {
     if (device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
         destroy_swapchain();
-        vkDestroySemaphore(device, acquired_, nullptr);
-        vkDestroyFence(device, fence_, nullptr);
+        for (auto &slot : slots_) {
+            destroy_retired(slot);
+            vkDestroySemaphore(device, slot.acquired, nullptr);
+            vkDestroyFence(device, slot.fence, nullptr);
+        }
+        for (auto &block : blocks_)
+            if (block.memory != VK_NULL_HANDLE) vkFreeMemory(device, block.memory, nullptr);
+        blocks_.clear();
         vkDestroyCommandPool(device, pool_, nullptr);
         vkDestroyDevice(device, nullptr);
         device = VK_NULL_HANDLE;
@@ -252,14 +262,49 @@ void VulkanContext::destroy() {
 }
 
 VkCommandBuffer VulkanContext::begin_frame() {
-    vkWaitForFences(device, 1u, &fence_, VK_TRUE, UINT64_MAX);
-    vkResetFences(device, 1u, &fence_);
+    // A slot begun and never submitted is simply recorded again: its fence
+    // is reset only as it is submitted, so it stays signalled.
+    if (!recording_) {
+        slot_ = (slot_ + 1u) % kFramesInFlight;
+        Slot &slot = slots_[slot_];
+        {
+            hitch::Timer timer(hitch::kFence);
+            vkWaitForFences(device, 1u, &slot.fence, VK_TRUE, UINT64_MAX);
+        }
+        destroy_retired(slot);
+    }
+    commands_ = slots_[slot_].commands;
     vkResetCommandBuffer(commands_, 0u);
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(commands_, &begin);
     recording_ = true;
     return commands_;
+}
+
+void VulkanContext::submit_slot(const VkSubmitInfo &submit) {
+    Slot &slot = slots_[slot_];
+    vkEndCommandBuffer(slot.commands);
+    vkResetFences(device, 1u, &slot.fence);
+    vkQueueSubmit(queue, 1u, &submit, slot.fence);
+    recording_ = false;
+}
+
+void VulkanContext::destroy_retired(Slot &slot) {
+    for (auto &image : slot.retired_images) destroy_image(image);
+    for (auto &buffer : slot.retired_buffers) destroy_buffer(buffer);
+    slot.retired_images.clear();
+    slot.retired_buffers.clear();
+}
+
+void VulkanContext::retire(Image &image) {
+    if (image.image != VK_NULL_HANDLE || image.view != VK_NULL_HANDLE) slots_[slot_].retired_images.push_back(image);
+    image = Image{};
+}
+
+void VulkanContext::retire(Buffer &buffer) {
+    if (buffer.buffer != VK_NULL_HANDLE) slots_[slot_].retired_buffers.push_back(buffer);
+    buffer = Buffer{};
 }
 
 void VulkanContext::copy_to_buffer(const Image &source, std::uint32_t width, std::uint32_t height,
@@ -270,12 +315,27 @@ void VulkanContext::copy_to_buffer(const Image &source, std::uint32_t width, std
     vkCmdCopyImageToBuffer(commands_, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination.buffer, 1u, &copy);
 }
 
+VkCommandBuffer VulkanContext::submit() {
+    {
+        hitch::Timer timer(hitch::kFlush);
+        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submit.commandBufferCount = 1u;
+        submit.pCommandBuffers = &commands_;
+        submit_slot(submit);
+    }
+    return begin_frame();
+}
+
 VkCommandBuffer VulkanContext::flush() {
-    vkEndCommandBuffer(commands_);
-    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    submit.commandBufferCount = 1u;
-    submit.pCommandBuffers = &commands_;
-    vkQueueSubmit(queue, 1u, &submit, fence_);
+    {
+        hitch::Timer timer(hitch::kFlush);
+        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submit.commandBufferCount = 1u;
+        submit.pCommandBuffers = &commands_;
+        submit_slot(submit);
+        // The queue runs in order: this slot done means all of it is.
+        vkWaitForFences(device, 1u, &slots_[slot_].fence, VK_TRUE, UINT64_MAX);
+    }
     return begin_frame();
 }
 
@@ -289,8 +349,10 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
     }
     std::uint32_t index = 0u;
     present = present && swapchain_ != VK_NULL_HANDLE;
+    VkSemaphore acquired_semaphore = slots_[slot_].acquired;
     if (present) {
-        const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, acquired_, VK_NULL_HANDLE, &index);
+        hitch::Timer timer(hitch::kAcquire);
+        const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, acquired_semaphore, VK_NULL_HANDLE, &index);
         if (acquired == VK_ERROR_SURFACE_LOST_KHR) {
             surface_lost_ = true;
             present = false;
@@ -326,21 +388,23 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
         }
         transition(commands_, target, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     }
-    vkEndCommandBuffer(commands_);
-    recording_ = false;
     const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1u;
     submit.pCommandBuffers = &commands_;
     if (present) {
         submit.waitSemaphoreCount = 1u;
-        submit.pWaitSemaphores = &acquired_;
+        submit.pWaitSemaphores = &acquired_semaphore;
         submit.pWaitDstStageMask = &wait_stage;
         submit.signalSemaphoreCount = 1u;
         submit.pSignalSemaphores = &rendered_[index];
     }
-    vkQueueSubmit(queue, 1u, &submit, fence_);
+    {
+        hitch::Timer timer(hitch::kSubmit);
+        submit_slot(submit);
+    }
     if (present) {
+        hitch::Timer timer(hitch::kPresent);
         VkPresentInfoKHR info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         info.waitSemaphoreCount = 1u;
         info.pWaitSemaphores = &rendered_[index];
@@ -355,14 +419,14 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
 }
 
 std::uint32_t VulkanContext::memory_type(std::uint32_t bits, VkMemoryPropertyFlags flags) const {
-    VkPhysicalDeviceMemoryProperties memory{};
-    vk.vkGetPhysicalDeviceMemoryProperties(physical, &memory);
+    const auto &memory = memory_properties_;
     for (std::uint32_t i = 0; i < memory.memoryTypeCount; ++i)
         if ((bits & (1u << i)) != 0u && (memory.memoryTypes[i].propertyFlags & flags) == flags) return i;
     return UINT32_MAX;
 }
 
 bool VulkanContext::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, Buffer &out) {
+    hitch::Timer timer(hitch::kAlloc);
     VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     info.size = size;
     info.usage = usage;
@@ -389,6 +453,7 @@ void VulkanContext::destroy_buffer(Buffer &buffer) {
 
 bool VulkanContext::create_image(std::uint32_t width, std::uint32_t height, VkFormat format, VkImageUsageFlags usage,
                                  VkImageAspectFlags aspect, Image &out) {
+    hitch::Timer timer(hitch::kAlloc);
     VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     info.imageType = VK_IMAGE_TYPE_2D;
     info.format = format;
@@ -402,12 +467,47 @@ bool VulkanContext::create_image(std::uint32_t width, std::uint32_t height, VkFo
     if (vkCreateImage(device, &info, nullptr, &out.image) != VK_SUCCESS) return false;
     VkMemoryRequirements requirements{};
     vkGetImageMemoryRequirements(device, out.image, &requirements);
-    VkMemoryAllocateInfo allocate{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    allocate.allocationSize = requirements.size;
-    allocate.memoryTypeIndex = memory_type(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (allocate.memoryTypeIndex == UINT32_MAX || vkAllocateMemory(device, &allocate, nullptr, &out.memory) != VK_SUCCESS)
-        return false;
-    vkBindImageMemory(device, out.image, out.memory, 0u);
+    const std::uint32_t type = memory_type(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (type == UINT32_MAX) return false;
+    // Small images share a block (only optimal-tiling images live in them, so
+    // bufferImageGranularity does not apply); large ones get their own memory.
+    if (requirements.size <= kBlockBytes / 4u) {
+        const auto place = [&](std::uint32_t index) {
+            auto &block = blocks_[index];
+            if (block.memory == VK_NULL_HANDLE || block.type != type) return false;
+            const auto offset = block.ranges->allocate(requirements.size, requirements.alignment);
+            if (!offset) return false;
+            out.memory = block.memory;
+            out.offset = *offset;
+            out.block = index;
+            return true;
+        };
+        bool placed = false;
+        for (std::uint32_t i = 0; i < blocks_.size() && !placed; ++i) placed = place(i);
+        if (!placed) {
+            VkMemoryAllocateInfo allocate{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            allocate.allocationSize = kBlockBytes;
+            allocate.memoryTypeIndex = type;
+            VkDeviceMemory memory = VK_NULL_HANDLE;
+            if (vkAllocateMemory(device, &allocate, nullptr, &memory) == VK_SUCCESS) {
+                std::uint32_t index = 0;
+                while (index < blocks_.size() && blocks_[index].memory != VK_NULL_HANDLE) ++index;
+                if (index == blocks_.size()) blocks_.emplace_back();
+                blocks_[index] = {memory, type, std::make_unique<RangeAllocator>(kBlockBytes)};
+                placed = place(index);
+            }
+        }
+        if (placed) {
+            vkBindImageMemory(device, out.image, out.memory, out.offset);
+        }
+    }
+    if (out.memory == VK_NULL_HANDLE) {
+        VkMemoryAllocateInfo allocate{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        allocate.allocationSize = requirements.size;
+        allocate.memoryTypeIndex = type;
+        if (vkAllocateMemory(device, &allocate, nullptr, &out.memory) != VK_SUCCESS) return false;
+        vkBindImageMemory(device, out.image, out.memory, 0u);
+    }
     VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     view.image = out.image;
     view.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -423,8 +523,26 @@ bool VulkanContext::create_image(std::uint32_t width, std::uint32_t height, VkFo
 void VulkanContext::destroy_image(Image &image) {
     if (image.view != VK_NULL_HANDLE) vkDestroyImageView(device, image.view, nullptr);
     if (image.image != VK_NULL_HANDLE) vkDestroyImage(device, image.image, nullptr);
-    if (image.memory != VK_NULL_HANDLE) vkFreeMemory(device, image.memory, nullptr);
+    free_image_memory(image);
     image = Image{};
+}
+
+void VulkanContext::free_image_memory(Image &image) {
+    if (image.memory == VK_NULL_HANDLE) return;
+    if (image.block == UINT32_MAX) {
+        vkFreeMemory(device, image.memory, nullptr);
+        return;
+    }
+    auto &block = blocks_[image.block];
+    block.ranges->free(image.offset);
+    if (!block.ranges->empty()) return;
+    // An empty block goes unless it is its memory type's last.
+    for (std::uint32_t i = 0; i < blocks_.size(); ++i) {
+        if (i == image.block || blocks_[i].memory == VK_NULL_HANDLE || blocks_[i].type != block.type) continue;
+        vkFreeMemory(device, block.memory, nullptr);
+        block = MemoryBlock{};
+        return;
+    }
 }
 
 void VulkanContext::transition(VkCommandBuffer commands, VkImage image, VkImageAspectFlags aspect, VkImageLayout from,

@@ -9,6 +9,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -108,6 +109,24 @@ int main() {
     require(found && *found == doubled, "HD image not returned as written");
     require(!pack.find(full), "wrongly sized HD image accepted");
     require(!pack.find(gpu::identify_texture(texture(4, 8, 4), texels)), "unknown texture found");
+    require(pack.contains(narrow) && pack.contains(full) && !pack.contains(gpu::identify_texture(texture(4, 8, 4), texels)),
+            "pack index lookup");
+
+    // The renderer decodes on worker threads: concurrent lookups, rejected
+    // images included, all see what one thread would.
+    {
+        std::vector<std::thread> threads;
+        std::vector<int> good(8);
+        for (std::size_t t = 0; t < good.size(); ++t)
+            threads.emplace_back([&, t] {
+                for (int i = 0; i < 20; ++i) {
+                    const auto image = pack.find(narrow);
+                    good[t] += image && *image == doubled && !pack.find(full);
+                }
+            });
+        for (auto &thread : threads) thread.join();
+        for (const int count : good) require(count == 20, "concurrent HD lookups differ");
+    }
 
     std::filesystem::remove_all(directory);
     std::cout << "HD texture tests passed\n";

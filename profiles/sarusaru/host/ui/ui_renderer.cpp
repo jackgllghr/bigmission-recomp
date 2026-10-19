@@ -78,8 +78,8 @@ bool UiRenderer::create(std::string &error) {
     init.QueueFamily = vulkan_.queue_family;
     init.Queue = vulkan_.queue;
     init.DescriptorPoolSize = 64u;
-    // Frames are serialised (VulkanContext waits for each one), so two sets
-    // of buffers are more than enough.
+    // VulkanContext keeps at most two frames in flight, so two sets of
+    // buffers are enough.
     init.MinImageCount = 2u;
     init.ImageCount = 2u;
     init.PipelineInfoMain.RenderPass = render_pass_;

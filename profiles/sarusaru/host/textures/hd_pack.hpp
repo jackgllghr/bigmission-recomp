@@ -17,6 +17,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -47,8 +49,13 @@ public:
     // identity.height * scale RGBA texels (red in the low byte), or nothing
     // when the pack has none or its image is unreadable or the wrong size
     // (reported once on stderr; the original texture is then drawn).
-    // Not thread-safe: the renderer's thread only.
+    // Safe on any thread: the renderer decodes images on worker threads.
     [[nodiscard]] std::optional<std::vector<std::uint32_t>> find(const gpu::TextureIdentity &identity) const;
+    // Whether the pack has an image for `identity` (which find() may still
+    // reject); cheap.
+    [[nodiscard]] bool contains(const gpu::TextureIdentity &identity) const {
+        return !identity.hash.empty() && images_.contains(identity.hash);
+    }
 
     [[nodiscard]] std::uint32_t scale() const noexcept { return manifest_.scale; }
     [[nodiscard]] std::size_t size() const noexcept { return images_.size(); }
@@ -62,7 +69,12 @@ private:
     std::filesystem::path directory_;
     HdManifest manifest_;
     std::unordered_set<std::string> images_;
-    mutable std::unordered_set<std::string> rejected_;
+    // Shared so the pack stays movable.
+    struct Rejections {
+        std::mutex mutex;
+        std::unordered_set<std::string> hashes;
+    };
+    std::shared_ptr<Rejections> rejected_ = std::make_shared<Rejections>();
 };
 
 } // namespace sarusaru::textures

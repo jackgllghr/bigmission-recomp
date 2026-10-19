@@ -104,7 +104,8 @@ std::optional<std::vector<std::uint32_t>> HdTexturePack::find(const gpu::Texture
     const std::uint64_t width = static_cast<std::uint64_t>(identity.width) * manifest_.scale;
     const std::uint64_t height = static_cast<std::uint64_t>(identity.height) * manifest_.scale;
     const auto reject = [&](const std::string &reason) -> std::optional<std::vector<std::uint32_t>> {
-        if (rejected_.insert(identity.hash).second)
+        const std::lock_guard lock(rejected_->mutex);
+        if (rejected_->hashes.insert(identity.hash).second)
             std::cerr << "sarusaru: HD texture " << identity.hash << " skipped: " << reason << '\n';
         return std::nullopt;
     };

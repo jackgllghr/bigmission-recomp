@@ -367,15 +367,24 @@ std::uint32_t TexturePack::apply_scaled(const gpu::TextureState &texture, std::v
                                        std::uint32_t requested_scale, const BaseArt *base) const {
     if (requested_scale < 1 || requested_scale > 8 ||
         pixels.size() != static_cast<std::size_t>(texture.width) * texture.height) return 0;
-    for (const auto &entry : entries_) {
-        if (texture.width != entry.ge_width || texture.height != entry.ge_height || texture.buffer_width != entry.buffer_width) continue;
+    // Entries of one size share the source rectangle: hash it once per size.
+    std::vector<std::pair<std::uint32_t, std::string>> hashes;
+    hashes.reserve(entries_.size());
+    const auto source_hash = [&](const Entry &entry) -> const std::string & {
+        const std::uint32_t size = static_cast<std::uint32_t>(entry.width) << 16u | entry.height;
+        for (const auto &[known, hash] : hashes)
+            if (known == size) return hash;
         std::vector<std::uint8_t> source;
-        source.reserve(entry.rgba.size());
+        source.reserve(std::size_t(entry.width) * entry.height * 4u);
         for (std::size_t y = 0; y < entry.height; ++y) for (std::size_t x = 0; x < entry.width; ++x) {
             const auto value = pixels[y * texture.width + x];
             for (unsigned shift = 0; shift < 32; shift += 8) source.push_back(static_cast<std::uint8_t>(value >> shift));
         }
-        if (psprecomp::sha256(source) != entry.source_hash) continue;
+        return hashes.emplace_back(size, psprecomp::sha256(source)).second;
+    };
+    for (const auto &entry : entries_) {
+        if (texture.width != entry.ge_width || texture.height != entry.ge_height || texture.buffer_width != entry.buffer_width) continue;
+        if (source_hash(entry) != entry.source_hash) continue;
         if (requested_scale > 1 && entry.hd_scale) {
             // Select a mip at least as sharp as the render target. Non-power-
             // of-two render scales use the next mip; normalized UVs stay fixed.
