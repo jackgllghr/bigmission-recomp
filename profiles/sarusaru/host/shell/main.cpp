@@ -22,6 +22,7 @@
 #include "psprecomp/common.hpp"
 #include "shell/audio_output.hpp"
 #include "shell/ge_renderer.hpp"
+#include "shell/hitch_trace.hpp"
 #include "shell/input.hpp"
 #include "release_version.hpp"
 #include "shell/presentation_clock.hpp"
@@ -287,6 +288,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             if (translation_pack) renderer->set_translation_pack(&*translation_pack);
             if (hd_textures) renderer->set_hd_textures(&*hd_textures);
             if (texture_dump) renderer->set_texture_dump(&*texture_dump);
+            renderer->set_pipeline_directory(std::filesystem::absolute(settings_path).parent_path());
             renderer->set_button_prompts(&button_prompts);
             if (!renderer->create(error)) throw psprecomp::Error(error);
         };
@@ -443,6 +445,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                         if (translation_pack) replacement->set_translation_pack(&*translation_pack);
                         if (hd_textures) replacement->set_hd_textures(&*hd_textures);
                         if (texture_dump) replacement->set_texture_dump(&*texture_dump);
+                        replacement->set_pipeline_directory(std::filesystem::absolute(settings_path).parent_path());
                         replacement->set_button_prompts(&button_prompts);
                         try {
                             if (!replacement->create(error)) throw psprecomp::Error(error);
@@ -480,6 +483,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         if (load_initial_state) queue_state(true);
         bool quit = false;
         game.kernel.set_frame_observer([&] {
+            sarusaru::shell::hitch::enter_observer();
             if (quit) return;
             if (translation_pack) translation_pack->flush_draws(render_draw);
             // A UI script carries on while the game runs (to open the pause menu).
@@ -638,6 +642,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 // Pacing starts again from now rather than catching up.
                 real_origin_ns = SDL_GetTicksNS();
                 guest_origin_us = game.kernel.now_us();
+                sarusaru::shell::hitch::begin_frame();
             }
             renderer->begin_frame(vulkan.begin_frame());
             if (game.kernel.now_us() >= trace_at_us) {
@@ -646,6 +651,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 trace_at_us = std::numeric_limits<std::uint64_t>::max();
             }
             if (capturing) {
+                // The copy was in the frame just submitted, which may still run.
+                vulkan.vkQueueWaitIdle(vulkan.queue);
                 char name[64];
                 std::snprintf(name, sizeof name, "/frame_%04u_%08llums.bmp", captures++,
                               static_cast<unsigned long long>(game.kernel.now_us() / 1000u));
@@ -658,6 +665,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 }
             }
 
+            sarusaru::shell::hitch::end_frame(game.kernel.now_us());
             // Pace guest time to real time; Tab runs as fast as it can.
             const std::uint64_t guest_ns = (game.kernel.now_us() - guest_origin_us) * 1000u;
             const std::uint64_t target_ns = real_origin_ns + guest_ns;
@@ -670,6 +678,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             } else if (target_ns > now_ns) {
                 SDL_DelayPrecise(target_ns - now_ns);
             }
+            sarusaru::shell::hitch::begin_frame();
             if (quit) game.runtime.stop("Window closed");
         });
         game.run(std::numeric_limits<std::uint64_t>::max());
@@ -681,6 +690,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         std::cerr << "sarusaru: " << failure.what() << '\n';
         status = 1;
     }
+    sarusaru::shell::hitch::report();
     vulkan.destroy_buffer(capture);
     if (renderer) renderer->destroy();
     return status;

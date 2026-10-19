@@ -1,4 +1,5 @@
 #include "translation/texture_pack.hpp"
+#include "gpu/texture_hash.hpp"
 #include "psprecomp/sha256.hpp"
 
 #include <algorithm>
@@ -363,75 +364,194 @@ bool TexturePack::apply(const gpu::TextureState &texture, std::vector<std::uint3
     return apply_scaled(texture, pixels, 1) != 0;
 }
 
-std::uint32_t TexturePack::apply_scaled(const gpu::TextureState &texture, std::vector<std::uint32_t> &pixels,
-                                       std::uint32_t requested_scale, const BaseArt *base) const {
-    if (requested_scale < 1 || requested_scale > 8 ||
-        pixels.size() != static_cast<std::size_t>(texture.width) * texture.height) return 0;
+const TexturePack::Entry *TexturePack::match(const gpu::TextureState &texture,
+                                             std::span<const std::uint32_t> pixels) const {
+    if (pixels.size() != static_cast<std::size_t>(texture.width) * texture.height) return nullptr;
+    // Entries of one size share the source rectangle: hash it once per size.
+    std::vector<std::pair<std::uint32_t, std::string>> hashes;
     for (const auto &entry : entries_) {
         if (texture.width != entry.ge_width || texture.height != entry.ge_height || texture.buffer_width != entry.buffer_width) continue;
-        std::vector<std::uint8_t> source;
-        source.reserve(entry.rgba.size());
-        for (std::size_t y = 0; y < entry.height; ++y) for (std::size_t x = 0; x < entry.width; ++x) {
-            const auto value = pixels[y * texture.width + x];
-            for (unsigned shift = 0; shift < 32; shift += 8) source.push_back(static_cast<std::uint8_t>(value >> shift));
+        const std::uint32_t size = static_cast<std::uint32_t>(entry.width) << 16u | entry.height;
+        const std::string *hash = nullptr;
+        for (const auto &[known, value] : hashes)
+            if (known == size) hash = &value;
+        if (hash == nullptr) {
+            gpu::Sha256 hasher;
+            gpu::hash_texels(hasher, pixels, texture.width, entry.width, entry.height);
+            hashes.emplace_back(size, hasher.hex());
+            hash = &hashes.back().second;
         }
-        if (psprecomp::sha256(source) != entry.source_hash) continue;
-        if (requested_scale > 1 && entry.hd_scale) {
-            // Select a mip at least as sharp as the render target. Non-power-
-            // of-two render scales use the next mip; normalized UVs stay fixed.
-            std::uint32_t scale = 2;
-            while (scale < requested_scale && scale < entry.hd_scale) scale *= 2;
-            std::vector<std::uint32_t> hd;
-            hd.reserve(std::size_t(entry.width) * entry.height * entry.hd_scale * entry.hd_scale);
-            Reader runs(entry.hd_runs);
-            while (!runs.empty()) {
-                const auto count = runs.integer(2), pixel = runs.integer(4);
-                hd.insert(hd.end(), count, pixel);
-            }
-            const auto width = texture.width * scale, height = texture.height * scale;
-            std::vector<std::uint32_t> scaled(std::size_t(width) * height);
-            const bool art = base != nullptr && base->scale && base->width && base->height &&
-                base->texels.size() >= std::size_t(base->width) * base->height * base->scale * base->scale;
-            for (std::uint32_t y = 0; y < height; ++y)
-                for (std::uint32_t x = 0; x < width; ++x)
-                    scaled[std::size_t(y) * width + x] = art && x / scale < base->width && y / scale < base->height
-                        ? base->texels[std::size_t(y * base->scale / scale) * base->width * base->scale +
-                                       x * base->scale / scale]
-                        : pixels[std::size_t(y / scale) * texture.width + x / scale];
-            const auto step = entry.hd_scale / scale;
-            const auto hd_width = entry.width * entry.hd_scale;
-            for (const auto &region : entry.regions)
-                for (std::uint32_t y = region.y * scale; y < (region.y + region.height) * scale; ++y)
-                    for (std::uint32_t x = region.x * scale; x < (region.x + region.width) * scale; ++x) {
-                        std::uint32_t sums[4]{};
-                        for (std::uint32_t dy = 0; dy < step; ++dy)
-                            for (std::uint32_t dx = 0; dx < step; ++dx) {
-                                const auto pixel = hd[std::size_t(y * step + dy) * hd_width + x * step + dx];
-                                const auto alpha = pixel >> 24;
-                                for (unsigned c = 0; c < 3; ++c) sums[c] += ((pixel >> (8 * c)) & 255u) * alpha;
-                                sums[3] += alpha;
-                            }
-                        std::uint32_t value = ((sums[3] + step * step / 2) / (step * step)) << 24;
-                        if (sums[3])
-                            for (unsigned c = 0; c < 3; ++c)
-                                value |= ((sums[c] + sums[3] / 2) / sums[3]) << (8 * c);
-                        scaled[std::size_t(y) * width + x] = value;
-                    }
-            pixels = std::move(scaled);
-            return scale;
-        }
-        // Preserve icons, backgrounds, untranslated labels and padding outside the authored regions.
-        for (const auto &region : entry.regions)
-        for (std::size_t y = region.y; y < region.y + region.height; ++y)
-        for (std::size_t x = region.x; x < region.x + region.width; ++x) {
-            const auto offset = (y * entry.width + x) * 4;
-            std::uint32_t value = 0;
-            for (unsigned byte = 0; byte < 4; ++byte) value |= std::uint32_t(entry.rgba[offset + byte]) << (byte * 8);
-            pixels[y * texture.width + x] = value;
-        }
-        return 1;
+        if (*hash == entry.source_hash) return &entry;
     }
-    return 0;
+    return nullptr;
+}
+
+std::uint32_t TexturePack::output_scale(const Entry &entry, std::uint32_t requested_scale) {
+    if (requested_scale <= 1 || !entry.hd_scale) return 1;
+    // Select a mip at least as sharp as the render target. Non-power-of-two
+    // render scales use the next mip; normalized UVs stay fixed.
+    std::uint32_t scale = 2;
+    while (scale < requested_scale && scale < entry.hd_scale) scale *= 2;
+    return scale;
+}
+
+std::uint32_t TexturePack::scaled_match(const gpu::TextureState &texture, std::span<const std::uint32_t> pixels,
+                                        std::uint32_t requested_scale) const {
+    if (requested_scale < 1 || requested_scale > 8) return 0;
+    const Entry *entry = match(texture, pixels);
+    return entry != nullptr ? output_scale(*entry, requested_scale) : 0u;
+}
+
+std::shared_ptr<const std::vector<TexturePack::Run>> TexturePack::lettering(const Entry &entry, std::uint32_t scale) const {
+    const std::pair key{static_cast<std::size_t>(&entry - entries_.data()), scale};
+    {
+        const std::lock_guard lock(lettering_->mutex);
+        if (const auto found = lettering_->regions.find(key); found != lettering_->regions.end()) return found->second;
+    }
+    const std::uint32_t hd_scale = entry.hd_scale;
+    const std::size_t hd_width = std::size_t(entry.width) * hd_scale;
+    const std::size_t hd_height = std::size_t(entry.height) * hd_scale;
+    // Only the lettering's rows the regions read are unpacked.
+    std::vector<bool> needed(hd_height);
+    for (const auto &region : entry.regions)
+        for (std::size_t y = std::size_t(region.y) * hd_scale; y < std::size_t(region.y + region.height) * hd_scale && y < hd_height; ++y)
+            needed[y] = true;
+    std::vector<std::uint32_t> hd(hd_width * hd_height);
+    std::size_t at = 0;
+    Reader runs(entry.hd_runs);
+    while (!runs.empty() && at < hd.size()) {
+        const std::size_t count = runs.integer(2);
+        const auto pixel = static_cast<std::uint32_t>(runs.integer(4));
+        const std::size_t end = std::min(at + count, hd.size());
+        for (std::size_t row = at / hd_width; row * hd_width < end; ++row) {
+            if (!needed[row]) continue;
+            const std::size_t from = std::max(at, row * hd_width), to = std::min(end, (row + 1u) * hd_width);
+            std::fill(hd.begin() + std::ptrdiff_t(from), hd.begin() + std::ptrdiff_t(to), pixel);
+        }
+        at = end;
+    }
+    // Each output pixel averages its step x step block, weighted by alpha.
+    auto out = std::make_shared<std::vector<Run>>();
+    const auto push = [&](std::uint32_t texel) {
+        if (!out->empty() && out->back().texel == texel) ++out->back().count;
+        else out->push_back({1u, texel});
+    };
+    const std::uint32_t step = hd_scale / scale;
+    for (const auto &region : entry.regions)
+        for (std::uint32_t y = region.y * scale; y < (region.y + region.height) * scale; ++y)
+            for (std::uint32_t x = region.x * scale; x < (region.x + region.width) * scale; ++x) {
+                if (step == 1u) {
+                    push(hd[std::size_t(y) * hd_width + x]);
+                    continue;
+                }
+                std::uint32_t sums[4]{};
+                for (std::uint32_t dy = 0; dy < step; ++dy)
+                    for (std::uint32_t dx = 0; dx < step; ++dx) {
+                        const auto pixel = hd[std::size_t(y * step + dy) * hd_width + x * step + dx];
+                        const auto alpha = pixel >> 24;
+                        for (unsigned c = 0; c < 3; ++c) sums[c] += ((pixel >> (8 * c)) & 255u) * alpha;
+                        sums[3] += alpha;
+                    }
+                std::uint32_t value = ((sums[3] + step * step / 2) / (step * step)) << 24;
+                if (sums[3])
+                    for (unsigned c = 0; c < 3; ++c)
+                        value |= ((sums[c] + sums[3] / 2) / sums[3]) << (8 * c);
+                push(value);
+            }
+    out->shrink_to_fit();
+    const std::lock_guard lock(lettering_->mutex);
+    return lettering_->regions.emplace(key, std::move(out)).first->second;
+}
+
+std::size_t TexturePack::prepare(std::uint32_t requested_scale) const {
+    std::size_t texels = 0u;
+    for (const auto &entry : entries_) {
+        const std::uint32_t scale = output_scale(entry, requested_scale);
+        if (scale > 1u) texels += lettering(entry, scale)->size() * sizeof(Run);
+    }
+    return texels;
+}
+
+std::uint32_t TexturePack::possible_scale(const gpu::TextureState &texture, std::uint32_t requested_scale) const {
+    if (requested_scale < 1 || requested_scale > 8) return 0;
+    std::uint32_t scale = 0u;
+    for (const auto &entry : entries_)
+        if (texture.width == entry.ge_width && texture.height == entry.ge_height && texture.buffer_width == entry.buffer_width)
+            scale = std::max(scale, output_scale(entry, requested_scale));
+    return scale;
+}
+
+std::uint32_t TexturePack::apply_scaled(const gpu::TextureState &texture, std::vector<std::uint32_t> &pixels,
+                                       std::uint32_t requested_scale, const BaseArt *base) const {
+    if (requested_scale < 1 || requested_scale > 8) return 0;
+    const Entry *found = match(texture, pixels);
+    if (found == nullptr) return 0;
+    const Entry &entry = *found;
+    const std::uint32_t scale = output_scale(entry, requested_scale);
+    if (scale > 1) {
+        const std::uint32_t width = texture.width * scale, height = texture.height * scale;
+        std::vector<std::uint32_t> scaled(std::size_t(width) * height);
+        const bool art = base != nullptr && base->scale && base->width && base->height &&
+            base->texels.size() >= std::size_t(base->width) * base->height * base->scale * base->scale;
+        const std::uint32_t art_width = art ? std::min<std::uint32_t>(base->width * scale, width) : 0u;
+        const std::uint32_t art_height = art ? base->height * scale : 0u;
+        for (std::uint32_t y = 0; y < height; ++y) {
+            std::uint32_t *out = scaled.data() + std::size_t(y) * width;
+            // A row made from the same source row (and art row) as the one
+            // above is a copy of it.
+            if (y % scale != 0u) {
+                const bool art_row = y < art_height, art_above = y - 1u < art_height;
+                const bool same_art = !art_row || (art_above && y * base->scale / scale == (y - 1u) * base->scale / scale);
+                if (art_row == art_above && same_art) {
+                    std::copy_n(out - width, width, out);
+                    continue;
+                }
+            }
+            std::uint32_t x = 0;
+            if (y < art_height) {
+                const std::uint32_t *row = base->texels.data() + std::size_t(y * base->scale / scale) * base->width * base->scale;
+                if (base->scale == scale) {
+                    std::copy_n(row, art_width, out);
+                } else {
+                    for (; x < art_width; ++x) out[x] = row[x * base->scale / scale];
+                }
+                x = art_width;
+            }
+            // Outside the art the source texels are enlarged.
+            const std::uint32_t *source = pixels.data() + std::size_t(y / scale) * texture.width;
+            for (std::uint32_t from = x / scale; x < width; ++from) {
+                const std::uint32_t end = std::min(width, (from + 1u) * scale);
+                std::fill(out + x, out + end, source[from]);
+                x = end;
+            }
+        }
+        const auto lettered = lettering(entry, scale);
+        auto run = lettered->begin();
+        std::uint32_t left = run != lettered->end() ? run->count : 0u;
+        for (const auto &region : entry.regions)
+            for (std::uint32_t y = region.y * scale; y < (region.y + region.height) * scale; ++y) {
+                std::uint32_t *out = scaled.data() + std::size_t(y) * width + region.x * scale;
+                for (std::uint32_t todo = region.width * scale; todo != 0u && run != lettered->end();) {
+                    const std::uint32_t take = std::min(todo, left);
+                    std::fill_n(out, take, run->texel);
+                    out += take;
+                    todo -= take;
+                    if ((left -= take) == 0u && ++run != lettered->end()) left = run->count;
+                }
+            }
+        pixels = std::move(scaled);
+        return scale;
+    }
+    // Preserve icons, backgrounds, untranslated labels and padding outside the authored regions.
+    for (const auto &region : entry.regions)
+    for (std::size_t y = region.y; y < region.y + region.height; ++y)
+    for (std::size_t x = region.x; x < region.x + region.width; ++x) {
+        const auto offset = (y * entry.width + x) * 4;
+        std::uint32_t value = 0;
+        for (unsigned byte = 0; byte < 4; ++byte) value |= std::uint32_t(entry.rgba[offset + byte]) << (byte * 8);
+        pixels[y * texture.width + x] = value;
+    }
+    return 1;
 }
 
 } // namespace sarusaru::translation

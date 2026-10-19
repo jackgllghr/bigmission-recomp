@@ -63,7 +63,7 @@ if(SARUSARU_HAS_RENDERER)
     # Texture dump mode and on-device HD texture packs (PNG through SDL).
     add_library(sarusaru_textures STATIC host/textures/texture_dump.cpp host/textures/hd_pack.cpp
         host/textures/disc_textures.cpp host/textures/recipe.cpp host/textures/image.cpp)
-    target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu sarusaru_disc SDL3::SDL3)
+    target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu sarusaru_disc SDL3::SDL3 PRIVATE libzstd_static)
     add_library(sarusaru_install STATIC host/install/process.cpp host/install/download.cpp host/install/toolchain.cpp
         host/install/game_builder.cpp host/install/pack_download.cpp host/install/pack_versions.cpp host/install/texture_build.cpp
         host/install/update_check.cpp)
@@ -100,7 +100,8 @@ add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gamepl
 target_include_directories(sarusaru_frame_rate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_frame_rate PUBLIC psprecomp_runtime)
 
-add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp host/gpu/texture_hash.cpp host/gpu/frame_interpolator.cpp)
+add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp host/gpu/texture_hash.cpp host/gpu/sha256.cpp
+    host/gpu/frame_interpolator.cpp)
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_gpu PUBLIC psprecomp_runtime psprecomp_core)
 

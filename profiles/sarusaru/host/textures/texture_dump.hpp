@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -26,11 +27,18 @@ public:
     explicit TextureDump(std::filesystem::path directory, std::optional<std::unordered_set<std::string>> wanted = {});
 
     // Writes the texture unless its hash is already in the dump. A failed
-    // write is reported once on stderr and does not stop the game.
+    // write is reported once on stderr and does not stop the game. Safe on
+    // any thread (the renderer identifies textures on worker threads).
     void record(const gpu::TextureState &texture, const gpu::TextureIdentity &identity,
                 std::span<const std::uint32_t> texels);
-    [[nodiscard]] std::size_t written() const noexcept { return written_; }
-    [[nodiscard]] std::size_t known() const noexcept { return seen_.size(); }
+    [[nodiscard]] std::size_t written() const {
+        const std::lock_guard lock(mutex_);
+        return written_;
+    }
+    [[nodiscard]] std::size_t known() const {
+        const std::lock_guard lock(mutex_);
+        return seen_.size();
+    }
     [[nodiscard]] const std::filesystem::path &directory() const noexcept { return directory_; }
 
     static constexpr std::string_view kIndexName = "textures.tsv";
@@ -38,6 +46,7 @@ public:
         "hash\twidth\theight\tge_width\tge_height\tbuffer_width\tformat\tswizzled";
 
 private:
+    mutable std::mutex mutex_;
     std::filesystem::path directory_;
     std::unordered_set<std::string> seen_;
     std::optional<std::unordered_set<std::string>> wanted_;

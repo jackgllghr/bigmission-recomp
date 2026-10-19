@@ -1,4 +1,8 @@
 #include "shell/ge_renderer.hpp"
+#include <SDL3/SDL_timer.h>
+#include <chrono>
+#include "shell/hitch_trace.hpp"
+#include "shell/pipeline_store.hpp"
 #include "save_state/ppst.hpp"
 #include <set>
 
@@ -21,7 +25,8 @@ namespace {
 // 480 of the columns are displayed.
 constexpr std::uint32_t kTargetWidth = 512u, kTargetHeight = 272u, kDisplayWidth = 480u;
 constexpr VkFormat kColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
-constexpr VkDeviceSize kVertexBytes = 32u << 20u, kUniformBytes = 16u << 20u, kStagingBytes = 32u << 20u;
+// Per slot. Running out moves on to the next slot without waiting for the GPU.
+constexpr VkDeviceSize kVertexBytes = 16u << 20u, kUniformBytes = 8u << 20u, kStagingBytes = 16u << 20u;
 constexpr std::uint32_t kFrameSets = 4096u;
 constexpr std::uint64_t kTextureLifetimeFrames = 600u;
 // A through-mode vertex's unused normal and w carry the tile's texture
@@ -166,40 +171,42 @@ bool GeRenderer::create(std::string &error) {
         return false;
     }
 
-    VkDescriptorPoolSize persistent_sizes[1] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 2u}};
+    constexpr auto kSlots = VulkanContext::kFramesInFlight;
+    VkDescriptorPoolSize persistent_sizes[1] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 2u * kSlots}};
     VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pool_info.maxSets = 1u;
+    pool_info.maxSets = kSlots;
     pool_info.poolSizeCount = 1u;
     pool_info.pPoolSizes = persistent_sizes;
     vk_.vkCreateDescriptorPool(device, &pool_info, nullptr, &persistent_pool_);
     VkDescriptorPoolSize frame_sizes[1] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFrameSets}};
     pool_info.maxSets = kFrameSets;
     pool_info.pPoolSizes = frame_sizes;
-    vk_.vkCreateDescriptorPool(device, &pool_info, nullptr, &frame_pool_);
-
-    if (!vk_.create_buffer(kVertexBytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertices_) ||
-        !vk_.create_buffer(kUniformBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, uniforms_) ||
-        !vk_.create_buffer(kStagingBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging_)) {
-        error = "cannot allocate the renderer's buffers";
-        return false;
+    for (auto &slot : slots_) {
+        vk_.vkCreateDescriptorPool(device, &pool_info, nullptr, &slot.frame_pool);
+        if (!vk_.create_buffer(kVertexBytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, slot.vertices) ||
+            !vk_.create_buffer(kUniformBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, slot.uniforms) ||
+            !vk_.create_buffer(kStagingBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, slot.staging)) {
+            error = "cannot allocate the renderer's buffers";
+            return false;
+        }
+        VkDescriptorSetAllocateInfo allocate{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        allocate.descriptorPool = persistent_pool_;
+        allocate.descriptorSetCount = 1u;
+        allocate.pSetLayouts = &uniform_layout_;
+        vk_.vkAllocateDescriptorSets(device, &allocate, &slot.uniform_set);
+        VkDescriptorBufferInfo environment{slot.uniforms.buffer, 0u, sizeof(EnvironmentBlock)};
+        VkDescriptorBufferInfo object{slot.uniforms.buffer, 0u, sizeof(ObjectBlock)};
+        VkWriteDescriptorSet writes[2]{};
+        for (int i = 0; i < 2; ++i) {
+            writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[i].dstSet = slot.uniform_set;
+            writes[i].dstBinding = static_cast<std::uint32_t>(i);
+            writes[i].descriptorCount = 1u;
+            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+            writes[i].pBufferInfo = i == 0 ? &environment : &object;
+        }
+        vk_.vkUpdateDescriptorSets(device, 2u, writes, 0u, nullptr);
     }
-    VkDescriptorSetAllocateInfo allocate{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    allocate.descriptorPool = persistent_pool_;
-    allocate.descriptorSetCount = 1u;
-    allocate.pSetLayouts = &uniform_layout_;
-    vk_.vkAllocateDescriptorSets(device, &allocate, &uniform_set_);
-    VkDescriptorBufferInfo environment{uniforms_.buffer, 0u, sizeof(EnvironmentBlock)};
-    VkDescriptorBufferInfo object{uniforms_.buffer, 0u, sizeof(ObjectBlock)};
-    VkWriteDescriptorSet writes[2]{};
-    for (int i = 0; i < 2; ++i) {
-        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstSet = uniform_set_;
-        writes[i].dstBinding = static_cast<std::uint32_t>(i);
-        writes[i].descriptorCount = 1u;
-        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-        writes[i].pBufferInfo = i == 0 ? &environment : &object;
-    }
-    vk_.vkUpdateDescriptorSets(device, 2u, writes, 0u, nullptr);
 
     const VkImageUsageFlags texture_usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if (!vk_.create_image(1u, 1u, kColorFormat, texture_usage, VK_IMAGE_ASPECT_COLOR_BIT, white_) ||
@@ -208,13 +215,109 @@ bool GeRenderer::create(std::string &error) {
         error = "cannot create the renderer's images";
         return false;
     }
+    load_pipelines();
+    // The translation's HD lettering is made ahead, so the first texture to
+    // use an entry is not late for its first frame.
+    if (translation_pack_ != nullptr)
+        workers().post([pack = translation_pack_, scale = scale_] {
+            const std::uint64_t start = SDL_GetTicksNS();
+            const std::size_t bytes = pack->prepare(scale);
+            if (hitch::enabled())
+                std::fprintf(stderr, "translation lettering: %.1f MB made in %.0f ms\n", static_cast<double>(bytes) / 1e6,
+                             static_cast<double>(SDL_GetTicksNS() - start) / 1e6);
+        });
     return true;
+}
+
+WorkerPool &GeRenderer::workers() {
+    if (!workers_) workers_ = std::make_unique<WorkerPool>();
+    return *workers_;
+}
+
+namespace {
+
+pipeline_store::Key to_store(const auto &key) { return {key.topology, key.blend, key.depth, key.raster, key.stencil}; }
+
+// A recorded state is only trusted with values pipeline() can produce.
+bool plausible(const pipeline_store::Key &key) {
+    const auto [topology, blend, depth, raster, stencil] = key;
+    const auto factor_ok = [](std::uint32_t factor) { return factor <= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA; };
+    return (topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) &&
+           factor_ok((blend >> 1u) & 31u) && factor_ok((blend >> 6u) & 31u) && ((blend >> 11u) & 7u) <= VK_BLEND_OP_MAX &&
+           (blend >> 18u) == 0u && (depth >> 5u) == 0u && (raster >> 4u) == 0u && (raster & 3u) != 3u &&
+           (stencil >> 29u) == 0u && ((stencil >> 4u) & 7u) <= VK_STENCIL_OP_DECREMENT_AND_WRAP &&
+           ((stencil >> 7u) & 7u) <= VK_STENCIL_OP_DECREMENT_AND_WRAP && ((stencil >> 10u) & 7u) <= VK_STENCIL_OP_DECREMENT_AND_WRAP;
+}
+
+} // namespace
+
+void GeRenderer::load_pipelines() {
+    std::vector<std::uint8_t> data;
+    if (!pipeline_directory_.empty()) {
+        data = pipeline_store::read_file(pipeline_directory_ / pipeline_store::kCacheName);
+        if (!pipeline_store::cache_matches(data, vk_.properties)) data.clear();
+    }
+    VkPipelineCacheCreateInfo info{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    info.initialDataSize = data.size();
+    info.pInitialData = data.empty() ? nullptr : data.data();
+    if (vk_.vkCreatePipelineCache(vk_.device, &info, nullptr, &pipeline_cache_) != VK_SUCCESS) {
+        info.initialDataSize = 0u;
+        info.pInitialData = nullptr;
+        if (vk_.vkCreatePipelineCache(vk_.device, &info, nullptr, &pipeline_cache_) != VK_SUCCESS)
+            pipeline_cache_ = VK_NULL_HANDLE;
+    }
+    if (pipeline_directory_.empty()) return;
+    const auto keys = pipeline_store::parse_keys(pipeline_store::read_file(pipeline_directory_ / pipeline_store::kKeysName));
+    if (!keys) return;
+    std::vector<PipelineKey> warm;
+    for (const auto &stored : *keys) {
+        if (!plausible(stored)) continue;
+        const PipelineKey key{stored[0], stored[1], stored[2], stored[3], stored[4]};
+        if (known_keys_.insert(key).second) warm.push_back(key);
+    }
+    if (warm.empty()) return;
+    workers().post([this, warm = std::move(warm)] {
+        for (const auto &key : warm) {
+            if (stop_warming_.load(std::memory_order_relaxed)) return;
+            {
+                const std::lock_guard lock(warm_mutex_);
+                if (warmed_.contains(key)) continue;
+            }
+            const VkPipeline built = create_pipeline(key);
+            const std::lock_guard lock(warm_mutex_);
+            if (!warmed_.emplace(key, built).second) vk_.vkDestroyPipeline(vk_.device, built, nullptr);
+        }
+    });
+}
+
+void GeRenderer::save_pipelines(bool now) {
+    if (pipeline_directory_.empty() || pipeline_cache_ == VK_NULL_HANDLE) return;
+    std::vector<pipeline_store::Key> keys;
+    for (const auto &key : known_keys_) keys.push_back(to_store(key));
+    keys_dirty_ = false;
+    keys_saved_frame_ = frame_;
+    auto save = [&vk = vk_, cache = pipeline_cache_, directory = pipeline_directory_, keys = std::move(keys)] {
+        std::size_t size = 0u;
+        if (vk.vkGetPipelineCacheData(vk.device, cache, &size, nullptr) == VK_SUCCESS && size != 0u) {
+            std::vector<std::uint8_t> data(size);
+            if (vk.vkGetPipelineCacheData(vk.device, cache, &size, data.data()) == VK_SUCCESS) {
+                data.resize(size);
+                pipeline_store::write_file(directory / pipeline_store::kCacheName, data);
+            }
+        }
+        pipeline_store::write_file(directory / pipeline_store::kKeysName, pipeline_store::serialize_keys(keys));
+    };
+    if (now) save();
+    else workers().post(std::move(save));
 }
 
 void GeRenderer::destroy() {
     const auto device = vk_.device;
     if (device == VK_NULL_HANDLE) return;
+    stop_warming_ = true;
+    workers_.reset();
     vk_.vkDeviceWaitIdle(device);
+    if (keys_dirty_) save_pipelines(true);
     for (auto &layer : targets_) {
         for (auto &[address, target] : layer) {
             (void)address;
@@ -240,16 +343,28 @@ void GeRenderer::destroy() {
         (void)key;
         vk_.vkDestroyPipeline(device, pipeline, nullptr);
     }
+    for (auto &[key, pipeline] : warmed_) {
+        (void)key;
+        vk_.vkDestroyPipeline(device, pipeline, nullptr);
+    }
+    pipelines_.clear();
+    warmed_.clear();
+    if (pipeline_cache_ != VK_NULL_HANDLE) vk_.vkDestroyPipelineCache(device, pipeline_cache_, nullptr);
+    pipeline_cache_ = VK_NULL_HANDLE;
     for (auto &[key, sampler] : samplers_) {
         (void)key;
         vk_.vkDestroySampler(device, sampler, nullptr);
     }
     vk_.destroy_image(white_);
     vk_.destroy_image(upload_);
-    vk_.destroy_buffer(vertices_);
-    vk_.destroy_buffer(uniforms_);
-    vk_.destroy_buffer(staging_);
-    vk_.vkDestroyDescriptorPool(device, frame_pool_, nullptr);
+    for (auto &slot : slots_) {
+        vk_.destroy_buffer(slot.vertices);
+        vk_.destroy_buffer(slot.uniforms);
+        vk_.destroy_buffer(slot.staging);
+        vk_.vkDestroyDescriptorPool(device, slot.frame_pool, nullptr);
+        slot = SlotResources{};
+    }
+    vertices_ = uniforms_ = staging_ = Buffer{};
     vk_.vkDestroyDescriptorPool(device, persistent_pool_, nullptr);
     vk_.vkDestroyShaderModule(device, vertex_shader_, nullptr);
     vk_.vkDestroyShaderModule(device, fragment_shader_, nullptr);
@@ -262,18 +377,15 @@ void GeRenderer::destroy() {
 void GeRenderer::begin_frame(VkCommandBuffer commands) {
     commands_ = commands;
     if (trace_ != 0u) --trace_;
-    vertex_cursor_ = uniform_cursor_ = staging_cursor_ = 0u;
-    vk_.vkResetDescriptorPool(vk_.device, frame_pool_, 0u);
-    frame_set_cache_.clear();
-    frame_sets_ = 0u;
+    use_slot();
     pass_target_ = nullptr;
     ++frame_;
-    // The previous frame has completed, so unused textures can go.
+    // Textures unused for a while go, once the GPU is done with them.
     for (auto it = textures_.begin(); it != textures_.end();) {
         if (frame_ - it->second.last_frame > kTextureLifetimeFrames) {
             action_hint_views_.erase(it->second.image.view);
             completion_number_views_.erase(it->second.image.view);
-            vk_.destroy_image(it->second.image);
+            vk_.retire(it->second.image);
             it = textures_.erase(it);
         } else {
             ++it;
@@ -281,9 +393,12 @@ void GeRenderer::begin_frame(VkCommandBuffer commands) {
     }
     std::erase_if(host_textures_, [&](auto &entry) {
         if (frame_ - entry.second.last_frame <= kTextureLifetimeFrames) return false;
-        vk_.destroy_image(entry.second.image);
+        vk_.retire(entry.second.image);
         return true;
     });
+    // New states are saved now and then, not only at exit: a phone may kill
+    // the app without one.
+    if (keys_dirty_ && frame_ - keys_saved_frame_ > 600u) save_pipelines(false);
     if (!white_ready_) {
         const std::uint32_t white = 0xFFFFFFFFu;
         upload(white_, &white, 1u, 1u);
@@ -291,19 +406,37 @@ void GeRenderer::begin_frame(VkCommandBuffer commands) {
     }
 }
 
-void GeRenderer::flush() {
-    end_pass();
-    commands_ = vk_.flush();
+void GeRenderer::use_slot() {
+    auto &slot = slots_[vk_.slot()];
+    vertices_ = slot.vertices;
+    uniforms_ = slot.uniforms;
+    staging_ = slot.staging;
+    frame_pool_ = slot.frame_pool;
+    uniform_set_ = slot.uniform_set;
     vertex_cursor_ = uniform_cursor_ = staging_cursor_ = 0u;
     vk_.vkResetDescriptorPool(vk_.device, frame_pool_, 0u);
     frame_set_cache_.clear();
     frame_sets_ = 0u;
 }
 
+void GeRenderer::flush() {
+    end_pass();
+    resolve_art(true);
+    commands_ = vk_.flush();
+    use_slot();
+}
+
+void GeRenderer::next_slot() {
+    end_pass();
+    resolve_art(true);
+    commands_ = vk_.submit();
+    use_slot();
+}
+
 VkDeviceSize GeRenderer::reserve(Buffer &buffer, VkDeviceSize &cursor, VkDeviceSize bytes, VkDeviceSize alignment) {
     VkDeviceSize offset = (cursor + alignment - 1u) / alignment * alignment;
     if (offset + bytes > buffer.size) {
-        flush();
+        next_slot();
         offset = 0u;
     }
     cursor = offset + bytes;
@@ -423,14 +556,17 @@ void GeRenderer::draw_world_contours() {
 void GeRenderer::upload(Image &image, const std::uint32_t *texels, std::uint32_t width, std::uint32_t height) {
     end_pass();
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4u;
-    // An HD texture can outgrow the per-frame staging buffer: it gets a
+    // An HD texture can outgrow the per-slot staging buffer: it gets a
     // buffer of its own, freed once the copy has run.
     Buffer dedicated;
     const bool oversized = bytes > staging_.size;
     if (oversized && !vk_.create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, dedicated)) return;
     Buffer &source = oversized ? dedicated : staging_;
     const VkDeviceSize offset = oversized ? 0u : reserve(staging_, staging_cursor_, bytes, 16u);
-    std::memcpy(static_cast<std::uint8_t *>(source.mapped) + offset, texels, bytes);
+    {
+        hitch::Timer timer(hitch::kUpload);
+        std::memcpy(static_cast<std::uint8_t *>(source.mapped) + offset, texels, bytes);
+    }
     vk_.transition(commands_, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     VkBufferImageCopy copy{};
@@ -440,10 +576,7 @@ void GeRenderer::upload(Image &image, const std::uint32_t *texels, std::uint32_t
     vk_.vkCmdCopyBufferToImage(commands_, source.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &copy);
     vk_.transition(commands_, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    if (oversized) {
-        flush();
-        vk_.destroy_buffer(dedicated);
-    }
+    if (oversized) vk_.retire(dedicated);
 }
 
 VkSampler GeRenderer::sampler(const gpu::TextureState &texture) {
@@ -472,6 +605,7 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
             found->second.last_frame = frame_;
             return found->second.image.view;
         }
+        hitch::Timer timer(hitch::kHost);
         const auto image = translation_pack_->host_image(texture.address, scale_);
         const auto &pixels = image.rgba;
         if (!pixels.empty()) {
@@ -495,7 +629,11 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
     if (const auto found = game.find(canonical(texture.address)); found != game.end() &&
         found->first != canonical(call.target.color_address))
         return sample_target(*found->second, texture, u_scale, v_scale);
-    const std::uint64_t source_key = gpu::texture_key(memory, texture);
+    std::uint64_t source_key;
+    {
+        hitch::Timer timer(hitch::kHash);
+        source_key = gpu::texture_key(memory, texture);
+    }
     const auto known_prompt = prompt_atlases_.find(source_key);
     const auto prompt_revision = button_prompts_ ? button_prompts_->revision() * 0x9e3779b97f4a7c15ull : 0ull;
     std::uint64_t key = source_key ^ (known_prompt != prompt_atlases_.end() ? prompt_revision : 0ull);
@@ -503,89 +641,288 @@ VkImageView GeRenderer::texture_view(const psprecomp::GuestMemory &memory, const
         found->second.last_frame = frame_;
         return found->second.image.view;
     }
+    hitch::Timer miss_timer(hitch::kMiss);
     std::vector<std::uint32_t> texels;
-    if (!gpu::decode_texture(memory, texture, texels) || texels.size() < static_cast<std::size_t>(texture.width) * texture.height)
-        return VK_NULL_HANDLE;
-    const unsigned prompt_atlas = button_prompts_ ? (known_prompt != prompt_atlases_.end()
-        ? known_prompt->second : ButtonPrompts::identify(texture, texels)) : 0;
+    {
+        hitch::Timer timer(hitch::kDecode);
+        if (!gpu::decode_texture(memory, texture, texels) || texels.size() < static_cast<std::size_t>(texture.width) * texture.height)
+            return VK_NULL_HANDLE;
+    }
+    // What the texture becomes is decided here (hashes only: the hardware
+    // SHA-256 makes them cheap), so its image has its final size from the
+    // start; the costly part, the art itself, is made on a worker.
+    unsigned prompt_atlas = 0u;
+    if (button_prompts_ != nullptr) {
+        hitch::Timer timer(hitch::kPrompt);
+        prompt_atlas = known_prompt != prompt_atlases_.end() ? known_prompt->second : ButtonPrompts::identify(texture, texels);
+    }
     if (prompt_atlas) {
         prompt_atlases_[source_key] = prompt_atlas;
         key = source_key ^ prompt_revision;
     }
-    std::uint32_t width = texture.width, height = texture.height;
-    // Dumps and HD art identify the texture as the game drew it, before any
+    auto job = std::make_shared<TextureJob>();
+    job->texture = texture;
+    // Whether the texture is translated is settled here (one hash, of a
+    // texture with a translated one's layout): its image gets the
+    // lettering's size, and the frame's end waits for the lettering, so text
+    // never shows untranslated. Whether it has HD art takes a hash of every
+    // texture of a size the pack has images for (most have none), so that is
+    // settled on the worker; meanwhile the texture keeps its own size, and
+    // resolve_art() gives it an image of the art's size once there is art.
+    const std::uint32_t logical_width =
+        texture.buffer_width != 0u && texture.buffer_width < texture.width ? texture.buffer_width : texture.width;
+    job->look_hd = hd_pack_ != nullptr && hd_pack_->may_contain(logical_width, texture.height);
+    bool completion_numbers = false;
+    std::uint32_t translation_scale = 0u;
+    if (translation_pack_ != nullptr && translation_pack_->possible_scale(texture, scale_) != 0u) {
+        hitch::Timer timer(hitch::kHash);
+        translation_scale = translation_pack_->scaled_match(texture, texels, scale_);
+        if (translation_scale && texture.width == 512 && texture.height == 128 && texture.buffer_width == 480) {
+            // The gold atlas's translated digits are placed differently (see
+            // draw_into). Ignore the unused power-of-two padding, which can
+            // change as other assets are loaded beside the 480x96 atlas.
+            auto logical = texture;
+            logical.height = 96;
+            completion_numbers = gpu::identify_texture(logical, texels).hash == "48109b51873459127a82bcca79469cd0";
+        }
+    }
+    job->wait = translation_scale != 0u;
+    const std::uint32_t guess = translation_scale != 0u ? translation_scale : job->look_hd ? 1u : 0u;
+    if (texture_dump_ != nullptr) {
+        // Identified and written on a worker.
+        hitch::Timer timer(hitch::kJob);
+        workers().post([dump = texture_dump_, texture, texels] {
+            dump->record(texture, gpu::identify_texture(texture, texels), texels);
+        });
+    }
+    Texture entry;
+    entry.last_frame = frame_;
+    if (guess != 0u) {
+        job->prompt_atlas = prompt_atlas;
+        const unsigned final_scale = prompt_atlas && prompt_atlas != 4u ? prompt_scale(guess) : guess;
+        job->texels = std::move(texels);
+        if (!vk_.create_image(texture.width * final_scale, texture.height * final_scale, kColorFormat,
+                              VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
+                              entry.image))
+            return VK_NULL_HANDLE;
+        if (prompt_atlas == 4u) action_hint_views_.insert(entry.image.view);
+        hitch::Timer timer(hitch::kJob);
+        job->queued_ns = SDL_GetTicksNS();
+        entry.job = job;
+        pending_.push_back(key);
+        workers().post([job, hd = hd_pack_, translation = translation_pack_, scale = scale_, signal = job_signal_] {
+            job->started_ns = SDL_GetTicksNS();
+            build_art(*job, hd, translation, scale);
+            job->done.store(true, std::memory_order_release);
+            { const std::lock_guard lock(signal->mutex); }
+            signal->finished.notify_all();
+        });
+    } else {
+        std::uint32_t width = texture.width, height = texture.height;
+        if (!make_image(entry, texels, width, height, texture.width, prompt_atlas)) return VK_NULL_HANDLE;
+    }
+    const VkImageView view = entry.image.view;
+    if (translation_scale && completion_numbers) completion_number_views_.insert(view);
+    textures_.emplace(key, std::move(entry));
+    return view;
+}
+
+void GeRenderer::build_art(TextureJob &job, const textures::HdTexturePack *hd_pack,
+                           const translation::TexturePack *translation_pack, std::uint32_t scale) {
+    const auto &texture = job.texture;
+    const auto &texels = job.texels;
+    // HD art identifies the texture as the game drew it, before any
     // translation, so a translated menu's art comes from the original's HD
     // image and the translation letters its authored regions over it.
-    gpu::TextureIdentity identity;
     std::optional<std::vector<std::uint32_t>> hd;
-    bool completion_numbers = false;
-    if (translation_pack_ != nullptr && texture.width == 512 && texture.height == 128 && texture.buffer_width == 480) {
-        // Ignore the unused power-of-two padding, which can change as other
-        // assets are loaded beside the 480x96 gold atlas.
-        auto logical = texture;
-        logical.height = 96;
-        completion_numbers = gpu::identify_texture(logical, texels).hash == "48109b51873459127a82bcca79469cd0";
+    if (job.look_hd && hd_pack != nullptr) {
+        job.identity = gpu::identify_texture(texture, texels);
+        hd = hd_pack->find(job.identity);
     }
-    if (hd_pack_ != nullptr || texture_dump_ != nullptr) {
-        identity = gpu::identify_texture(texture, texels);
-        if (texture_dump_ != nullptr) texture_dump_->record(texture, identity, texels);
-        if (hd_pack_ != nullptr) hd = hd_pack_->find(identity);
-    }
+    const auto &identity = job.identity;
+    std::vector<std::uint32_t> art = texels;
     const translation::TexturePack::BaseArt base{hd ? std::span<const std::uint32_t>(*hd) : std::span<const std::uint32_t>(),
-                                                  identity.width, identity.height, hd ? hd_pack_->scale() : 0u};
-    const auto translation_scale = translation_pack_ != nullptr
-        ? translation_pack_->apply_scaled(texture, texels, scale_, hd ? &base : nullptr) : 0u;
+                                                  identity.width, identity.height, hd ? hd_pack->scale() : 0u};
+    const std::uint32_t translation_scale = translation_pack != nullptr
+        ? translation_pack->apply_scaled(texture, art, scale, hd ? &base : nullptr) : 0u;
     if (translation_scale) {
-        width *= translation_scale;
-        height *= translation_scale;
+        job.width = texture.width * translation_scale;
+        job.height = texture.height * translation_scale;
     } else if (hd) {
         // The UVs are normalized, so the larger image samples in place
         // of the original. Columns past the logical width (a row
         // stride narrower than the GE extent) keep the original texels.
-        const std::uint32_t scale = hd_pack_->scale();
-        width = texture.width * scale;
-        height = texture.height * scale;
-        const std::uint32_t hd_width = identity.width * scale;
-        std::vector<std::uint32_t> scaled(static_cast<std::size_t>(width) * height);
-        for (std::uint32_t y = 0; y < height; ++y)
-            for (std::uint32_t x = 0; x < width; ++x)
-                scaled[static_cast<std::size_t>(y) * width + x] =
-                    x < hd_width ? (*hd)[static_cast<std::size_t>(y) * hd_width + x]
-                                 : texels[static_cast<std::size_t>(y / scale) * texture.width + x / scale];
-        texels = std::move(scaled);
-    }
-    if (prompt_atlas && prompt_atlas != 4) {
-        // Host glyphs need their own resolution even without a translation or
-        // HD pack. Keep normalized UVs and nearest-scale the surrounding art.
-        const unsigned current_scale = width / texture.width;
-        const unsigned prompt_scale = std::max({4u, scale_, current_scale});
-        if (prompt_scale > current_scale) {
-            const unsigned new_width = texture.width * prompt_scale;
-            const unsigned new_height = texture.height * prompt_scale;
-            std::vector<std::uint32_t> scaled(static_cast<std::size_t>(new_width) * new_height);
-            for (unsigned y = 0; y < new_height; ++y)
-                for (unsigned x = 0; x < new_width; ++x)
-                    scaled[static_cast<std::size_t>(y) * new_width + x] =
-                        texels[static_cast<std::size_t>(y * current_scale / prompt_scale) * width +
-                               x * current_scale / prompt_scale];
-            texels = std::move(scaled);
-            width = new_width;
-            height = new_height;
+        const std::uint32_t hd_scale = hd_pack->scale();
+        job.width = texture.width * hd_scale;
+        job.height = texture.height * hd_scale;
+        const std::uint32_t hd_width = identity.width * hd_scale;
+        art.assign(static_cast<std::size_t>(job.width) * job.height, 0u);
+        for (std::uint32_t y = 0; y < job.height; ++y) {
+            std::uint32_t *out = art.data() + static_cast<std::size_t>(y) * job.width;
+            std::copy_n(hd->data() + static_cast<std::size_t>(y) * hd_width, hd_width, out);
+            const std::uint32_t *row = texels.data() + static_cast<std::size_t>(y / hd_scale) * texture.width;
+            for (std::uint32_t x = hd_width; x < job.width; ++x) out[x] = row[x / hd_scale];
         }
-        button_prompts_->apply(prompt_atlas, texels, width, prompt_scale);
+    } else {
+        art.clear();
     }
-    Texture entry;
+    job.art = std::move(art);
+}
+
+void GeRenderer::resolve_art(bool wait) {
+    if (pending_.empty()) return;
+    const std::uint64_t now = SDL_GetTicksNS();
+    std::erase_if(pending_, [&](std::uint64_t key) {
+        const auto found = textures_.find(key);
+        if (found == textures_.end() || !found->second.job) return true;
+        Texture &entry = found->second;
+        TextureJob &job = *entry.job;
+        // A job queued this frame gets until kArtLatencyNs after it was
+        // queued, but the frame's end waits at most kArtWaitNs.
+        if (wait && job.wait && !entry.filled && !job.done.load(std::memory_order_acquire)) {
+            const std::uint64_t until = std::min(job.queued_ns + kArtLatencyNs, now + kArtWaitNs);
+            const std::uint64_t current = SDL_GetTicksNS();
+            if (until > current) {
+                hitch::Timer timer(hitch::kArtWait);
+                std::unique_lock lock(job_signal_->mutex);
+                job_signal_->finished.wait_until(
+                    lock, std::chrono::steady_clock::now() + std::chrono::nanoseconds(until - current),
+                    [&] { return job.done.load(std::memory_order_acquire); });
+            }
+        }
+        if (job.done.load(std::memory_order_acquire)) {
+            fill_art(entry, job, false);
+            entry.job.reset();
+            return true;
+        }
+        if (!entry.filled) {
+            if (hitch::enabled() && job.wait)
+                std::fprintf(stderr, "  art late: %ux%u%s translation?, queued %.1f ms ago, %s\n", job.texture.width,
+                             job.texture.height, job.look_hd ? " hd?" : "",
+                             static_cast<double>(SDL_GetTicksNS() - job.queued_ns) / 1e6,
+                             job.started_ns != 0u ? "running" : "not started");
+            fill_art(entry, job, true);
+            entry.filled = true;
+        }
+        return false;
+    });
+}
+
+VkBuffer GeRenderer::stage(const void *data, VkDeviceSize bytes, VkDeviceSize &offset) {
+    offset = (staging_cursor_ + 15u) & ~VkDeviceSize{15u};
+    VkBuffer buffer = staging_.buffer;
+    void *mapped = staging_.mapped;
+    if (offset + bytes <= staging_.size) {
+        staging_cursor_ = offset + bytes;
+    } else {
+        Buffer dedicated;
+        if (!vk_.create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, dedicated)) return VK_NULL_HANDLE;
+        buffer = dedicated.buffer;
+        mapped = dedicated.mapped;
+        offset = 0u;
+        vk_.retire(dedicated);  // freed with the slot, after the copy has run
+    }
+    hitch::Timer timer(hitch::kUpload);
+    std::memcpy(static_cast<std::uint8_t *>(mapped) + offset, data, bytes);
+    return buffer;
+}
+
+void GeRenderer::upload_before(Image &image, std::span<const std::uint32_t> texels) {
+    VkDeviceSize offset = 0u;
+    const VkBuffer buffer = stage(texels.data(), texels.size_bytes(), offset);
+    if (buffer == VK_NULL_HANDLE) return;
+    const VkCommandBuffer commands = vk_.prologue();
+    // Whatever the image held is replaced whole.
+    vk_.transition(commands, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkBufferImageCopy copy{};
+    copy.bufferOffset = offset;
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+    copy.imageExtent = {image.width, image.height, 1u};
+    vk_.vkCmdCopyBufferToImage(commands, buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &copy);
+    vk_.transition(commands, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+void GeRenderer::fill_before(Image &image, std::span<const std::uint32_t> texels, std::uint32_t width, std::uint32_t height) {
+    Image small;
+    if (!vk_.create_image(width, height, kColorFormat, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                          VK_IMAGE_ASPECT_COLOR_BIT, small))
+        return;
+    upload_before(small, texels);
+    const VkCommandBuffer commands = vk_.prologue();
+    vk_.transition(commands, small.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    vk_.transition(commands, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkImageBlit blit{};
+    blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+    blit.srcOffsets[1] = {static_cast<std::int32_t>(width), static_cast<std::int32_t>(height), 1};
+    blit.dstOffsets[1] = {static_cast<std::int32_t>(image.width), static_cast<std::int32_t>(image.height), 1};
+    vk_.vkCmdBlitImage(commands, small.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &blit, VK_FILTER_NEAREST);
+    vk_.transition(commands, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    vk_.retire(small);
+}
+
+void GeRenderer::fill_art(Texture &entry, TextureJob &job, bool late) {
+    const bool art = !late && !job.art.empty();
+    const std::uint32_t texture_width = job.texture.width;
+    std::vector<std::uint32_t> texels = art ? std::move(job.art) : job.texels;
+    std::uint32_t width = art ? job.width : texture_width, height = art ? job.height : job.texture.height;
+    if (job.prompt_atlas && job.prompt_atlas != 4u)
+        letter_prompts(texels, width, height, texture_width, job.prompt_atlas, prompt_scale(width / texture_width));
+    if (width == entry.image.width && height == entry.image.height) {
+        upload_before(entry.image, texels);
+        return;
+    }
+    // Draws this frame already use the image: it gets the result fitted.
+    fill_before(entry.image, texels, width, height);
+    if (late) return;
+    Image fitted;
+    if (!vk_.create_image(width, height, kColorFormat, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                          VK_IMAGE_ASPECT_COLOR_BIT, fitted))
+        return;
+    upload_before(fitted, texels);
+    if (action_hint_views_.erase(entry.image.view) != 0u) action_hint_views_.insert(fitted.view);
+    if (completion_number_views_.erase(entry.image.view) != 0u) completion_number_views_.insert(fitted.view);
+    vk_.retire(entry.image);
+    entry.image = fitted;
+}
+
+void GeRenderer::letter_prompts(std::vector<std::uint32_t> &texels, std::uint32_t &width, std::uint32_t &height,
+                                std::uint32_t texture_width, unsigned prompt_atlas, unsigned prompt_scale) {
+    hitch::Timer timer(hitch::kPrompt);
+    // Host glyphs need their own resolution even without a translation or HD
+    // pack. Keep normalized UVs and nearest-scale the surrounding art.
+    const unsigned texture_height = height * texture_width / width;
+    const unsigned current_scale = width / texture_width;
+    if (prompt_scale > current_scale) {
+        const unsigned new_width = texture_width * prompt_scale;
+        const unsigned new_height = texture_height * prompt_scale;
+        std::vector<std::uint32_t> scaled(static_cast<std::size_t>(new_width) * new_height);
+        for (unsigned y = 0; y < new_height; ++y)
+            for (unsigned x = 0; x < new_width; ++x)
+                scaled[static_cast<std::size_t>(y) * new_width + x] =
+                    texels[static_cast<std::size_t>(y * current_scale / prompt_scale) * width + x * current_scale / prompt_scale];
+        texels = std::move(scaled);
+        width = new_width;
+        height = new_height;
+    }
+    button_prompts_->apply(prompt_atlas, texels, width, prompt_scale);
+}
+
+bool GeRenderer::make_image(Texture &entry, std::vector<std::uint32_t> &texels, std::uint32_t &width,
+                            std::uint32_t &height, std::uint32_t texture_width, unsigned prompt_atlas) {
+    if (prompt_atlas && prompt_atlas != 4u)
+        letter_prompts(texels, width, height, texture_width, prompt_atlas, prompt_scale(width / texture_width));
     if (!vk_.create_image(width, height, kColorFormat,
                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, entry.image))
-        return VK_NULL_HANDLE;
+        return false;
     upload(entry.image, texels.data(), width, height);
-    entry.last_frame = frame_;
-    const VkImageView view = entry.image.view;
-    if (prompt_atlas == 4) action_hint_views_.insert(view);
-    if (translation_scale && completion_numbers)
-        completion_number_views_.insert(view);
-    textures_.emplace(key, std::move(entry));
-    return view;
+    if (prompt_atlas == 4u) action_hint_views_.insert(entry.image.view);
+    return true;
 }
 
 VkImageView GeRenderer::sample_target(Target &source, const gpu::TextureState &texture, float &u_scale, float &v_scale) {
@@ -624,6 +961,23 @@ VkDescriptorSet GeRenderer::texture_set(VkImageView view, VkSampler sampler) {
 
 VkPipeline GeRenderer::pipeline(const PipelineKey &key) {
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) return found->second;
+    {
+        const std::lock_guard lock(warm_mutex_);
+        if (const auto found = warmed_.find(key); found != warmed_.end()) {
+            const VkPipeline warmed = found->second;
+            warmed_.erase(found);
+            pipelines_.emplace(key, warmed);
+            return warmed;
+        }
+    }
+    hitch::Timer timer(hitch::kPipeline);
+    const VkPipeline built = create_pipeline(key);
+    pipelines_.emplace(key, built);
+    if (known_keys_.insert(key).second) keys_dirty_ = true;
+    return built;
+}
+
+VkPipeline GeRenderer::create_pipeline(const PipelineKey &key) const {
     VkPipelineShaderStageCreateInfo stages[2]{};
     const VkBool32 alpha_test = (key.raster & 8u) != 0u ? VK_TRUE : VK_FALSE;
     VkSpecializationMapEntry entry{0u, 0u, sizeof(VkBool32)};
@@ -697,17 +1051,18 @@ VkPipeline GeRenderer::pipeline(const PipelineKey &key) {
     info.layout = pipeline_layout_;
     info.renderPass = render_pass_;
     VkPipeline pipeline = VK_NULL_HANDLE;
-    vk_.vkCreateGraphicsPipelines(vk_.device, VK_NULL_HANDLE, 1u, &info, nullptr, &pipeline);
-    pipelines_.emplace(key, pipeline);
+    vk_.vkCreateGraphicsPipelines(vk_.device, pipeline_cache_, 1u, &info, nullptr, &pipeline);
     return pipeline;
 }
 
 void GeRenderer::draw(const psprecomp::GuestMemory &memory, const gpu::DrawCall &call) {
+    hitch::Timer timer(hitch::kDraw);
     last_game_texture_.valid = false;
     draw_into(kGame, &memory, call, nullptr);
 }
 
 void GeRenderer::queue_interpolated(const psprecomp::GuestMemory &memory, std::span<const gpu::DrawCall> calls) {
+    hitch::Timer timer(hitch::kDraw);
     if (calls.empty() || calls.front().vertices.empty() || calls.front().primitive == gpu::PrimitiveType::Points) return;
     // Every picture's draw samples the same texture: it is looked up once.
     const gpu::DrawCall &call = calls.front();
@@ -738,6 +1093,7 @@ void GeRenderer::queue_interpolated(const psprecomp::GuestMemory &memory, std::s
 }
 
 void GeRenderer::draw_interpolated() {
+    hitch::Timer timer(hitch::kDraw);
     for (std::size_t picture = 0; picture < kMaxPictures; ++picture) {
         auto &queue = queued_[picture];
         for (std::size_t i = 0; i < queued_count_[picture]; ++i)
@@ -927,13 +1283,13 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
     const bool outline = cel_shading_ == 2u && gpu::geometry_outline(call);
     const bool skinned = ((call.vertex_type >> 9u) & 3u) != 0u;
 
-    // Per-frame space for everything the draw needs, flushing once if short.
+    // Per-slot space for everything the draw needs, moving on once if short.
     const VkDeviceSize uniform_alignment = std::max<VkDeviceSize>(vk_.properties.limits.minUniformBufferOffsetAlignment, 16u);
     const VkDeviceSize vertex_bytes = out.size() * sizeof(GpuVertex);
     const VkDeviceSize uniform_bytes = 2u * (std::max<VkDeviceSize>(sizeof(EnvironmentBlock), sizeof(ObjectBlock)) + uniform_alignment);
     if (vertex_cursor_ + vertex_bytes > vertices_.size || uniform_cursor_ + uniform_bytes > uniforms_.size ||
         frame_sets_ >= kFrameSets)
-        flush();
+        next_slot();
     const VkDeviceSize vertex_offset = reserve(vertices_, vertex_cursor_, vertex_bytes, sizeof(float));
     std::memcpy(static_cast<std::uint8_t *>(vertices_.mapped) + vertex_offset, out.data(), vertex_bytes);
 
@@ -1168,7 +1524,10 @@ void GeRenderer::draw_into(std::size_t layer, const psprecomp::GuestMemory *memo
 
 const Image *GeRenderer::presentable(const psprecomp::GuestMemory &memory, const display::Display::Framebuffer &framebuffer,
                                      std::uint32_t &width, std::uint32_t &height, std::size_t picture) {
+    hitch::Timer frame_end_timer(hitch::kFrameEnd);
     end_pass();
+    // The frame is about to be submitted (VulkanContext::end_frame).
+    resolve_art(true);
     if (framebuffer.address == 0u) return nullptr;
     auto *layer = &targets_[kGame];
     if (picture != 0u && picture <= kMaxPictures && targets_[kInterpolated + picture - 1u].contains(canonical(framebuffer.address)))
