@@ -99,7 +99,8 @@ void rows() {
     require(step_value(steps, 25, 1) == 30 && step_value(steps, 25, -1) == 20, "off-step value not snapped");
     require(step_value(steps, 75, 1) == 0 && step_value(steps, -5, -1) == 60, "out-of-range value not wrapped");
 
-    Settings settings = sarusaru::shell::default_settings();
+    // From Modern's defaults (on every platform: Android and Linux ARM start on Modern Low).
+    Settings settings = sarusaru::shell::default_settings(false);
     settings.internal_resolution = 8;
     step(SettingRow::InternalResolution, settings, 1);
     require(settings.internal_resolution == 1, "resolution did not wrap up");
@@ -311,18 +312,25 @@ void rows() {
 void presets() {
     using namespace sarusaru::ui;
     using sarusaru::shell::Settings;
-    Settings settings = sarusaru::shell::default_settings();
+    Settings settings = sarusaru::shell::default_settings(false);
     // The defaults are Modern without its downloads: Modern once a build offers neither.
     require(preset_of(settings) == Preset::Custom, "the defaults are Modern before its downloads");
     set_offered_downloads(false, false);
     require(preset_of(settings) == Preset::Modern, "the defaults are not Modern when nothing is offered to download");
+    // Android's and Linux ARM's are Modern Low's, the same way.
+    require(preset_of(sarusaru::shell::default_settings(true)) == Preset::ModernLow,
+            "the Modern Low defaults are not Modern Low when nothing is offered to download");
+    set_offered_downloads(true, true);
+    require(preset_of(sarusaru::shell::default_settings(true)) == Preset::Custom,
+            "the Modern Low defaults are Modern Low before its downloads");
+    set_offered_downloads(false, false);
     set_offered_downloads(true, false);
     settings.translation_language = "en";
     require(preset_of(settings) == Preset::Modern, "Modern without an HD offer still asks for HD textures");
     settings.texture_pack = "/data/textures/4x-0123456789abcdef";
     require(preset_of(settings) == Preset::Custom, "an HD pack the build does not offer reads as Modern");
     set_offered_downloads(true, true);
-    settings = sarusaru::shell::default_settings();
+    settings = sarusaru::shell::default_settings(false);
     require(next_preset(Preset::Custom, 1) == Preset::Native && next_preset(Preset::Custom, -1) == Preset::Modern &&
                 next_preset(Preset::Native, 1) == Preset::ModernLow && next_preset(Preset::ModernLow, 1) == Preset::Modern &&
                 next_preset(Preset::Modern, 1) == Preset::Native && next_preset(Preset::Native, -1) == Preset::Modern &&
@@ -390,7 +398,7 @@ void presets() {
     // Its textures are the 4x pack, which the launcher turns on (continue_preset).
     settings.texture_pack = "/data/textures/4x-prebuilt-0123456789abcdef";
     require(preset_of(settings) == Preset::Modern, "Modern with the 4x pack not recognised after Modern Low");
-    settings = sarusaru::shell::default_settings();
+    settings = sarusaru::shell::default_settings(false);
     apply_preset(settings, Preset::Native);
     apply_preset(settings, Preset::Modern);
     require(settings.internal_resolution == kModernResolution && settings.draw_distance == kModernDrawDistance &&

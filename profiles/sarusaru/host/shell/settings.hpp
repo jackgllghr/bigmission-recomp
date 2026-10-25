@@ -122,7 +122,9 @@ struct Settings {
 // Whether `frame_rate` asks for 60 or 120 FPS motion (interpolated in-between pictures).
 [[nodiscard]] constexpr bool interpolates(const Settings &settings) { return interpolated_pictures(settings) != 0u; }
 
-[[nodiscard]] Settings default_settings();
+// A new settings file's values: Modern's rows that need no download, or
+// Modern Low's (the default on Android and Linux ARM). Tests ask for either.
+[[nodiscard]] Settings default_settings(bool modern_low = kModernLowByDefault);
 // Partial files inherit defaults. Unknown/duplicate keys and invalid bindings throw.
 // An earlier version's quit binding becomes the menu's, unless the file binds menu too
 // or unbinds quit (the overlay's Quit game replaced it).

@@ -78,16 +78,17 @@ int main() {
     require(!inherited.modern_downloads_pending, "an earlier file was offered Modern's downloads");
     inherited.modern_downloads_pending = true;
     require(inherited == defaults, "defaults not inherited");
-    // Modern's rows that need no download, or Modern Low's on Android and Linux ARM.
-    if (kModernLowByDefault)
-        require(defaults.internal_resolution == 2u && defaults.draw_distance == 2.0f && defaults.fov_degrees == 45.0f &&
-                    defaults.frame_rate == 0u && defaults.skip_intro_logos && defaults.translation_language == "ja" &&
-                    defaults.texture_pack.empty(),
-                "defaults are not Modern Low's rows that need no download");
-    else
-        require(defaults.internal_resolution == 4u && defaults.draw_distance == 8.0f && defaults.skip_intro_logos &&
-                    defaults.translation_language == "ja" && defaults.texture_pack.empty(),
-                "defaults are not Modern's rows that need no download");
+    // Modern's rows that need no download, or Modern Low's on Android and Linux ARM;
+    // both are checked on every platform.
+    require(defaults == default_settings(kModernLowByDefault), "the platform's defaults are not its preset's");
+    const Settings modern = default_settings(false), modern_low = default_settings(true);
+    require(modern.internal_resolution == 4u && modern.draw_distance == 8.0f && modern.skip_intro_logos &&
+                modern.translation_language == "ja" && modern.texture_pack.empty(),
+            "defaults are not Modern's rows that need no download");
+    require(modern_low.internal_resolution == 2u && modern_low.draw_distance == 2.0f && modern_low.fov_degrees == 45.0f &&
+                modern_low.frame_rate == 0u && modern_low.skip_intro_logos && modern_low.translation_language == "ja" &&
+                modern_low.texture_pack.empty() && modern_low.controls == modern.controls,
+            "defaults are not Modern Low's rows that need no download");
     const auto offered = parse_settings("[game]\nmodern_downloads = 0\n");
     require(!offered.modern_downloads_pending && parse_settings(serialize_settings(offered)) == offered,
             "modern_downloads does not round-trip");
