@@ -165,7 +165,7 @@ std::filesystem::path decode_path(std::string_view text) {
 }
 } // namespace
 
-Settings default_settings() {
+Settings default_settings(bool modern_low) {
     Settings settings;
     const char *keys[] = {"Up", "Down", "Left", "Right", "Z", "X", "A", "S", "Q", "W", "Return", "Backspace",
                           "J", "L", "I", "K", "Tab", "Escape", "Keypad 4", "Keypad 6", "Keypad 8", "Keypad 2", "Keypad 5", "F5", "F8"};
@@ -177,7 +177,7 @@ Settings default_settings() {
         settings.controls.keyboard[i] = bindings(keys[i], true);
         settings.controls.gamepad[i] = bindings(pads[i], false);
     }
-    if (kModernLowByDefault) {
+    if (modern_low) {
         // The Modern Low preset's (ui/settings_rows.hpp: apply_preset).
         settings.internal_resolution = 2u;
         settings.draw_distance = 2.0f;
