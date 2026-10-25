@@ -47,9 +47,12 @@ struct UpscalerSource {
 // The prebuilt HD pack this build offers, or nothing if it was configured
 // without one. When there is one, it is the HD (4x) choice in place of
 // making that pack on the device.
-[[nodiscard]] std::optional<PackSource> prebuilt_pack_source();
-// <user data>/textures/4x-prebuilt-<first 16 digits of the zip's SHA-256>.
-[[nodiscard]] std::optional<std::filesystem::path> prebuilt_pack_directory(const PackSource &pack);
+// The prebuilt pack this build offers at `scale` (2, 3 or 4), or nothing.
+[[nodiscard]] std::optional<PackSource> prebuilt_pack_source(std::uint32_t scale = 4u);
+// <user data>/textures/<scale>x-prebuilt-<first 16 digits of the zip's SHA-256>.
+[[nodiscard]] std::optional<std::filesystem::path> prebuilt_pack_directory(const PackSource &pack, std::uint32_t scale = 4u);
+// The scale of a prebuilt pack installed at `directory` (from its name), or 0.
+[[nodiscard]] std::uint32_t prebuilt_pack_scale(const std::filesystem::path &directory);
 
 enum class TexturePackState {
     Missing,    // never made (or cut short)

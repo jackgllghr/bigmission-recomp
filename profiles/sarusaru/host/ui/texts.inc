@@ -109,8 +109,8 @@ X(DescPresetNative,
   "The game as the PSP drew it: original resolution, textures, field of view and frame rate, Japanese text, native draw distance and aiming, and the intro logos.",
   "PSPと同じ見た目です。元の解像度・テクスチャ・視野角・フレームレート、日本語の文章、標準の描画距離と照準感度で、オープニングのロゴも表示します。")
 X(DescPresetModernLow,
-  "For slower devices: 1080p rendering, HD textures, English game text, a 45° field of view, twice the draw distance, the original frame rate, 150% aiming sensitivity and no intro logos. Downloads the textures and English the first time.",
-  "軽めの設定です。1080pで描画し、HDテクスチャ・英語の文章・視野角45°・2倍の描画距離・元のフレームレート・照準感度150%を使い、オープニングのロゴを飛ばします。はじめて選んだときにテクスチャと英語をダウンロードします。")
+  "For phones and other slower devices: 544p rendering, 3× textures, English game text, a 45° field of view, twice the draw distance, the original frame rate, 150% aiming sensitivity and no intro logos. Downloads the textures and English the first time.",
+  "スマートフォンなど処理の遅い機器向けの設定です。544pで描画し、3×テクスチャ・英語の文章・視野角45°・2倍の描画距離・元のフレームレート・照準感度150%を使い、オープニングのロゴを飛ばします。はじめて選んだときにテクスチャと英語をダウンロードします。")
 X(DescPresetModern,
   "1080p rendering, HD textures, English game text, the farthest draw distance, 150% aiming sensitivity and no intro logos. Downloads the textures and English the first time.",
   "1080pで描画し、HDテクスチャ・英語の文章・最大の描画距離・照準感度150%を使い、オープニングのロゴを飛ばします。はじめて選んだときにテクスチャと英語をダウンロードします。")
@@ -163,6 +163,8 @@ X(DescSubtitles, "English subtitles over the cutscene movies, for the movies tha
 
 X(RowTextures, "Textures", "テクスチャ")
 X(ValueTexturesOriginal, "Original", "オリジナル")
+X(ValueTextures2x, "2×", "2×")
+X(ValueTextures3x, "3×", "3×")
 X(ValueTexturesHd, "HD (4×)", "HD（4×）")
 X(ValueTextures4k, "4K (8×)", "4K（8×）")
 X(ValueTexturesCustom, "Custom pack", "カスタムパック")

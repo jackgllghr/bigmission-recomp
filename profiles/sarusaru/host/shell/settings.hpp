@@ -54,6 +54,14 @@ struct PromptAppearance { bool gamepad; SDL_GamepadType type; };
     return {gamepad, detected};
 }
 
+// Android and Linux on ARM (single-board computers, handhelds) start on the
+// Modern Low preset, everything else on Modern (ui/settings_rows.hpp).
+#if defined(__ANDROID__) || (defined(__linux__) && defined(__aarch64__))
+inline constexpr bool kModernLowByDefault = true;
+#else
+inline constexpr bool kModernLowByDefault = false;
+#endif
+
 struct Settings {
     std::string translation_language{"ja"};
     // Relative paths resolve beside the selected settings file.
@@ -63,7 +71,8 @@ struct Settings {
     bool subtitles{true};
     // The defaults are the Modern preset's (ui/settings_rows.hpp): 4x, 8x draw
     // distance and no intro logos; its English and HD textures are offered
-    // on the first Play (modern_downloads_pending).
+    // on the first Play (modern_downloads_pending). Where kModernLowByDefault,
+    // default_settings() gives Modern Low's instead.
     std::uint32_t internal_resolution{4};
     // 0 = original, 1 = banded, 2 = banded with black world and character silhouettes.
     std::uint32_t cel_shading{0};

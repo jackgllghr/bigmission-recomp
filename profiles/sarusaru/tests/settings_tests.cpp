@@ -78,9 +78,16 @@ int main() {
     require(!inherited.modern_downloads_pending, "an earlier file was offered Modern's downloads");
     inherited.modern_downloads_pending = true;
     require(inherited == defaults, "defaults not inherited");
-    require(defaults.internal_resolution == 4u && defaults.draw_distance == 8.0f && defaults.skip_intro_logos &&
-                defaults.translation_language == "ja" && defaults.texture_pack.empty(),
-            "defaults are not Modern's rows that need no download");
+    // Modern's rows that need no download, or Modern Low's on Android and Linux ARM.
+    if (kModernLowByDefault)
+        require(defaults.internal_resolution == 2u && defaults.draw_distance == 2.0f && defaults.fov_degrees == 45.0f &&
+                    defaults.frame_rate == 0u && defaults.skip_intro_logos && defaults.translation_language == "ja" &&
+                    defaults.texture_pack.empty(),
+                "defaults are not Modern Low's rows that need no download");
+    else
+        require(defaults.internal_resolution == 4u && defaults.draw_distance == 8.0f && defaults.skip_intro_logos &&
+                    defaults.translation_language == "ja" && defaults.texture_pack.empty(),
+                "defaults are not Modern's rows that need no download");
     const auto offered = parse_settings("[game]\nmodern_downloads = 0\n");
     require(!offered.modern_downloads_pending && parse_settings(serialize_settings(offered)) == offered,
             "modern_downloads does not round-trip");

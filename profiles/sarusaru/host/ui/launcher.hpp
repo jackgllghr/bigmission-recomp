@@ -162,12 +162,16 @@ private:
     // textures one after the other, through their download screens if need be.
     void choose_preset(int direction);
     std::vector<SettingRow> preset_pending_;
+    // The textures the preset being applied turns on (preset_texture_scale).
+    std::uint32_t preset_scale_{4};
     // A preset is being applied: its screens come back to the Preset row.
     bool preset_active_{};
     // The first Play's downloads are under way: the game starts after them.
     bool play_after_preset_{};
     // Whether the build offers HD textures: a prebuilt pack, or a recipe and an upscaler.
     [[nodiscard]] static bool hd_offered();
+    // Whether the build offers textures at `scale` (2x, 3x and 4x prebuilt; 4x and 8x made here).
+    [[nodiscard]] static bool scale_offered(std::uint32_t scale);
     void continue_preset();
     // The Textures screen when HD is the prebuilt pack's download.
     void prebuilt_textures();

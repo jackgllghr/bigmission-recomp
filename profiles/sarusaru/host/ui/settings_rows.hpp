@@ -59,8 +59,11 @@ void step(SettingRow row, shell::Settings &settings, int direction);
 // (install/texture_build.hpp): 0 for the original textures, 4 or 8 for an
 // HD pack made at that scale, nothing for a pack made some other way.
 [[nodiscard]] std::optional<std::uint32_t> texture_scale(const shell::Settings &settings);
-// The next of original (0), 4x and 8x in `direction`.
+// The next of original (0) and the offered scales (2x, 3x, 4x and 8x, all
+// until the launcher says otherwise) in `direction`.
 [[nodiscard]] std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direction);
+// Which texture scales the build offers (besides the original textures).
+void set_offered_texture_scales(std::span<const std::uint32_t> scales);
 
 // The Preset row: Native (the game as the PSP drew it), Modern Low and Modern
 // set the rows below together; any other mix of them is Custom. Derived from
@@ -68,8 +71,12 @@ void step(SettingRow row, shell::Settings &settings, int direction);
 //
 //              resolution    textures  game text  draw distance  intro logos  FOV     frame rate  aiming
 //   Native     1x (480x272)  original  Japanese   native         shown        native  native      100%
-//   Modern Low 4x (1080p)    HD (4x)   English    2x             skipped      45°     native      150%
+//   Modern Low 2x (544p)     3x        English    2x             skipped      45°     native      150%
 //   Modern     4x (1080p)    HD (4x)   English    8x (most)      skipped      (any)   (any)       150%
+//
+// Modern Low is for phones and other low-power devices (the default on
+// Android and Linux ARM, shell::kModernLowByDefault); a build without the 3x
+// pack gives it the 4x pack.
 enum class Preset { Native, ModernLow, Modern, Custom };
 // Which of Modern's downloads this build offers (both, until the launcher
 // says otherwise). Modern asks only for those: a build without an HD pack or
@@ -86,6 +93,10 @@ void set_offered_downloads(bool english, bool hd_textures);
 // them first if need be.
 void apply_preset(shell::Settings &settings, Preset preset);
 inline constexpr std::uint32_t kModernResolution = 4u;  // 1920x1088
+inline constexpr std::uint32_t kModernLowResolution = 2u;  // 960x544
+// The textures a Modern preset turns on: 4x for Modern; for Modern Low the 3x
+// pack if offered, else 4x, else none (0).
+[[nodiscard]] std::uint32_t preset_texture_scale(Preset preset);
 inline constexpr float kModernDrawDistance = 8.0f;
 inline constexpr float kModernAimSensitivity = 1.5f;
 inline constexpr float kModernLowDrawDistance = 2.0f;

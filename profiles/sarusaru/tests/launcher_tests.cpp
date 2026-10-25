@@ -115,8 +115,24 @@ void rows() {
     require(texture_scale(settings) == 4u && describe(SettingRow::Textures, settings).value == "HD (4×)", "HD pack not named");
     settings.texture_pack = "/data/SaruSaruRecomp/textures/8x-0123456789abcdef/";
     require(texture_scale(settings) == 8u && describe(SettingRow::Textures, settings).value == "4K (8×)", "4K pack not named");
-    require(next_texture_scale(texture_scale(settings), 1) == 0u && next_texture_scale(0u, 1) == 4u &&
-                next_texture_scale(0u, -1) == 8u && next_texture_scale(std::nullopt, 1) == 4u, "texture choices do not cycle");
+    require(next_texture_scale(texture_scale(settings), 1) == 0u && next_texture_scale(0u, 1) == 2u &&
+                next_texture_scale(2u, 1) == 3u && next_texture_scale(3u, 1) == 4u && next_texture_scale(4u, -1) == 3u &&
+                next_texture_scale(0u, -1) == 8u && next_texture_scale(std::nullopt, 1) == 2u, "texture choices do not cycle");
+    settings.texture_pack = "/data/SaruSaruRecomp/textures/3x-prebuilt-0123456789abcdef";
+    require(texture_scale(settings) == 3u && describe(SettingRow::Textures, settings).value == "3×", "3x pack not named");
+    settings.texture_pack = "/data/SaruSaruRecomp/textures/2x-prebuilt-0123456789abcdef";
+    require(texture_scale(settings) == 2u && describe(SettingRow::Textures, settings).value == "2×", "2x pack not named");
+    {
+        // Only what the build offers: here no 2x or 8x.
+        const std::uint32_t offered[] = {3u, 4u};
+        set_offered_texture_scales(offered);
+        require(next_texture_scale(0u, 1) == 3u && next_texture_scale(4u, 1) == 0u && next_texture_scale(0u, -1) == 4u &&
+                    next_texture_scale(2u, 1) == 3u,
+                "texture choices offered what the build does not");
+        const std::uint32_t all[] = {2u, 3u, 4u, 8u};
+        set_offered_texture_scales(all);
+    }
+    settings.texture_pack = "/data/SaruSaruRecomp/textures/8x-0123456789abcdef/";
     step(SettingRow::Textures, settings, 1);
     require(settings.texture_pack.empty(), "stepping to the original kept the pack");
     settings.texture_pack = "my-pack";
@@ -324,18 +340,34 @@ void presets() {
     require(settings.translation_pack == "/data/translations/english.sstp", "Native forgot the downloaded English pack");
     require(describe(SettingRow::Preset, settings).value == "Native", "Native not named");
 
-    // Modern Low: 1080p, 45 degrees, twice the draw distance, the native frame rate and 150% aiming.
+    // Modern Low: 544p, 45 degrees, twice the draw distance, the native frame rate and 150% aiming.
     step(SettingRow::Preset, settings, 1);
-    require(settings.internal_resolution == kModernResolution && settings.draw_distance == 2.0f &&
+    require(settings.internal_resolution == kModernLowResolution && settings.draw_distance == 2.0f &&
                 settings.fov_degrees == 45.0f && settings.frame_rate == 0u && settings.skip_intro_logos &&
                 settings.controls.aim_sensitivity == 1.5f && settings.translation_language == "ja" &&
                 settings.texture_pack.empty(),
             "Modern Low did not set its rows without downloads");
     require(preset_of(settings) == Preset::Custom, "Modern Low without English and HD is not Custom");
     settings.translation_language = "en";
+    require(preset_texture_scale(Preset::ModernLow) == 3u && preset_texture_scale(Preset::Modern) == 4u,
+            "Modern Low does not ask for the 3x pack");
     settings.texture_pack = "/data/textures/4x-prebuilt-0123456789abcdef";
+    require(preset_of(settings) == Preset::Custom, "Modern Low with the 4x pack read as Modern Low while 3x is offered");
+    settings.texture_pack = "/data/textures/3x-prebuilt-0123456789abcdef";
     require(preset_of(settings) == Preset::ModernLow && describe(SettingRow::Preset, settings).value == "Modern Low",
-            "Modern Low with English and HD not recognised");
+            "Modern Low with English and 3x textures not recognised");
+    require(describe(SettingRow::InternalResolution, settings).value == "2× (960×544)", "Modern Low is not 544p");
+    {
+        // A build without the 3x pack gives Modern Low the 4x one.
+        const std::uint32_t no_3x[] = {2u, 4u, 8u};
+        set_offered_texture_scales(no_3x);
+        Settings fallback = settings;
+        fallback.texture_pack = "/data/textures/4x-prebuilt-0123456789abcdef";
+        require(preset_texture_scale(Preset::ModernLow) == 4u && preset_of(fallback) == Preset::ModernLow,
+                "Modern Low without a 3x pack does not take the 4x one");
+        const std::uint32_t all[] = {2u, 3u, 4u, 8u};
+        set_offered_texture_scales(all);
+    }
     step(SettingRow::Fov, settings, 1);
     require(preset_of(settings) == Preset::Custom, "a wider FOV still reads as Modern Low");
     step(SettingRow::Fov, settings, -1);
@@ -353,7 +385,11 @@ void presets() {
 
     // Modern's own step sets what needs no download; the launcher adds English and HD.
     step(SettingRow::Preset, settings, 1);
-    require(preset_of(settings) == Preset::Modern, "Modern does not follow Modern Low");
+    require(settings.internal_resolution == kModernResolution && settings.draw_distance == kModernDrawDistance,
+            "Modern does not follow Modern Low");
+    // Its textures are the 4x pack, which the launcher turns on (continue_preset).
+    settings.texture_pack = "/data/textures/4x-prebuilt-0123456789abcdef";
+    require(preset_of(settings) == Preset::Modern, "Modern with the 4x pack not recognised after Modern Low");
     settings = sarusaru::shell::default_settings();
     apply_preset(settings, Preset::Native);
     apply_preset(settings, Preset::Modern);

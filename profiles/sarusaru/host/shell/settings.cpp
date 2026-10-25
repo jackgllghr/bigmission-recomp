@@ -177,6 +177,13 @@ Settings default_settings() {
         settings.controls.keyboard[i] = bindings(keys[i], true);
         settings.controls.gamepad[i] = bindings(pads[i], false);
     }
+    if (kModernLowByDefault) {
+        // The Modern Low preset's (ui/settings_rows.hpp: apply_preset).
+        settings.internal_resolution = 2u;
+        settings.draw_distance = 2.0f;
+        settings.fov_degrees = 45.0f;
+        settings.frame_rate = 0u;
+    }
     return settings;
 }
 

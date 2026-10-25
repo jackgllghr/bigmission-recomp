@@ -245,6 +245,13 @@ and its packages still contain none.
   for the supported disc. A refused or cancelled download leaves nothing.
 - The pack has no `wanted.txt`, so nothing is collected while playing.
 - 4K (8×) still uses the recipe and the device's upscaler.
+- The same pack resized to 3× and 2× (`SARUSARU_HD3_PACK_*`,
+  `SARUSARU_HD2_PACK_*`; `scripts/downscale_pack.py` in the pack repository,
+  colour and alpha resized as separate straight planes) adds 2× and 3× to the
+  Textures row, installed as `<scale>x-prebuilt-<sha16>/`. Modern Low, the
+  default on Android and Linux ARM, renders at 2× with the 3× pack. A
+  download replaces only an older pack of its own scale; the update check
+  follows the 4× pack.
 - `sarusaru_texture_recipe_tests` installs a zip of an invented pack and
   refuses one for another disc. Checked in the launcher with a `file://` pack.
 
