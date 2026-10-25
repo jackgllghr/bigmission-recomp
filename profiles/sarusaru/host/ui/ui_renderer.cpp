@@ -78,8 +78,8 @@ bool UiRenderer::create(std::string &error) {
     init.QueueFamily = vulkan_.queue_family;
     init.Queue = vulkan_.queue;
     init.DescriptorPoolSize = 64u;
-    // Frames are serialised (VulkanContext waits for each one), so two sets
-    // of buffers are more than enough.
+    // VulkanContext keeps at most two frames in flight, so two sets of
+    // buffers are enough.
     init.MinImageCount = 2u;
     init.ImageCount = 2u;
     init.PipelineInfoMain.RenderPass = render_pass_;
@@ -102,7 +102,7 @@ void UiRenderer::destroy_target() {
 void UiRenderer::destroy() {
     if (vulkan_.device == VK_NULL_HANDLE) return;
     if (render_pass_ == VK_NULL_HANDLE && load_pass_ == VK_NULL_HANDLE && !backend_ && textures_.empty()) return;
-    vulkan_.vkDeviceWaitIdle(vulkan_.device);
+    vulkan_.wait_idle();
     for (auto &texture : textures_) {
         if (backend_ && texture.descriptor != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(texture.descriptor);
         vulkan_.destroy_image(texture.image);
@@ -123,7 +123,7 @@ void UiRenderer::destroy() {
 bool UiRenderer::resize(std::uint32_t width, std::uint32_t height) {
     if (target_.image != VK_NULL_HANDLE && target_.width == width && target_.height == height) return true;
     // The previous frame may still read the old target.
-    vulkan_.vkDeviceWaitIdle(vulkan_.device);
+    vulkan_.wait_idle();
     destroy_target();
     if (!vulkan_.create_image(width, height, kFormat,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
@@ -153,7 +153,7 @@ void UiRenderer::remove_texture(ImTextureID id) {
         return reinterpret_cast<ImTextureID>(t.descriptor)==id;
     });
     if (found==textures_.end()) return;
-    vulkan_.vkDeviceWaitIdle(vulkan_.device);
+    vulkan_.wait_idle();
     if (backend_ && found->descriptor!=VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(found->descriptor);
     vulkan_.destroy_image(found->image); vulkan_.destroy_buffer(found->staging);
     textures_.erase(found);
@@ -194,7 +194,7 @@ const shell::Image *UiRenderer::render(VkCommandBuffer commands, ImDrawData *dat
     if (backdrop_source_ != nullptr) {
         // A copy of the game's picture, which may change or go once the game runs on.
         if (backdrop_.image == VK_NULL_HANDLE || backdrop_.width != backdrop_width_ || backdrop_.height != backdrop_height_) {
-            vulkan_.vkDeviceWaitIdle(vulkan_.device);
+            vulkan_.wait_idle();
             vulkan_.destroy_image(backdrop_);
             if (!vulkan_.create_image(backdrop_width_, backdrop_height_, kFormat,
                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, backdrop_))

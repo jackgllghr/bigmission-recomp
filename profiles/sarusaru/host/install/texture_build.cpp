@@ -11,6 +11,7 @@
 #include "umd/disc_image.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -143,16 +144,28 @@ std::optional<std::filesystem::path> texture_pack_directory(const PackSource &re
     return *data / "textures" / (std::to_string(scale) + "x-" + recipe.sha256.substr(0u, 16u));
 }
 
-std::optional<PackSource> prebuilt_pack_source() {
-    if (kPrebuiltPackUrl.empty() || kPrebuiltPackSha256.size() != 64u) return std::nullopt;
-    return PackSource{std::string(kPrebuiltPackUrl), std::string(kPrebuiltPackSha256),
-                      std::strtoull(std::string(kPrebuiltPackSize).c_str(), nullptr, 10)};
+std::optional<PackSource> prebuilt_pack_source(std::uint32_t scale) {
+    const auto [url, sha256, size] = scale == 2u ? std::array{kPrebuiltPack2Url, kPrebuiltPack2Sha256, kPrebuiltPack2Size}
+                                   : scale == 3u ? std::array{kPrebuiltPack3Url, kPrebuiltPack3Sha256, kPrebuiltPack3Size}
+                                   : scale == 4u ? std::array{kPrebuiltPackUrl, kPrebuiltPackSha256, kPrebuiltPackSize}
+                                                 : std::array<std::string_view, 3>{};
+    if (url.empty() || sha256.size() != 64u) return std::nullopt;
+    return PackSource{std::string(url), std::string(sha256), std::strtoull(std::string(size).c_str(), nullptr, 10)};
 }
 
-std::optional<std::filesystem::path> prebuilt_pack_directory(const PackSource &pack) {
+std::optional<std::filesystem::path> prebuilt_pack_directory(const PackSource &pack, std::uint32_t scale) {
     const auto data = platform::user_data_directory();
     if (!data || pack.sha256.size() < 16u) return std::nullopt;
-    return *data / "textures" / ("4x-prebuilt-" + pack.sha256.substr(0u, 16u));
+    return *data / "textures" / (std::to_string(scale) + "x-prebuilt-" + pack.sha256.substr(0u, 16u));
+}
+
+std::uint32_t prebuilt_pack_scale(const std::filesystem::path &directory) {
+    auto path = directory.lexically_normal();
+    if (path.filename().empty()) path = path.parent_path();
+    const auto name = path.filename().string();
+    for (const std::uint32_t scale : {2u, 3u, 4u})
+        if (name.starts_with(std::to_string(scale) + "x-prebuilt-")) return scale;
+    return 0u;
 }
 
 TexturePackState texture_pack_state(const std::filesystem::path &directory) {

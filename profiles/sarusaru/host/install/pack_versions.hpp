@@ -41,8 +41,11 @@ struct PackRelease {
 // The tag in a GitHub release download URL (.../releases/download/<tag>/<asset>), or empty.
 [[nodiscard]] std::string release_tag(std::string_view url);
 
-// The release this build pins for `kind`, or nothing if it offers none.
+// The release this build pins for `kind`, or nothing if it offers none. For
+// HD textures that is the 4x pack, the one the update check follows.
 [[nodiscard]] std::optional<PackRelease> pinned_release(PackKind kind);
+// The prebuilt texture pack the build pins at `scale` (2, 3 or 4).
+[[nodiscard]] std::optional<PackRelease> pinned_prebuilt_release(std::uint32_t scale);
 
 // The GitHub API's latest release of the repository for `kind`.
 [[nodiscard]] std::string latest_release_url(PackKind kind);
@@ -66,11 +69,12 @@ void record_release(const std::filesystem::path &pack, const PackRelease &releas
 [[nodiscard]] bool is_installed(PackKind kind, const PackRelease &release, const std::filesystem::path &pack);
 
 // The packs of `kind` already installed under the per-user data directory,
-// whole (the English pack's file, an unpacked HD pack's directory), the
-// newest first: the most recently published, else the most recently written.
-[[nodiscard]] std::vector<std::filesystem::path> installed_packs(PackKind kind);
-// Removes every installed pack of `kind` but `keep` (and their records).
-void remove_other_packs(PackKind kind, const std::filesystem::path &keep);
+// whole (the English pack's file, an unpacked HD pack's directory, of
+// `scale`), the newest first: the most recently published, else the most
+// recently written.
+[[nodiscard]] std::vector<std::filesystem::path> installed_packs(PackKind kind, std::uint32_t scale = 4u);
+// Removes every installed pack of `kind` (and `scale`) but `keep`, and their records.
+void remove_other_packs(PackKind kind, const std::filesystem::path &keep, std::uint32_t scale = 4u);
 
 // Asks GitHub for the latest release of each pack the build offers, on its
 // own thread. Never downloads a pack itself.

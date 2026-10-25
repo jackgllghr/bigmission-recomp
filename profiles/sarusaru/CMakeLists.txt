@@ -63,7 +63,7 @@ if(SARUSARU_HAS_RENDERER)
     # Texture dump mode and on-device HD texture packs (PNG through SDL).
     add_library(sarusaru_textures STATIC host/textures/texture_dump.cpp host/textures/hd_pack.cpp
         host/textures/disc_textures.cpp host/textures/recipe.cpp host/textures/image.cpp)
-    target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu sarusaru_disc SDL3::SDL3)
+    target_link_libraries(sarusaru_textures PUBLIC sarusaru_gpu sarusaru_disc SDL3::SDL3 PRIVATE libzstd_static)
     add_library(sarusaru_install STATIC host/install/process.cpp host/install/download.cpp host/install/toolchain.cpp
         host/install/game_builder.cpp host/install/pack_download.cpp host/install/pack_versions.cpp host/install/texture_build.cpp
         host/install/update_check.cpp)
@@ -100,7 +100,8 @@ add_library(sarusaru_frame_rate STATIC host/game/frame_rate.cpp host/game/gamepl
 target_include_directories(sarusaru_frame_rate PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_frame_rate PUBLIC psprecomp_runtime)
 
-add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp host/gpu/texture_hash.cpp host/gpu/frame_interpolator.cpp)
+add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp host/gpu/texture_hash.cpp host/gpu/sha256.cpp
+    host/gpu/frame_interpolator.cpp)
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
 target_link_libraries(sarusaru_gpu PUBLIC psprecomp_runtime psprecomp_core)
 
@@ -419,16 +420,33 @@ set(SARUSARU_HD_PACK_URL
 set(SARUSARU_HD_PACK_SHA256 "d72fb001aa57b5e457b9044c38aadd9cdba883b2a63aab1c3d0c3fd6825af6d4"
     CACHE STRING "SHA-256 of the prebuilt HD texture pack zip")
 set(SARUSARU_HD_PACK_SIZE "102837429" CACHE STRING "Size in bytes of the prebuilt HD texture pack zip")
-if(NOT SARUSARU_HD_PACK_URL STREQUAL "")
-    string(LENGTH "${SARUSARU_HD_PACK_SHA256}" _sarusaru_hd_pack_hash_length)
-    if(NOT SARUSARU_HD_PACK_URL MATCHES "^(https|file)://" OR NOT SARUSARU_HD_PACK_SHA256 MATCHES "^[0-9a-f]+$"
-       OR NOT _sarusaru_hd_pack_hash_length EQUAL 64 OR NOT SARUSARU_HD_PACK_SIZE MATCHES "^[1-9][0-9]*$")
-        message(FATAL_ERROR "SARUSARU_HD_PACK_URL needs an https (or file) URL, a 64-digit lowercase SHA-256 and a size in bytes")
+# The same pack resized to 3x (the Modern Low preset's) and 2x, for devices
+# that render at 2x. Empty URLs: the Textures row offers no 3x or 2x.
+set(SARUSARU_HD3_PACK_URL
+    "https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/hd-2026-10-25-2x-3x/sarusaru-hd-3x.zip"
+    CACHE STRING "URL of the prebuilt 3x texture pack zip (empty: none)")
+set(SARUSARU_HD3_PACK_SHA256 "0a80c908d560ebd3a18ea8b66e00a0bfb13120f15d74872f9c2621aa95311ca9"
+    CACHE STRING "SHA-256 of the prebuilt 3x texture pack zip")
+set(SARUSARU_HD3_PACK_SIZE "66834100" CACHE STRING "Size in bytes of the prebuilt 3x texture pack zip")
+set(SARUSARU_HD2_PACK_URL
+    "https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/hd-2026-10-25-2x-3x/sarusaru-hd-2x.zip"
+    CACHE STRING "URL of the prebuilt 2x texture pack zip (empty: none)")
+set(SARUSARU_HD2_PACK_SHA256 "e1e54fc35b16a05c68a0597962d7ed32d0390096986ef963b0330a97c7b7b6a3"
+    CACHE STRING "SHA-256 of the prebuilt 2x texture pack zip")
+set(SARUSARU_HD2_PACK_SIZE "32882634" CACHE STRING "Size in bytes of the prebuilt 2x texture pack zip")
+foreach(_sarusaru_pack HD HD3 HD2)
+    if(NOT SARUSARU_${_sarusaru_pack}_PACK_URL STREQUAL "")
+        string(LENGTH "${SARUSARU_${_sarusaru_pack}_PACK_SHA256}" _sarusaru_hd_pack_hash_length)
+        if(NOT SARUSARU_${_sarusaru_pack}_PACK_URL MATCHES "^(https|file)://"
+           OR NOT SARUSARU_${_sarusaru_pack}_PACK_SHA256 MATCHES "^[0-9a-f]+$"
+           OR NOT _sarusaru_hd_pack_hash_length EQUAL 64 OR NOT SARUSARU_${_sarusaru_pack}_PACK_SIZE MATCHES "^[1-9][0-9]*$")
+            message(FATAL_ERROR "SARUSARU_${_sarusaru_pack}_PACK_URL needs an https (or file) URL, a 64-digit lowercase SHA-256 and a size in bytes")
+        endif()
+        if(SARUSARU_${_sarusaru_pack}_PACK_URL MATCHES "^file://")
+            message(WARNING "SARUSARU_${_sarusaru_pack}_PACK_URL is a local file; release builds need an https URL")
+        endif()
     endif()
-    if(SARUSARU_HD_PACK_URL MATCHES "^file://")
-        message(WARNING "SARUSARU_HD_PACK_URL is a local file; release builds need an https URL")
-    endif()
-endif()
+endforeach()
 configure_file(host/install/texture_config.hpp.in install/texture_config.hpp @ONLY)
 # llvm-mingw links its C++ runtime as DLLs; they go beside the executables,
 # and the module a player builds uses the same ones.

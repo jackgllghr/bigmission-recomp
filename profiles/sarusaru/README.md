@@ -261,7 +261,8 @@ is built from the catalogs and the maintainer's own disc (see the
 
 HD and 4K textures are upscaled on the player's device from their own disc;
 no game pixels are distributed. **Textures** on the Graphics tab chooses
-Original, HD (4×) or 4K (8×). The first time HD or 4K is chosen, the launcher
+Original, 2×, 3×, HD (4×) or 4K (8×) (2× and 3× when the build offers
+prebuilt packs at those scales, below). The first time HD or 4K is chosen, the launcher
 does three things:
 
 - It downloads the texture recipe this build was configured with
@@ -283,8 +284,13 @@ backgrounds and game textures, published apart from the port in
 then downloads that zip once, checks its SHA-256 and that its `pack.ini`
 names the player's disc, and unpacks it to
 `<user data>/textures/4x-prebuilt-<hash>/`; 4K (8×) is still made on the
-device. `tools/package_hd_pack.py PACK_DIR -o pack.zip` makes the zip and
-prints the three values:
+device. The same pack resized to **3×** and **2×**
+(`SARUSARU_HD3_PACK_*`, `SARUSARU_HD2_PACK_*`, made with
+`scripts/downscale_pack.py` in that repository) adds 2× and 3× to the
+Textures row; they install as `<user data>/textures/<scale>x-prebuilt-<hash>/`,
+and each replaces only an older pack of its own scale. The Content screen's
+update check follows the 4× pack. `tools/package_hd_pack.py PACK_DIR -o pack.zip`
+makes a zip and prints its three values:
 
 ```sh
 cmake -S . -B out/macos-arm64 -DSARUSARU_HD_PACK_URL=https://github.com/jackgllghr/sarusaru-hd-textures/releases/download/<tag>/sarusaru-hd-4x.zip \
@@ -298,11 +304,15 @@ cmake -S . -B out/macos-arm64 -DSARUSARU_HD_PACK_URL=https://github.com/jackgllg
 | Preset | Resolution | Textures | Game text | Draw distance | Intro logos |
 | --- | --- | --- | --- | --- | --- |
 | Native | 1× (480×272) | Original | Japanese | Native | Shown |
+| Modern Low | 2× (960×544) | 3× | English | 2× | Skipped |
 | Modern | 4× (1920×1088) | HD (4×) | English | 8× | Skipped |
 
-Modern is the default. A new `settings.ini` starts with its resolution, draw
-distance and logo skip, and the first **Play** opens the English and HD
-texture download screens in turn (Back skips one) before the game starts;
+Modern is the default, and Modern Low on Android and Linux on ARM, where the
+GPU usually can't hold 1080p. A new `settings.ini` starts with the preset's
+resolution, draw distance and logo skip (and Modern Low's FOV and frame rate),
+and the first **Play** opens the English and texture download screens in turn
+(Back skips one) before the game starts; a build without the 3× pack gives
+Modern Low the 4× one;
 `[game] modern_downloads` records that this has happened. Settings files from
 earlier versions keep their values and are not offered the downloads.
 
@@ -354,7 +364,7 @@ The **Preset** row sets several rows together:
 | Preset | Resolution | Textures | Game text | Draw distance | FOV | Frame rate | Aiming | Intro logos |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Native | 1× | original | Japanese | native | native | native | 100% | shown |
-| Modern Low | 4× (1080p) | HD | English | 2× | 45° | native | 150% | skipped |
+| Modern Low | 2× (544p) | 3× | English | 2× | 45° | native | 150% | skipped |
 | Modern | 4× (1080p) | HD | English | 8× | any | any | 150% | skipped |
 
 ### Pause menu

@@ -22,6 +22,7 @@
 #include "psprecomp/common.hpp"
 #include "shell/audio_output.hpp"
 #include "shell/ge_renderer.hpp"
+#include "shell/hitch_trace.hpp"
 #include "shell/input.hpp"
 #include "release_version.hpp"
 #include "shell/presentation_clock.hpp"
@@ -65,6 +66,8 @@ constexpr const char *kUsage =
     "  --translation-pack FILE  select an English menu texture pack for this run\n"
     "  --texture-pack DIR  use this HD texture pack for this run (none: the original textures)\n"
     "  --dump-textures DIR  write every texture the game draws to DIR, once each, as PNG\n"
+    "  --env NAME=VALUE  set an environment variable below for this run (for Android, where\n"
+    "    only the activity's args extra reaches the port; its output goes to logcat)\n"
     "  --version  print the launcher release version and exit\n"
     "  --print-default-settings  print the settings file template and exit\n"
     "  --install ISO  build the game from your disc without the window, as the launcher's Install does\n"
@@ -72,7 +75,9 @@ constexpr const char *kUsage =
     "Default keys: arrows d-pad, Z circle, X cross, A square, S triangle, Q/W L/R, Enter start,\n"
     "      Backspace select, I/J/K/L analog stick, Tab (held) fast forward, Escape pause menu.\n"
     "      F5 saves a state; F8 loads it. Gamepad: Select+R1 saves, Select+L1 loads.\n"
-    "Environment: SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
+    "Environment: SARUSARU_TRACE_HITCHES=<ms> logs every frame over ms milliseconds, split by\n"
+    "  cause; SARUSARU_PRESENT_THREAD=0 presents on the game's thread (not a thread of its own);\n"
+    "  SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
     "  seconds of game time (default 5) as BMP files, from SARUSARU_CAPTURE_FROM seconds if set;\n"
     "  SARUSARU_INPUT scripts the pad; SARUSARU_UI_SCRIPT scripts the launcher (ui/ui_script.hpp).\n";
 
@@ -279,7 +284,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         // A renderer for `current`; another replaces it when the resolution or textures change.
         const auto make_renderer = [&] {
             if (renderer) {
-                vulkan.vkDeviceWaitIdle(vulkan.device);
+                vulkan.wait_idle();
                 renderer->destroy();
             }
             renderer = std::make_unique<sarusaru::shell::GeRenderer>(vulkan, current.internal_resolution);
@@ -287,6 +292,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             if (translation_pack) renderer->set_translation_pack(&*translation_pack);
             if (hd_textures) renderer->set_hd_textures(&*hd_textures);
             if (texture_dump) renderer->set_texture_dump(&*texture_dump);
+            renderer->set_pipeline_directory(std::filesystem::absolute(settings_path).parent_path());
             renderer->set_button_prompts(&button_prompts);
             if (!renderer->create(error)) throw psprecomp::Error(error);
         };
@@ -362,7 +368,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             current.skip_intro_logos = skip_intro_logos;
             if (new_textures) {
                 if (renderer) {
-                    vulkan.vkDeviceWaitIdle(vulkan.device);
+                    vulkan.wait_idle();
                     renderer->destroy();
                     renderer.reset();
                 }
@@ -443,6 +449,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                         if (translation_pack) replacement->set_translation_pack(&*translation_pack);
                         if (hd_textures) replacement->set_hd_textures(&*hd_textures);
                         if (texture_dump) replacement->set_texture_dump(&*texture_dump);
+                        replacement->set_pipeline_directory(std::filesystem::absolute(settings_path).parent_path());
                         replacement->set_button_prompts(&button_prompts);
                         try {
                             if (!replacement->create(error)) throw psprecomp::Error(error);
@@ -480,6 +487,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         if (load_initial_state) queue_state(true);
         bool quit = false;
         game.kernel.set_frame_observer([&] {
+            sarusaru::shell::hitch::enter_observer();
             if (quit) return;
             if (translation_pack) translation_pack->flush_draws(render_draw);
             // A UI script carries on while the game runs (to open the pause menu).
@@ -638,6 +646,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 // Pacing starts again from now rather than catching up.
                 real_origin_ns = SDL_GetTicksNS();
                 guest_origin_us = game.kernel.now_us();
+                sarusaru::shell::hitch::begin_frame();
             }
             renderer->begin_frame(vulkan.begin_frame());
             if (game.kernel.now_us() >= trace_at_us) {
@@ -646,6 +655,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 trace_at_us = std::numeric_limits<std::uint64_t>::max();
             }
             if (capturing) {
+                // The copy was in the frame just submitted, which may still run.
+                vulkan.vkQueueWaitIdle(vulkan.queue);
                 char name[64];
                 std::snprintf(name, sizeof name, "/frame_%04u_%08llums.bmp", captures++,
                               static_cast<unsigned long long>(game.kernel.now_us() / 1000u));
@@ -658,18 +669,23 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 }
             }
 
+            sarusaru::shell::hitch::end_frame(game.kernel.now_us());
             // Pace guest time to real time; Tab runs as fast as it can.
             const std::uint64_t guest_ns = (game.kernel.now_us() - guest_origin_us) * 1000u;
             const std::uint64_t target_ns = real_origin_ns + guest_ns;
             const std::uint64_t now_ns = SDL_GetTicksNS();
             const bool fast = controls.fast_forward;
             if (fast || now_ns > target_ns + kMaxLagNs) {
+                // Pacing starts again from now. What audio is queued plays on:
+                // the game is behind, so there is little of it, and dropping it
+                // would turn a slow frame into a gap in the sound (the output
+                // already drops a backlog that would add latency).
                 real_origin_ns = now_ns;
                 guest_origin_us = game.kernel.now_us();
-                if (!fast) audio.clear();
             } else if (target_ns > now_ns) {
                 SDL_DelayPrecise(target_ns - now_ns);
             }
+            sarusaru::shell::hitch::begin_frame();
             if (quit) game.runtime.stop("Window closed");
         });
         game.run(std::numeric_limits<std::uint64_t>::max());
@@ -681,6 +697,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         std::cerr << "sarusaru: " << failure.what() << '\n';
         status = 1;
     }
+    sarusaru::shell::hitch::report();
     vulkan.destroy_buffer(capture);
     if (renderer) renderer->destroy();
     return status;
@@ -770,6 +787,18 @@ int main(int argc, char **argv) {
         }
         if (arg == "--dump-textures" && i + 1 < argc) {
             texture_dump_directory = std::filesystem::absolute(argv[++i]);
+            continue;
+        }
+        if (arg == "--env" && i + 1 < argc) {
+            // Before anything reads the environment (SDL_Init included).
+            const std::string_view assignment = argv[++i];
+            const auto equals = assignment.find('=');
+            if (equals == std::string_view::npos || equals == 0u) {
+                std::cerr << "sarusaru: --env takes NAME=VALUE\n";
+                return 2;
+            }
+            SDL_setenv_unsafe(std::string(assignment.substr(0, equals)).c_str(),
+                              std::string(assignment.substr(equals + 1)).c_str(), 1);
             continue;
         }
         if (arg == "--scale" && i + 1 < argc) {

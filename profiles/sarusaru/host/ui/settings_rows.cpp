@@ -49,24 +49,44 @@ std::optional<std::uint32_t> texture_scale(const shell::Settings &settings) {
     if (settings.texture_pack.empty()) return 0u;
     auto name = settings.texture_pack.filename().string();
     if (name.empty()) name = settings.texture_pack.parent_path().filename().string();
-    if (name.starts_with("4x-")) return 4u;
-    if (name.starts_with("8x-")) return 8u;
+    for (const std::uint32_t scale : {2u, 3u, 4u, 8u})
+        if (name.starts_with(std::to_string(scale) + "x-")) return scale;
     return std::nullopt;
-}
-
-std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direction) {
-    constexpr std::uint32_t kOrder[] = {0u, 4u, 8u};
-    const int index = !current ? 0 : *current == 8u ? 2 : *current == 4u ? 1 : 0;
-    return kOrder[(index + (direction > 0 ? 1 : 2)) % 3];
 }
 
 namespace {
 bool offers_english = true, offers_hd = true;
+// Original first, then the scales offered, smallest first.
+std::vector<std::uint32_t> texture_choices{0u, 2u, 3u, 4u, 8u};
+
+bool offers_scale(std::uint32_t scale) {
+    return std::find(texture_choices.begin(), texture_choices.end(), scale) != texture_choices.end();
+}
 } // namespace
+
+std::uint32_t next_texture_scale(std::optional<std::uint32_t> current, int direction) {
+    const auto size = static_cast<std::ptrdiff_t>(texture_choices.size());
+    const auto found = std::find(texture_choices.begin(), texture_choices.end(), current.value_or(0u));
+    // A pack the row does not offer counts as the original textures.
+    const auto index = found != texture_choices.end() ? found - texture_choices.begin() : 0;
+    return texture_choices[static_cast<std::size_t>(((index + (direction > 0 ? 1 : -1)) % size + size) % size)];
+}
+
+void set_offered_texture_scales(std::span<const std::uint32_t> scales) {
+    texture_choices = {0u};
+    for (const std::uint32_t scale : {2u, 3u, 4u, 8u})
+        if (std::find(scales.begin(), scales.end(), scale) != scales.end()) texture_choices.push_back(scale);
+}
 
 void set_offered_downloads(bool english, bool hd_textures) {
     offers_english = english;
     offers_hd = hd_textures;
+}
+
+std::uint32_t preset_texture_scale(Preset preset) {
+    if (!offers_hd) return 0u;
+    if (preset == Preset::ModernLow && offers_scale(3u)) return 3u;
+    return 4u;
 }
 
 Preset preset_of(const shell::Settings &settings) {
@@ -75,14 +95,19 @@ Preset preset_of(const shell::Settings &settings) {
         settings.draw_distance == 1.0f && !settings.skip_intro_logos && settings.fov_degrees == 0.0f &&
         settings.frame_rate == 0u && settings.controls.aim_sensitivity == 1.0f)
         return Preset::Native;
-    // Both Modern presets: 1080p, HD textures and English, where offered, and no intro logos.
-    if (settings.internal_resolution != kModernResolution ||
-        !(offers_hd ? texture_scale(settings) == 4u : settings.texture_pack.empty()) || !(english || !offers_english) ||
-        !settings.skip_intro_logos || settings.controls.aim_sensitivity != kModernAimSensitivity)
+    // Both Modern presets: their textures and English, where offered, and no intro logos.
+    if (!(english || !offers_english) || !settings.skip_intro_logos ||
+        settings.controls.aim_sensitivity != kModernAimSensitivity)
         return Preset::Custom;
-    if (settings.draw_distance == kModernDrawDistance) return Preset::Modern;
-    if (settings.draw_distance == kModernLowDrawDistance && settings.fov_degrees == kModernLowFov &&
-        settings.frame_rate == 0u)
+    const auto textures = [&](Preset preset) {
+        const std::uint32_t scale = preset_texture_scale(preset);
+        return scale == 0u ? settings.texture_pack.empty() : texture_scale(settings) == scale;
+    };
+    if (settings.internal_resolution == kModernResolution && settings.draw_distance == kModernDrawDistance &&
+        textures(Preset::Modern))
+        return Preset::Modern;
+    if (settings.internal_resolution == kModernLowResolution && settings.draw_distance == kModernLowDrawDistance &&
+        settings.fov_degrees == kModernLowFov && settings.frame_rate == 0u && textures(Preset::ModernLow))
         return Preset::ModernLow;
     return Preset::Custom;
 }
@@ -107,7 +132,7 @@ void apply_preset(shell::Settings &settings, Preset preset) {
         settings.controls.aim_sensitivity = 1.0f;
         break;
     case Preset::ModernLow:
-        settings.internal_resolution = kModernResolution;
+        settings.internal_resolution = kModernLowResolution;
         settings.draw_distance = kModernLowDrawDistance;
         settings.skip_intro_logos = true;
         settings.fov_degrees = kModernLowFov;
@@ -180,6 +205,7 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
         view.label = text(Text::RowTextures);
         const auto scale = texture_scale(settings);
         view.value = text(!scale ? Text::ValueTexturesCustom : *scale == 0u ? Text::ValueTexturesOriginal
+                                  : *scale == 2u ? Text::ValueTextures2x : *scale == 3u ? Text::ValueTextures3x
                                   : *scale == 4u ? Text::ValueTexturesHd : Text::ValueTextures4k);
         view.description = text(Text::DescTextures);
         break;

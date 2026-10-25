@@ -13,4 +13,11 @@ inline constexpr std::string_view kTextureRecipeSize = "@SARUSARU_TEXTURE_RECIPE
 inline constexpr std::string_view kPrebuiltPackUrl = "@SARUSARU_HD_PACK_URL@";
 inline constexpr std::string_view kPrebuiltPackSha256 = "@SARUSARU_HD_PACK_SHA256@";
 inline constexpr std::string_view kPrebuiltPackSize = "@SARUSARU_HD_PACK_SIZE@";
+// The same pack resized to 3x and 2x (SARUSARU_HD3_PACK_*, SARUSARU_HD2_PACK_*).
+inline constexpr std::string_view kPrebuiltPack3Url = "@SARUSARU_HD3_PACK_URL@";
+inline constexpr std::string_view kPrebuiltPack3Sha256 = "@SARUSARU_HD3_PACK_SHA256@";
+inline constexpr std::string_view kPrebuiltPack3Size = "@SARUSARU_HD3_PACK_SIZE@";
+inline constexpr std::string_view kPrebuiltPack2Url = "@SARUSARU_HD2_PACK_URL@";
+inline constexpr std::string_view kPrebuiltPack2Sha256 = "@SARUSARU_HD2_PACK_SHA256@";
+inline constexpr std::string_view kPrebuiltPack2Size = "@SARUSARU_HD2_PACK_SIZE@";
 } // namespace sarusaru::install

@@ -233,6 +233,13 @@ std::optional<PackRelease> pinned_release(PackKind kind) {
     return PackRelease{*source, tag.empty() ? source->sha256.substr(0u, 12u) : release_version(tag), {}};
 }
 
+std::optional<PackRelease> pinned_prebuilt_release(std::uint32_t scale) {
+    const auto source = prebuilt_pack_source(scale);
+    if (!source) return std::nullopt;
+    const auto tag = release_tag(source->url);
+    return PackRelease{*source, tag.empty() ? source->sha256.substr(0u, 12u) : release_version(tag), {}};
+}
+
 std::string latest_release_url(PackKind kind) {
     return "https://api.github.com/repos/" + std::string(kOwner) + "/" + std::string(repository(kind)) + "/releases/latest";
 }
@@ -324,7 +331,8 @@ bool is_installed(PackKind kind, const PackRelease &release, const std::filesyst
     return destination && !pack.empty() && normal(*destination) == normal(pack);
 }
 
-std::vector<std::filesystem::path> installed_packs(PackKind kind) {
+std::vector<std::filesystem::path> installed_packs(PackKind kind, std::uint32_t scale) {
+    const std::string prebuilt = std::to_string(scale) + "x-prebuilt-";
     std::vector<std::filesystem::path> packs;
     const auto directory = packs_directory(kind);
     std::error_code error;
@@ -334,7 +342,7 @@ std::vector<std::filesystem::path> installed_packs(PackKind kind) {
         std::error_code type_error;
         if (kind == PackKind::English ? name.starts_with("english-") && name.ends_with(".sstp") &&
                                             entry.is_regular_file(type_error)
-                                      : name.starts_with("4x-prebuilt-") && entry.is_directory(type_error) &&
+                                      : name.starts_with(prebuilt) && entry.is_directory(type_error) &&
                                             texture_pack_state(entry.path()) != TexturePackState::Missing)
             packs.push_back(entry.path());
     }
@@ -354,8 +362,8 @@ std::vector<std::filesystem::path> installed_packs(PackKind kind) {
     return packs;
 }
 
-void remove_other_packs(PackKind kind, const std::filesystem::path &keep) {
-    for (const auto &pack : installed_packs(kind)) {
+void remove_other_packs(PackKind kind, const std::filesystem::path &keep, std::uint32_t scale) {
+    for (const auto &pack : installed_packs(kind, scale)) {
         if (normal(pack) == normal(keep)) continue;
         std::error_code ignored;
         std::filesystem::remove_all(pack, ignored);

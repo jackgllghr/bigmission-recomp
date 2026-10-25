@@ -52,6 +52,7 @@ TextureDump::TextureDump(std::filesystem::path directory, std::optional<std::uno
 
 void TextureDump::record(const gpu::TextureState &texture, const gpu::TextureIdentity &identity,
                          std::span<const std::uint32_t> texels) {
+    const std::lock_guard lock(mutex_);
     if (identity.hash.empty() || (wanted_ && !wanted_->contains(identity.hash)) || !seen_.insert(identity.hash).second) return;
     const bool saved = write_png(directory_ / (identity.hash + ".png"), texels, identity.width, identity.height, texture.width);
     if (saved) {

@@ -90,6 +90,10 @@ Launcher::Launcher(Layer &layer, shell::Settings &settings, std::filesystem::pat
                    Mode mode)
     : layer_(layer), mode_(mode), settings_(settings), settings_path_(std::move(settings_path)), identity_(identity) {
     set_offered_downloads(install::english_pack_source().has_value(), hd_offered());
+    std::vector<std::uint32_t> scales;
+    for (const std::uint32_t scale : {2u, 3u, 4u, 8u})
+        if (scale_offered(scale)) scales.push_back(scale);
+    set_offered_texture_scales(scales);
     if (in_game()) return;
     if (!settings_.game_disc.empty()) disc_check_ = check_disc(settings_.game_disc, identity_);
     load_title_art();
@@ -190,17 +194,29 @@ bool Launcher::hd_offered() {
     return install::prebuilt_pack_source() || (install::texture_recipe_source() && install::upscaler_source());
 }
 
+bool Launcher::scale_offered(std::uint32_t scale) {
+    if (scale == 4u) return hd_offered();
+    if (scale == 8u) return install::texture_recipe_source() && install::upscaler_source();
+    return install::prebuilt_pack_source(scale).has_value();
+}
+
 void Launcher::play() {
     // A new player's first Play: the Modern preset's downloads the build
     // offers, each on its own screen (Back skips it), then the game.
     if (settings_.modern_downloads_pending) {
         settings_.modern_downloads_pending = false;
         save();
-        if (settings_.internal_resolution == kModernResolution && settings_.draw_distance == kModernDrawDistance &&
-            settings_.skip_intro_logos) {
+        // The defaults are Modern's, or Modern Low's (shell::kModernLowByDefault).
+        const bool modern = settings_.internal_resolution == kModernResolution &&
+                            settings_.draw_distance == kModernDrawDistance;
+        const bool modern_low = settings_.internal_resolution == kModernLowResolution &&
+                                settings_.draw_distance == kModernLowDrawDistance &&
+                                settings_.fov_degrees == kModernLowFov;
+        if ((modern || modern_low) && settings_.skip_intro_logos) {
             preset_pending_.clear();
+            preset_scale_ = preset_texture_scale(modern ? Preset::Modern : Preset::ModernLow);
             if (install::english_pack_source()) preset_pending_.push_back(SettingRow::GameText);
-            if (hd_offered()) preset_pending_.push_back(SettingRow::Textures);
+            if (preset_scale_ != 0u) preset_pending_.push_back(SettingRow::Textures);
             pack_return_screen_ = Screen::Home;
             preset_active_ = true;
             play_after_preset_ = true;
@@ -834,11 +850,9 @@ void Launcher::settings() {
 
 namespace {
 
-// Whether the textures are a prebuilt HD pack (install/texture_build.hpp).
+// Whether the textures are a prebuilt pack, of any scale (install/texture_build.hpp).
 bool prebuilt_pack_in_use(const shell::Settings &settings) {
-    auto pack = settings.texture_pack.lexically_normal();
-    if (pack.filename().empty()) pack = pack.parent_path();
-    return pack.filename().string().starts_with("4x-prebuilt-");
+    return install::prebuilt_pack_scale(settings.texture_pack) != 0u;
 }
 
 // A pack release's version, with its date when known.
@@ -877,8 +891,10 @@ void Launcher::choose_preset(int direction) {
     apply_preset(settings_, preset);
     save();
     preset_pending_.clear();
-    if (preset == Preset::Modern || preset == Preset::ModernLow)
+    if (preset == Preset::Modern || preset == Preset::ModernLow) {
         preset_pending_ = {SettingRow::GameText, SettingRow::Textures};
+        preset_scale_ = preset_texture_scale(preset);
+    }
     preset_active_ = true;
     continue_preset();
 }
@@ -893,7 +909,8 @@ void Launcher::continue_preset() {
         const Screen before = screen_;
         if (row == SettingRow::GameText && settings_.translation_language != "en" && install::english_pack_source())
             choose_game_text(1);
-        if (row == SettingRow::Textures && texture_scale(settings_) != 4u && hd_offered()) select_textures(4u);
+        if (row == SettingRow::Textures && preset_scale_ != 0u && texture_scale(settings_) != preset_scale_)
+            select_textures(preset_scale_);
         if (screen_ != before) return;
     }
     preset_active_ = false;
@@ -939,11 +956,12 @@ void Launcher::select_textures(std::uint32_t scale) {
         save();
         return;
     }
-    // HD is the prebuilt pack, downloaded once, when the build offers one.
-    if (const auto prebuilt = install::prebuilt_pack_source(); prebuilt && scale == 4u) {
+    // 2x, 3x and HD are prebuilt packs, downloaded once, when the build offers them.
+    if (const auto prebuilt = install::prebuilt_pack_source(scale)) {
         // The newest one downloaded, else the build's own.
-        const auto installed = install::installed_packs(install::PackKind::HdTextures);
-        const auto directory = !installed.empty() ? std::optional(installed.front()) : install::prebuilt_pack_directory(*prebuilt);
+        const auto installed = install::installed_packs(install::PackKind::HdTextures, scale);
+        const auto directory = !installed.empty() ? std::optional(installed.front())
+                                                  : install::prebuilt_pack_directory(*prebuilt, scale);
         if (directory && install::texture_pack_state(*directory) != install::TexturePackState::Missing) {
             settings_.texture_pack = *directory;
             save();
@@ -978,7 +996,7 @@ void Launcher::select_textures(std::uint32_t scale) {
 }
 
 void Launcher::textures() {
-    if (texture_scale_ == 4u && install::prebuilt_pack_source()) {
+    if (install::prebuilt_pack_source(texture_scale_)) {
         prebuilt_textures();
         return;
     }
@@ -1082,9 +1100,11 @@ void Launcher::prebuilt_textures() {
     const float top = screen_title(layer_, tr(Text::TexturesTitle));
     const ImRect inner = content_panel(layer_, top, 700.0f);
     const float pad = 22.0f * u, width = inner.GetWidth() - 2.0f * pad - 12.0f * u;
-    const install::PackRelease release = hd_release();
+    // An offered newer 4x release, else the pack the build pins at this scale.
+    const install::PackRelease release = texture_scale_ == 4u ? hd_release()
+                                                              : *install::pinned_prebuilt_release(texture_scale_);
     const auto *source = &release.source;
-    const auto directory = install::prebuilt_pack_directory(*source);
+    const auto directory = install::prebuilt_pack_directory(*source, texture_scale_);
 
     // A download that ended: HD on and back to the settings, or the choice again with why.
     if (prebuilt_download_) {
@@ -1095,7 +1115,7 @@ void Launcher::prebuilt_textures() {
             install::record_release(destination, release);
             // A newer release replaces the one before, and turns HD on only where that was on.
             if (!hd_offer_ || prebuilt_pack_in_use(settings_)) settings_.texture_pack = destination;
-            install::remove_other_packs(install::PackKind::HdTextures, destination);
+            install::remove_other_packs(install::PackKind::HdTextures, destination, texture_scale_);
             hd_offer_.reset();
             save();
             return_from_pack(SettingRow::Textures);
@@ -1607,6 +1627,10 @@ void Launcher::content(float width) {
             const auto &latest = kind == Kind::English ? result.english : result.hd_textures;
             if (!latest) continue;
             const auto pack = content_pack(kind, settings_, settings_path_);
+            // The update check follows the 4x pack; a smaller one is left as it is.
+            if (kind == Kind::HdTextures && pack && install::prebuilt_pack_scale(*pack) != 4u &&
+                install::prebuilt_pack_scale(*pack) != 0u)
+                continue;
             if (pack && install::is_installed(kind, *latest, *pack)) {
                 paragraph(layer_, tr(kind == Kind::English ? Text::ContentEnglishCurrent : Text::ContentHdCurrent), width,
                           colors::kGood);

@@ -22,8 +22,8 @@ public:
     // One guest block: interleaved samples, mono or stereo, volumes 0x8000 = unity.
     void play(std::int32_t channel, std::span<const std::int16_t> samples, bool mono, std::uint32_t left_volume,
               std::uint32_t right_volume);
-    // Drops what is queued, for when the guest falls behind real time and
-    // the backlog would only add latency.
+    // Drops what is queued: for when what was queued no longer belongs to
+    // what plays next (a menu opened, a state loaded).
     void clear();
 
 private:

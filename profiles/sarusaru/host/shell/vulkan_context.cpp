@@ -1,9 +1,12 @@
 #include "shell/vulkan_context.hpp"
+#include "shell/hitch_trace.hpp"
 
 #include <SDL3/SDL_vulkan.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <string_view>
 #include <utility>
 
 namespace sarusaru::shell {
@@ -80,11 +83,23 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     if (std::ranges::any_of(available, [](const auto &e) { return std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0; }))
         device_extensions.push_back("VK_KHR_portability_subset");
 
-    const float priority = 1.0f;
+    // A second queue of the family, when there is one, presents (see end_frame).
+    std::uint32_t family_queues = 0;
+    {
+        std::uint32_t count = 0;
+        vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, nullptr);
+        std::vector<VkQueueFamilyProperties> families(count);
+        vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families.data());
+        family_queues = families[queue_family].queueCount;
+    }
+    const float priorities[2] = {1.0f, 1.0f};
     VkDeviceQueueCreateInfo queue_info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     queue_info.queueFamilyIndex = queue_family;
-    queue_info.queueCount = 1u;
-    queue_info.pQueuePriorities = &priority;
+    // SARUSARU_PRESENT_THREAD=0 keeps presenting on the game's thread.
+    const char *present_thread = std::getenv("SARUSARU_PRESENT_THREAD");
+    const bool threaded = present_thread == nullptr || std::string_view(present_thread) != "0";
+    queue_info.queueCount = family_queues >= 2u && threaded ? 2u : 1u;
+    queue_info.pQueuePriorities = priorities;
     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     device_info.queueCreateInfoCount = 1u;
     device_info.pQueueCreateInfos = &queue_info;
@@ -98,6 +113,7 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     SARUSARU_VK_DEVICE_FUNCTIONS(SARUSARU_VK_LOAD)
 #undef SARUSARU_VK_LOAD
     vkGetDeviceQueue(device, queue_family, 0u, &queue);
+    if (queue_info.queueCount == 2u) vkGetDeviceQueue(device, queue_family, 1u, &present_queue_);
 
     VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -107,12 +123,34 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     allocate.commandPool = pool_;
     allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocate.commandBufferCount = 1u;
-    vkAllocateCommandBuffers(device, &allocate, &commands_);
     VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    vkCreateFence(device, &fence_info, nullptr, &fence_);
     VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    vkCreateSemaphore(device, &semaphore_info, nullptr, &acquired_);
+    for (auto &slot : slots_) {
+        vkAllocateCommandBuffers(device, &allocate, &slot.commands);
+        vkAllocateCommandBuffers(device, &allocate, &slot.prologue);
+        vkCreateFence(device, &fence_info, nullptr, &slot.fence);
+        vkCreateSemaphore(device, &semaphore_info, nullptr, &slot.acquired);
+    }
+    vk.vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties_);
+    if (present_queue_ != VK_NULL_HANDLE) {
+        VkFenceCreateInfo unsignalled{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        vkCreateFence(device, &unsignalled, nullptr, &acquire_fence_);
+        presenter_ = std::thread([this] { presenter_loop(); });
+    }
+    SDL_Log("Vulkan: %s, presenting %s", properties.deviceName,
+            present_queue_ != VK_NULL_HANDLE ? "on a second queue from its own thread" : "on the game's thread");
+    // The hitch trace's GPU time, where the queue has timestamps.
+    std::uint32_t family_count = 0;
+    vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &family_count, nullptr);
+    std::vector<VkQueueFamilyProperties> families(family_count);
+    vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &family_count, families.data());
+    if (hitch::enabled() && families[queue_family].timestampValidBits != 0u && properties.limits.timestampPeriod > 0.0f) {
+        VkQueryPoolCreateInfo query_info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+        query_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        query_info.queryCount = 2u;
+        for (auto &slot : slots_) vkCreateQueryPool(device, &query_info, nullptr, &slot.timestamps);
+    }
     return create_swapchain(error);
 }
 
@@ -160,6 +198,9 @@ bool VulkanContext::create_swapchain(std::string &error) {
         error = "the surface has no sRGB presentation format compatible with the PSP renderer";
         return false;
     }
+    // With a presentation thread the app holds up to two images at once: the
+    // one being presented and the next frame's, acquired ahead.
+    const std::uint32_t held = present_queue_ != VK_NULL_HANDLE ? 2u : 1u;
     std::uint32_t mode_count = 0;
     vk.vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &mode_count, nullptr);
     std::vector<VkPresentModeKHR> modes(mode_count);
@@ -193,10 +234,11 @@ bool VulkanContext::create_swapchain(std::string &error) {
         transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     }
 #if defined(__ANDROID__)
-    SDL_Log("swapchain %ux%u for a %dx%d window, surface transform %#x", extent_.width, extent_.height, width, height,
-            static_cast<unsigned>(capabilities.currentTransform));
+    SDL_Log("swapchain %ux%u for a %dx%d window, surface transform %#x, present mode %d of %u, images %u-%u",
+            extent_.width, extent_.height, width, height, static_cast<unsigned>(capabilities.currentTransform),
+            static_cast<int>(mode), mode_count, capabilities.minImageCount, capabilities.maxImageCount);
 #endif
-    std::uint32_t image_count = capabilities.minImageCount + 1u;
+    std::uint32_t image_count = capabilities.minImageCount + held;
     if (capabilities.maxImageCount != 0u) image_count = std::min(image_count, capabilities.maxImageCount);
 
     VkSwapchainCreateInfoKHR info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
@@ -228,6 +270,9 @@ bool VulkanContext::create_swapchain(std::string &error) {
 }
 
 void VulkanContext::destroy_swapchain() {
+    // An image acquired ahead goes with the swapchain it came from (the
+    // presentation thread is paused here).
+    ready_.reset();
     for (auto semaphore : rendered_) vkDestroySemaphore(device, semaphore, nullptr);
     rendered_.clear();
     if (swapchain_ != VK_NULL_HANDLE) vkDestroySwapchainKHR(device, swapchain_, nullptr);
@@ -237,11 +282,27 @@ void VulkanContext::destroy_swapchain() {
 
 void VulkanContext::destroy() {
     if (window_ != nullptr) SDL_RemoveEventWatch(watch_lifecycle, this);
+    if (presenter_.joinable()) {
+        {
+            const std::lock_guard lock(present_mutex_);
+            presenter_stop_ = true;
+        }
+        present_wake_.notify_all();
+        presenter_.join();
+    }
     if (device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
+        if (acquire_fence_ != VK_NULL_HANDLE) vkDestroyFence(device, acquire_fence_, nullptr);
         destroy_swapchain();
-        vkDestroySemaphore(device, acquired_, nullptr);
-        vkDestroyFence(device, fence_, nullptr);
+        for (auto &slot : slots_) {
+            destroy_retired(slot);
+            if (slot.timestamps != VK_NULL_HANDLE) vkDestroyQueryPool(device, slot.timestamps, nullptr);
+            vkDestroySemaphore(device, slot.acquired, nullptr);
+            vkDestroyFence(device, slot.fence, nullptr);
+        }
+        for (auto &block : blocks_)
+            if (block.memory != VK_NULL_HANDLE) vkFreeMemory(device, block.memory, nullptr);
+        blocks_.clear();
         vkDestroyCommandPool(device, pool_, nullptr);
         vkDestroyDevice(device, nullptr);
         device = VK_NULL_HANDLE;
@@ -252,14 +313,90 @@ void VulkanContext::destroy() {
 }
 
 VkCommandBuffer VulkanContext::begin_frame() {
-    vkWaitForFences(device, 1u, &fence_, VK_TRUE, UINT64_MAX);
-    vkResetFences(device, 1u, &fence_);
+    // A slot begun and never submitted is simply recorded again: its fence
+    // is reset only as it is submitted, so it stays signalled.
+    if (!recording_) {
+        slot_ = (slot_ + 1u) % kFramesInFlight;
+        Slot &slot = slots_[slot_];
+        {
+            hitch::Timer timer(hitch::kFence);
+            vkWaitForFences(device, 1u, &slot.fence, VK_TRUE, UINT64_MAX);
+        }
+        destroy_retired(slot);
+        if (slot.timed) {
+            std::uint64_t stamps[2]{};
+            if (vkGetQueryPoolResults(device, slot.timestamps, 0u, 2u, sizeof stamps, stamps, sizeof stamps[0],
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[1] >= stamps[0])
+                hitch::add_gpu(static_cast<std::uint64_t>(static_cast<double>(stamps[1] - stamps[0]) *
+                                                          properties.limits.timestampPeriod));
+            slot.timed = false;
+        }
+    }
+    commands_ = slots_[slot_].commands;
     vkResetCommandBuffer(commands_, 0u);
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(commands_, &begin);
+    if (const VkQueryPool pool = slots_[slot_].timestamps; pool != VK_NULL_HANDLE) {
+        vkCmdResetQueryPool(commands_, pool, 0u, 2u);
+        vkCmdWriteTimestamp(commands_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, pool, 0u);
+    }
     recording_ = true;
     return commands_;
+}
+
+VkCommandBuffer VulkanContext::prologue() {
+    Slot &slot = slots_[slot_];
+    if (!slot.prologue_open) {
+        vkResetCommandBuffer(slot.prologue, 0u);
+        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(slot.prologue, &begin);
+        slot.prologue_open = true;
+    }
+    return slot.prologue;
+}
+
+void VulkanContext::submit_slot(const VkSubmitInfo &submit) {
+    Slot &slot = slots_[slot_];
+    if (slot.timestamps != VK_NULL_HANDLE) {
+        vkCmdWriteTimestamp(slot.commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, slot.timestamps, 1u);
+        slot.timed = true;
+    }
+    vkEndCommandBuffer(slot.commands);
+    // The prologue runs first: command buffers of one submission run in order.
+    VkCommandBuffer buffers[2] = {slot.commands, VK_NULL_HANDLE};
+    VkSubmitInfo info = submit;
+    if (slot.prologue_open) {
+        vkEndCommandBuffer(slot.prologue);
+        slot.prologue_open = false;
+        buffers[0] = slot.prologue;
+        buffers[1] = slot.commands;
+        info.commandBufferCount = 2u;
+    } else {
+        info.commandBufferCount = 1u;
+    }
+    info.pCommandBuffers = buffers;
+    vkResetFences(device, 1u, &slot.fence);
+    vkQueueSubmit(queue, 1u, &info, slot.fence);
+    recording_ = false;
+}
+
+void VulkanContext::destroy_retired(Slot &slot) {
+    for (auto &image : slot.retired_images) destroy_image(image);
+    for (auto &buffer : slot.retired_buffers) destroy_buffer(buffer);
+    slot.retired_images.clear();
+    slot.retired_buffers.clear();
+}
+
+void VulkanContext::retire(Image &image) {
+    if (image.image != VK_NULL_HANDLE || image.view != VK_NULL_HANDLE) slots_[slot_].retired_images.push_back(image);
+    image = Image{};
+}
+
+void VulkanContext::retire(Buffer &buffer) {
+    if (buffer.buffer != VK_NULL_HANDLE) slots_[slot_].retired_buffers.push_back(buffer);
+    buffer = Buffer{};
 }
 
 void VulkanContext::copy_to_buffer(const Image &source, std::uint32_t width, std::uint32_t height,
@@ -270,27 +407,133 @@ void VulkanContext::copy_to_buffer(const Image &source, std::uint32_t width, std
     vkCmdCopyImageToBuffer(commands_, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination.buffer, 1u, &copy);
 }
 
-VkCommandBuffer VulkanContext::flush() {
-    vkEndCommandBuffer(commands_);
-    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    submit.commandBufferCount = 1u;
-    submit.pCommandBuffers = &commands_;
-    vkQueueSubmit(queue, 1u, &submit, fence_);
+VkCommandBuffer VulkanContext::submit() {
+    {
+        hitch::Timer timer(hitch::kFlush);
+        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submit.commandBufferCount = 1u;
+        submit.pCommandBuffers = &commands_;
+        submit_slot(submit);
+    }
     return begin_frame();
+}
+
+VkCommandBuffer VulkanContext::flush() {
+    {
+        hitch::Timer timer(hitch::kFlush);
+        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submit.commandBufferCount = 1u;
+        submit.pCommandBuffers = &commands_;
+        submit_slot(submit);
+        // The queue runs in order: this slot done means all of it is.
+        vkWaitForFences(device, 1u, &slots_[slot_].fence, VK_TRUE, UINT64_MAX);
+    }
+    return begin_frame();
+}
+
+void VulkanContext::pause_presenter() {
+    if (!presenter_.joinable()) return;
+    std::unique_lock lock(present_mutex_);
+    presenter_paused_ = true;
+    present_done_.wait(lock, [&] { return !presenter_busy_ && !to_present_; });
+}
+
+void VulkanContext::resume_presenter() {
+    if (!presenter_.joinable() || swapchain_ == VK_NULL_HANDLE) return;
+    {
+        const std::lock_guard lock(present_mutex_);
+        presenter_paused_ = false;
+    }
+    present_wake_.notify_all();
+}
+
+void VulkanContext::wait_idle() {
+    pause_presenter();
+    vkDeviceWaitIdle(device);
+    resume_presenter();
+}
+
+void VulkanContext::presenter_loop() {
+    std::unique_lock lock(present_mutex_);
+    for (;;) {
+        // Presenting what it was handed comes first, paused or not; acquiring
+        // ahead only while running and while the swapchain is usable.
+        const auto can_acquire = [&] {
+            return !presenter_paused_ && !ready_ && swapchain_ != VK_NULL_HANDLE && !swapchain_stale_ && !surface_lost_;
+        };
+        present_wake_.wait(lock, [&] { return presenter_stop_ || to_present_ || can_acquire(); });
+        if (presenter_stop_) return;
+        presenter_busy_ = true;
+        if (to_present_) {
+            const std::uint32_t index = *to_present_;
+            lock.unlock();
+            present_image(present_queue_, index);
+            lock.lock();
+            to_present_.reset();
+        } else {
+            lock.unlock();
+            std::uint32_t index = 0u;
+            const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, VK_NULL_HANDLE, acquire_fence_, &index);
+            bool ok = acquired == VK_SUCCESS || acquired == VK_SUBOPTIMAL_KHR;
+            if (acquired == VK_ERROR_SURFACE_LOST_KHR) surface_lost_ = true;
+            else if (acquired == VK_ERROR_OUT_OF_DATE_KHR) swapchain_stale_ = true;
+            else if (acquired == VK_SUBOPTIMAL_KHR && surface_changed()) swapchain_stale_ = true;
+            if (ok) {
+                vkWaitForFences(device, 1u, &acquire_fence_, VK_TRUE, UINT64_MAX);
+                vkResetFences(device, 1u, &acquire_fence_);
+            }
+            lock.lock();
+            if (ok) ready_ = index;
+        }
+        presenter_busy_ = false;
+        present_done_.notify_all();
+    }
+}
+
+void VulkanContext::present_image(VkQueue present_queue, std::uint32_t index) {
+    VkPresentInfoKHR info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+    info.waitSemaphoreCount = 1u;
+    info.pWaitSemaphores = &rendered_[index];
+    info.swapchainCount = 1u;
+    info.pSwapchains = &swapchain_;
+    info.pImageIndices = &index;
+    const VkResult result = vkQueuePresentKHR(present_queue, &info);
+    if (result == VK_ERROR_SURFACE_LOST_KHR) surface_lost_ = true;
+    else if (result == VK_ERROR_OUT_OF_DATE_KHR) swapchain_stale_ = true;
+    else if (result == VK_SUBOPTIMAL_KHR && !swapchain_stale_ && surface_changed()) swapchain_stale_ = true;
 }
 
 void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, std::uint32_t source_height, bool present) {
     std::string error;
-    if (surface_lost_.exchange(false)) recreate_surface();
+    if (surface_lost_.exchange(false)) {
+        pause_presenter();
+        recreate_surface();
+    }
     if (swapchain_stale_ || swapchain_ == VK_NULL_HANDLE) {
+        pause_presenter();
         vkDeviceWaitIdle(device);
         destroy_swapchain();
         (void)create_swapchain(error);
     }
+    const bool threaded = presenter_.joinable();
+    if (threaded) resume_presenter();
     std::uint32_t index = 0u;
     present = present && swapchain_ != VK_NULL_HANDLE;
-    if (present) {
-        const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, acquired_, VK_NULL_HANDLE, &index);
+    VkSemaphore acquired_semaphore = slots_[slot_].acquired;
+    if (present && threaded) {
+        // The image the presentation thread acquired ahead; waiting only when
+        // it is still presenting the last frame (the display or GPU is behind).
+        hitch::Timer timer(hitch::kAcquire);
+        std::unique_lock lock(present_mutex_);
+        present_done_.wait(lock, [&] { return ready_ || swapchain_stale_ || surface_lost_; });
+        if (ready_) index = *ready_;
+        else present = false;
+        ready_.reset();
+        lock.unlock();
+        present_wake_.notify_all();
+    } else if (present) {
+        hitch::Timer timer(hitch::kAcquire);
+        const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, acquired_semaphore, VK_NULL_HANDLE, &index);
         if (acquired == VK_ERROR_SURFACE_LOST_KHR) {
             surface_lost_ = true;
             present = false;
@@ -326,43 +569,46 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
         }
         transition(commands_, target, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     }
-    vkEndCommandBuffer(commands_);
-    recording_ = false;
     const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1u;
     submit.pCommandBuffers = &commands_;
     if (present) {
-        submit.waitSemaphoreCount = 1u;
-        submit.pWaitSemaphores = &acquired_;
-        submit.pWaitDstStageMask = &wait_stage;
+        // The presentation thread waited for its acquire on a fence.
+        if (!threaded) {
+            submit.waitSemaphoreCount = 1u;
+            submit.pWaitSemaphores = &acquired_semaphore;
+            submit.pWaitDstStageMask = &wait_stage;
+        }
         submit.signalSemaphoreCount = 1u;
         submit.pSignalSemaphores = &rendered_[index];
     }
-    vkQueueSubmit(queue, 1u, &submit, fence_);
-    if (present) {
-        VkPresentInfoKHR info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-        info.waitSemaphoreCount = 1u;
-        info.pWaitSemaphores = &rendered_[index];
-        info.swapchainCount = 1u;
-        info.pSwapchains = &swapchain_;
-        info.pImageIndices = &index;
-        const VkResult result = vkQueuePresentKHR(queue, &info);
-        if (result == VK_ERROR_SURFACE_LOST_KHR) surface_lost_ = true;
-        else if (result == VK_ERROR_OUT_OF_DATE_KHR) swapchain_stale_ = true;
-        else if (result == VK_SUBOPTIMAL_KHR && !swapchain_stale_) swapchain_stale_ = surface_changed();
+    {
+        hitch::Timer timer(hitch::kSubmit);
+        submit_slot(submit);
+    }
+    if (present && threaded) {
+        hitch::Timer timer(hitch::kPresent);
+        std::unique_lock lock(present_mutex_);
+        present_done_.wait(lock, [&] { return !to_present_; });
+        to_present_ = index;
+        lock.unlock();
+        present_wake_.notify_all();
+    } else if (present) {
+        hitch::Timer timer(hitch::kPresent);
+        present_image(queue, index);
     }
 }
 
 std::uint32_t VulkanContext::memory_type(std::uint32_t bits, VkMemoryPropertyFlags flags) const {
-    VkPhysicalDeviceMemoryProperties memory{};
-    vk.vkGetPhysicalDeviceMemoryProperties(physical, &memory);
+    const auto &memory = memory_properties_;
     for (std::uint32_t i = 0; i < memory.memoryTypeCount; ++i)
         if ((bits & (1u << i)) != 0u && (memory.memoryTypes[i].propertyFlags & flags) == flags) return i;
     return UINT32_MAX;
 }
 
 bool VulkanContext::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, Buffer &out) {
+    hitch::Timer timer(hitch::kAlloc);
     VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     info.size = size;
     info.usage = usage;
@@ -389,6 +635,7 @@ void VulkanContext::destroy_buffer(Buffer &buffer) {
 
 bool VulkanContext::create_image(std::uint32_t width, std::uint32_t height, VkFormat format, VkImageUsageFlags usage,
                                  VkImageAspectFlags aspect, Image &out) {
+    hitch::Timer timer(hitch::kAlloc);
     VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     info.imageType = VK_IMAGE_TYPE_2D;
     info.format = format;
@@ -402,12 +649,47 @@ bool VulkanContext::create_image(std::uint32_t width, std::uint32_t height, VkFo
     if (vkCreateImage(device, &info, nullptr, &out.image) != VK_SUCCESS) return false;
     VkMemoryRequirements requirements{};
     vkGetImageMemoryRequirements(device, out.image, &requirements);
-    VkMemoryAllocateInfo allocate{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    allocate.allocationSize = requirements.size;
-    allocate.memoryTypeIndex = memory_type(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (allocate.memoryTypeIndex == UINT32_MAX || vkAllocateMemory(device, &allocate, nullptr, &out.memory) != VK_SUCCESS)
-        return false;
-    vkBindImageMemory(device, out.image, out.memory, 0u);
+    const std::uint32_t type = memory_type(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (type == UINT32_MAX) return false;
+    // Small images share a block (only optimal-tiling images live in them, so
+    // bufferImageGranularity does not apply); large ones get their own memory.
+    if (requirements.size <= kBlockBytes / 4u) {
+        const auto place = [&](std::uint32_t index) {
+            auto &block = blocks_[index];
+            if (block.memory == VK_NULL_HANDLE || block.type != type) return false;
+            const auto offset = block.ranges->allocate(requirements.size, requirements.alignment);
+            if (!offset) return false;
+            out.memory = block.memory;
+            out.offset = *offset;
+            out.block = index;
+            return true;
+        };
+        bool placed = false;
+        for (std::uint32_t i = 0; i < blocks_.size() && !placed; ++i) placed = place(i);
+        if (!placed) {
+            VkMemoryAllocateInfo allocate{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            allocate.allocationSize = kBlockBytes;
+            allocate.memoryTypeIndex = type;
+            VkDeviceMemory memory = VK_NULL_HANDLE;
+            if (vkAllocateMemory(device, &allocate, nullptr, &memory) == VK_SUCCESS) {
+                std::uint32_t index = 0;
+                while (index < blocks_.size() && blocks_[index].memory != VK_NULL_HANDLE) ++index;
+                if (index == blocks_.size()) blocks_.emplace_back();
+                blocks_[index] = {memory, type, std::make_unique<RangeAllocator>(kBlockBytes)};
+                placed = place(index);
+            }
+        }
+        if (placed) {
+            vkBindImageMemory(device, out.image, out.memory, out.offset);
+        }
+    }
+    if (out.memory == VK_NULL_HANDLE) {
+        VkMemoryAllocateInfo allocate{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        allocate.allocationSize = requirements.size;
+        allocate.memoryTypeIndex = type;
+        if (vkAllocateMemory(device, &allocate, nullptr, &out.memory) != VK_SUCCESS) return false;
+        vkBindImageMemory(device, out.image, out.memory, 0u);
+    }
     VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     view.image = out.image;
     view.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -423,8 +705,26 @@ bool VulkanContext::create_image(std::uint32_t width, std::uint32_t height, VkFo
 void VulkanContext::destroy_image(Image &image) {
     if (image.view != VK_NULL_HANDLE) vkDestroyImageView(device, image.view, nullptr);
     if (image.image != VK_NULL_HANDLE) vkDestroyImage(device, image.image, nullptr);
-    if (image.memory != VK_NULL_HANDLE) vkFreeMemory(device, image.memory, nullptr);
+    free_image_memory(image);
     image = Image{};
+}
+
+void VulkanContext::free_image_memory(Image &image) {
+    if (image.memory == VK_NULL_HANDLE) return;
+    if (image.block == UINT32_MAX) {
+        vkFreeMemory(device, image.memory, nullptr);
+        return;
+    }
+    auto &block = blocks_[image.block];
+    block.ranges->free(image.offset);
+    if (!block.ranges->empty()) return;
+    // An empty block goes unless it is its memory type's last.
+    for (std::uint32_t i = 0; i < blocks_.size(); ++i) {
+        if (i == image.block || blocks_[i].memory == VK_NULL_HANDLE || blocks_[i].type != block.type) continue;
+        vkFreeMemory(device, block.memory, nullptr);
+        block = MemoryBlock{};
+        return;
+    }
 }
 
 void VulkanContext::transition(VkCommandBuffer commands, VkImage image, VkImageAspectFlags aspect, VkImageLayout from,
