@@ -76,7 +76,8 @@ constexpr const char *kUsage =
     "      Backspace select, I/J/K/L analog stick, Tab (held) fast forward, Escape pause menu.\n"
     "      F5 saves a state; F8 loads it. Gamepad: Select+R1 saves, Select+L1 loads.\n"
     "Environment: SARUSARU_TRACE_HITCHES=<ms> logs every frame over ms milliseconds, split by\n"
-    "  cause; SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
+    "  cause; SARUSARU_PRESENT_THREAD=0 presents on the game's thread (not a thread of its own);\n"
+    "  SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
     "  seconds of game time (default 5) as BMP files, from SARUSARU_CAPTURE_FROM seconds if set;\n"
     "  SARUSARU_INPUT scripts the pad; SARUSARU_UI_SCRIPT scripts the launcher (ui/ui_script.hpp).\n";
 

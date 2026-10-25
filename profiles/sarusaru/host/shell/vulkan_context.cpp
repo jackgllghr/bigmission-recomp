@@ -4,7 +4,9 @@
 #include <SDL3/SDL_vulkan.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <string_view>
 #include <utility>
 
 namespace sarusaru::shell {
@@ -93,7 +95,10 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     const float priorities[2] = {1.0f, 1.0f};
     VkDeviceQueueCreateInfo queue_info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     queue_info.queueFamilyIndex = queue_family;
-    queue_info.queueCount = family_queues >= 2u ? 2u : 1u;
+    // SARUSARU_PRESENT_THREAD=0 keeps presenting on the game's thread.
+    const char *present_thread = std::getenv("SARUSARU_PRESENT_THREAD");
+    const bool threaded = present_thread == nullptr || std::string_view(present_thread) != "0";
+    queue_info.queueCount = family_queues >= 2u && threaded ? 2u : 1u;
     queue_info.pQueuePriorities = priorities;
     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     device_info.queueCreateInfoCount = 1u;
