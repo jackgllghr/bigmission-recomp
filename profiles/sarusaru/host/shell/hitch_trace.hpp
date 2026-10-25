@@ -33,12 +33,16 @@ enum Category : std::size_t {
     kDraw,        // all of GeRenderer's draws
     kMiss,        // making new textures (GeRenderer::texture_view on a cache miss)
     kFrameEnd,    // GeRenderer::presentable, art put in place included
+    // Counts and GPU time, not main-thread time:
+    kPasses,      // GE render passes begun (each loads and stores its target on a tiled GPU)
+    kGpu,         // GPU time of the submissions that finished during the frame (recorded about two frames before)
     kCategories,
 };
 
 inline constexpr const char *kNames[kCategories] = {"pipeline", "decode", "hash", "prompt", "host", "job", "art-wait",
                                                      "flush", "fence", "alloc", "upload", "acquire", "submit", "present", "draw-total",
-                                                     "miss-total", "frame-end-total"};
+                                                     "miss-total", "frame-end-total",
+                                                     "passes", "gpu"};
 
 struct State {
     bool enabled{};
@@ -62,6 +66,17 @@ inline State &state() {
 }
 
 inline bool enabled() { return state().enabled; }
+
+inline void count(Category category) {
+    if (enabled()) ++state().count[category];
+}
+
+inline void add_gpu(std::uint64_t ns) {
+    auto &s = state();
+    if (!s.enabled) return;
+    s.ns[kGpu] += ns;
+    ++s.count[kGpu];
+}
 
 class Timer {
 public:
@@ -112,9 +127,11 @@ inline void end_frame(std::uint64_t guest_us) {
     std::uint64_t known = 0u;
     for (std::size_t i = 0; i < kDraw; ++i) known += s.ns[i];
     std::fprintf(stderr, "hitch at %.3f s: %.1f ms", static_cast<double>(guest_us) / 1e6, static_cast<double>(total) / 1e6);
-    for (std::size_t i = 0; i < kCategories; ++i)
-        if (s.count[i] != 0u)
-            std::fprintf(stderr, " %s=%.1fms/%u", kNames[i], static_cast<double>(s.ns[i]) / 1e6, s.count[i]);
+    for (std::size_t i = 0; i < kCategories; ++i) {
+        if (s.count[i] == 0u) continue;
+        if (i == kPasses) std::fprintf(stderr, " passes=%u", s.count[i]);
+        else std::fprintf(stderr, " %s=%.1fms/%u", kNames[i], static_cast<double>(s.ns[i]) / 1e6, s.count[i]);
+    }
     std::fprintf(stderr, " other=%.1fms", static_cast<double>(total > known ? total - known : 0u) / 1e6);
     if (s.observer_ns > s.frame_start_ns)
         std::fprintf(stderr, " (guest=%.1fms incl. draws)", static_cast<double>(s.observer_ns - s.frame_start_ns) / 1e6);

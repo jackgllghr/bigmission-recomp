@@ -307,6 +307,7 @@ private:
     // How long a frame's end may wait for art, and how long art may take
     // from being queued before its texture is first shown without it.
     static constexpr std::uint64_t kArtWaitNs = 5'000'000u, kArtLatencyNs = 12'000'000u;
+    // Uploads `image`'s texels (its whole size), as upload_before().
     void upload(Image &image, const std::uint32_t *texels, std::uint32_t width, std::uint32_t height);
 };
 

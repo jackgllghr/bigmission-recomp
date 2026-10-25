@@ -66,6 +66,8 @@ constexpr const char *kUsage =
     "  --translation-pack FILE  select an English menu texture pack for this run\n"
     "  --texture-pack DIR  use this HD texture pack for this run (none: the original textures)\n"
     "  --dump-textures DIR  write every texture the game draws to DIR, once each, as PNG\n"
+    "  --env NAME=VALUE  set an environment variable below for this run (for Android, where\n"
+    "    only the activity's args extra reaches the port; its output goes to logcat)\n"
     "  --version  print the launcher release version and exit\n"
     "  --print-default-settings  print the settings file template and exit\n"
     "  --install ISO  build the game from your disc without the window, as the launcher's Install does\n"
@@ -73,7 +75,8 @@ constexpr const char *kUsage =
     "Default keys: arrows d-pad, Z circle, X cross, A square, S triangle, Q/W L/R, Enter start,\n"
     "      Backspace select, I/J/K/L analog stick, Tab (held) fast forward, Escape pause menu.\n"
     "      F5 saves a state; F8 loads it. Gamepad: Select+R1 saves, Select+L1 loads.\n"
-    "Environment: SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
+    "Environment: SARUSARU_TRACE_HITCHES=<ms> logs every frame over ms milliseconds, split by\n"
+    "  cause; SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
     "  seconds of game time (default 5) as BMP files, from SARUSARU_CAPTURE_FROM seconds if set;\n"
     "  SARUSARU_INPUT scripts the pad; SARUSARU_UI_SCRIPT scripts the launcher (ui/ui_script.hpp).\n";
 
@@ -280,7 +283,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
         // A renderer for `current`; another replaces it when the resolution or textures change.
         const auto make_renderer = [&] {
             if (renderer) {
-                vulkan.vkDeviceWaitIdle(vulkan.device);
+                vulkan.wait_idle();
                 renderer->destroy();
             }
             renderer = std::make_unique<sarusaru::shell::GeRenderer>(vulkan, current.internal_resolution);
@@ -364,7 +367,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             current.skip_intro_logos = skip_intro_logos;
             if (new_textures) {
                 if (renderer) {
-                    vulkan.vkDeviceWaitIdle(vulkan.device);
+                    vulkan.wait_idle();
                     renderer->destroy();
                     renderer.reset();
                 }
@@ -672,9 +675,12 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             const std::uint64_t now_ns = SDL_GetTicksNS();
             const bool fast = controls.fast_forward;
             if (fast || now_ns > target_ns + kMaxLagNs) {
+                // Pacing starts again from now. What audio is queued plays on:
+                // the game is behind, so there is little of it, and dropping it
+                // would turn a slow frame into a gap in the sound (the output
+                // already drops a backlog that would add latency).
                 real_origin_ns = now_ns;
                 guest_origin_us = game.kernel.now_us();
-                if (!fast) audio.clear();
             } else if (target_ns > now_ns) {
                 SDL_DelayPrecise(target_ns - now_ns);
             }
@@ -780,6 +786,18 @@ int main(int argc, char **argv) {
         }
         if (arg == "--dump-textures" && i + 1 < argc) {
             texture_dump_directory = std::filesystem::absolute(argv[++i]);
+            continue;
+        }
+        if (arg == "--env" && i + 1 < argc) {
+            // Before anything reads the environment (SDL_Init included).
+            const std::string_view assignment = argv[++i];
+            const auto equals = assignment.find('=');
+            if (equals == std::string_view::npos || equals == 0u) {
+                std::cerr << "sarusaru: --env takes NAME=VALUE\n";
+                return 2;
+            }
+            SDL_setenv_unsafe(std::string(assignment.substr(0, equals)).c_str(),
+                              std::string(assignment.substr(equals + 1)).c_str(), 1);
             continue;
         }
         if (arg == "--scale" && i + 1 < argc) {

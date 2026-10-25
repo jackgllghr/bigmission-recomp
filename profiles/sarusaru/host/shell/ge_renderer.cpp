@@ -316,7 +316,7 @@ void GeRenderer::destroy() {
     if (device == VK_NULL_HANDLE) return;
     stop_warming_ = true;
     workers_.reset();
-    vk_.vkDeviceWaitIdle(device);
+    vk_.wait_idle();
     if (keys_dirty_) save_pipelines(true);
     for (auto &layer : targets_) {
         for (auto &[address, target] : layer) {
@@ -500,6 +500,7 @@ void GeRenderer::begin_pass(Target &target) {
     info.framebuffer = target.framebuffer;
     info.renderArea = {{0, 0}, {target.color.width, target.color.height}};
     vk_.vkCmdBeginRenderPass(commands_, &info, VK_SUBPASS_CONTENTS_INLINE);
+    hitch::count(hitch::kPasses);
     pass_target_ = &target;
 }
 
@@ -554,29 +555,10 @@ void GeRenderer::draw_world_contours() {
 }
 
 void GeRenderer::upload(Image &image, const std::uint32_t *texels, std::uint32_t width, std::uint32_t height) {
-    end_pass();
-    const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4u;
-    // An HD texture can outgrow the per-slot staging buffer: it gets a
-    // buffer of its own, freed once the copy has run.
-    Buffer dedicated;
-    const bool oversized = bytes > staging_.size;
-    if (oversized && !vk_.create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, dedicated)) return;
-    Buffer &source = oversized ? dedicated : staging_;
-    const VkDeviceSize offset = oversized ? 0u : reserve(staging_, staging_cursor_, bytes, 16u);
-    {
-        hitch::Timer timer(hitch::kUpload);
-        std::memcpy(static_cast<std::uint8_t *>(source.mapped) + offset, texels, bytes);
-    }
-    vk_.transition(commands_, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    VkBufferImageCopy copy{};
-    copy.bufferOffset = offset;
-    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
-    copy.imageExtent = {width, height, 1u};
-    vk_.vkCmdCopyBufferToImage(commands_, source.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &copy);
-    vk_.transition(commands_, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    if (oversized) vk_.retire(dedicated);
+    // In the slot's prologue, ahead of every draw recorded in it: a texture
+    // made mid-frame no longer ends the render pass, which on a tiled GPU
+    // costs a store and a reload of the whole target.
+    upload_before(image, {texels, static_cast<std::size_t>(width) * height});
 }
 
 VkSampler GeRenderer::sampler(const gpu::TextureState &texture) {

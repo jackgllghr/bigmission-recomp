@@ -81,11 +81,20 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     if (std::ranges::any_of(available, [](const auto &e) { return std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0; }))
         device_extensions.push_back("VK_KHR_portability_subset");
 
-    const float priority = 1.0f;
+    // A second queue of the family, when there is one, presents (see end_frame).
+    std::uint32_t family_queues = 0;
+    {
+        std::uint32_t count = 0;
+        vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, nullptr);
+        std::vector<VkQueueFamilyProperties> families(count);
+        vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families.data());
+        family_queues = families[queue_family].queueCount;
+    }
+    const float priorities[2] = {1.0f, 1.0f};
     VkDeviceQueueCreateInfo queue_info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     queue_info.queueFamilyIndex = queue_family;
-    queue_info.queueCount = 1u;
-    queue_info.pQueuePriorities = &priority;
+    queue_info.queueCount = family_queues >= 2u ? 2u : 1u;
+    queue_info.pQueuePriorities = priorities;
     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     device_info.queueCreateInfoCount = 1u;
     device_info.pQueueCreateInfos = &queue_info;
@@ -99,6 +108,7 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     SARUSARU_VK_DEVICE_FUNCTIONS(SARUSARU_VK_LOAD)
 #undef SARUSARU_VK_LOAD
     vkGetDeviceQueue(device, queue_family, 0u, &queue);
+    if (queue_info.queueCount == 2u) vkGetDeviceQueue(device, queue_family, 1u, &present_queue_);
 
     VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -118,6 +128,24 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
         vkCreateSemaphore(device, &semaphore_info, nullptr, &slot.acquired);
     }
     vk.vkGetPhysicalDeviceMemoryProperties(physical, &memory_properties_);
+    if (present_queue_ != VK_NULL_HANDLE) {
+        VkFenceCreateInfo unsignalled{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        vkCreateFence(device, &unsignalled, nullptr, &acquire_fence_);
+        presenter_ = std::thread([this] { presenter_loop(); });
+    }
+    SDL_Log("Vulkan: %s, presenting %s", properties.deviceName,
+            present_queue_ != VK_NULL_HANDLE ? "on a second queue from its own thread" : "on the game's thread");
+    // The hitch trace's GPU time, where the queue has timestamps.
+    std::uint32_t family_count = 0;
+    vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &family_count, nullptr);
+    std::vector<VkQueueFamilyProperties> families(family_count);
+    vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &family_count, families.data());
+    if (hitch::enabled() && families[queue_family].timestampValidBits != 0u && properties.limits.timestampPeriod > 0.0f) {
+        VkQueryPoolCreateInfo query_info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+        query_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        query_info.queryCount = 2u;
+        for (auto &slot : slots_) vkCreateQueryPool(device, &query_info, nullptr, &slot.timestamps);
+    }
     return create_swapchain(error);
 }
 
@@ -165,6 +193,9 @@ bool VulkanContext::create_swapchain(std::string &error) {
         error = "the surface has no sRGB presentation format compatible with the PSP renderer";
         return false;
     }
+    // With a presentation thread the app holds up to two images at once: the
+    // one being presented and the next frame's, acquired ahead.
+    const std::uint32_t held = present_queue_ != VK_NULL_HANDLE ? 2u : 1u;
     std::uint32_t mode_count = 0;
     vk.vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &mode_count, nullptr);
     std::vector<VkPresentModeKHR> modes(mode_count);
@@ -198,10 +229,11 @@ bool VulkanContext::create_swapchain(std::string &error) {
         transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     }
 #if defined(__ANDROID__)
-    SDL_Log("swapchain %ux%u for a %dx%d window, surface transform %#x", extent_.width, extent_.height, width, height,
-            static_cast<unsigned>(capabilities.currentTransform));
+    SDL_Log("swapchain %ux%u for a %dx%d window, surface transform %#x, present mode %d of %u, images %u-%u",
+            extent_.width, extent_.height, width, height, static_cast<unsigned>(capabilities.currentTransform),
+            static_cast<int>(mode), mode_count, capabilities.minImageCount, capabilities.maxImageCount);
 #endif
-    std::uint32_t image_count = capabilities.minImageCount + 1u;
+    std::uint32_t image_count = capabilities.minImageCount + held;
     if (capabilities.maxImageCount != 0u) image_count = std::min(image_count, capabilities.maxImageCount);
 
     VkSwapchainCreateInfoKHR info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
@@ -233,6 +265,9 @@ bool VulkanContext::create_swapchain(std::string &error) {
 }
 
 void VulkanContext::destroy_swapchain() {
+    // An image acquired ahead goes with the swapchain it came from (the
+    // presentation thread is paused here).
+    ready_.reset();
     for (auto semaphore : rendered_) vkDestroySemaphore(device, semaphore, nullptr);
     rendered_.clear();
     if (swapchain_ != VK_NULL_HANDLE) vkDestroySwapchainKHR(device, swapchain_, nullptr);
@@ -242,11 +277,21 @@ void VulkanContext::destroy_swapchain() {
 
 void VulkanContext::destroy() {
     if (window_ != nullptr) SDL_RemoveEventWatch(watch_lifecycle, this);
+    if (presenter_.joinable()) {
+        {
+            const std::lock_guard lock(present_mutex_);
+            presenter_stop_ = true;
+        }
+        present_wake_.notify_all();
+        presenter_.join();
+    }
     if (device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
+        if (acquire_fence_ != VK_NULL_HANDLE) vkDestroyFence(device, acquire_fence_, nullptr);
         destroy_swapchain();
         for (auto &slot : slots_) {
             destroy_retired(slot);
+            if (slot.timestamps != VK_NULL_HANDLE) vkDestroyQueryPool(device, slot.timestamps, nullptr);
             vkDestroySemaphore(device, slot.acquired, nullptr);
             vkDestroyFence(device, slot.fence, nullptr);
         }
@@ -273,12 +318,24 @@ VkCommandBuffer VulkanContext::begin_frame() {
             vkWaitForFences(device, 1u, &slot.fence, VK_TRUE, UINT64_MAX);
         }
         destroy_retired(slot);
+        if (slot.timed) {
+            std::uint64_t stamps[2]{};
+            if (vkGetQueryPoolResults(device, slot.timestamps, 0u, 2u, sizeof stamps, stamps, sizeof stamps[0],
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[1] >= stamps[0])
+                hitch::add_gpu(static_cast<std::uint64_t>(static_cast<double>(stamps[1] - stamps[0]) *
+                                                          properties.limits.timestampPeriod));
+            slot.timed = false;
+        }
     }
     commands_ = slots_[slot_].commands;
     vkResetCommandBuffer(commands_, 0u);
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(commands_, &begin);
+    if (const VkQueryPool pool = slots_[slot_].timestamps; pool != VK_NULL_HANDLE) {
+        vkCmdResetQueryPool(commands_, pool, 0u, 2u);
+        vkCmdWriteTimestamp(commands_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, pool, 0u);
+    }
     recording_ = true;
     return commands_;
 }
@@ -297,6 +354,10 @@ VkCommandBuffer VulkanContext::prologue() {
 
 void VulkanContext::submit_slot(const VkSubmitInfo &submit) {
     Slot &slot = slots_[slot_];
+    if (slot.timestamps != VK_NULL_HANDLE) {
+        vkCmdWriteTimestamp(slot.commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, slot.timestamps, 1u);
+        slot.timed = true;
+    }
     vkEndCommandBuffer(slot.commands);
     // The prologue runs first: command buffers of one submission run in order.
     VkCommandBuffer buffers[2] = {slot.commands, VK_NULL_HANDLE};
@@ -365,18 +426,107 @@ VkCommandBuffer VulkanContext::flush() {
     return begin_frame();
 }
 
+void VulkanContext::pause_presenter() {
+    if (!presenter_.joinable()) return;
+    std::unique_lock lock(present_mutex_);
+    presenter_paused_ = true;
+    present_done_.wait(lock, [&] { return !presenter_busy_ && !to_present_; });
+}
+
+void VulkanContext::resume_presenter() {
+    if (!presenter_.joinable() || swapchain_ == VK_NULL_HANDLE) return;
+    {
+        const std::lock_guard lock(present_mutex_);
+        presenter_paused_ = false;
+    }
+    present_wake_.notify_all();
+}
+
+void VulkanContext::wait_idle() {
+    pause_presenter();
+    vkDeviceWaitIdle(device);
+    resume_presenter();
+}
+
+void VulkanContext::presenter_loop() {
+    std::unique_lock lock(present_mutex_);
+    for (;;) {
+        // Presenting what it was handed comes first, paused or not; acquiring
+        // ahead only while running and while the swapchain is usable.
+        const auto can_acquire = [&] {
+            return !presenter_paused_ && !ready_ && swapchain_ != VK_NULL_HANDLE && !swapchain_stale_ && !surface_lost_;
+        };
+        present_wake_.wait(lock, [&] { return presenter_stop_ || to_present_ || can_acquire(); });
+        if (presenter_stop_) return;
+        presenter_busy_ = true;
+        if (to_present_) {
+            const std::uint32_t index = *to_present_;
+            lock.unlock();
+            present_image(present_queue_, index);
+            lock.lock();
+            to_present_.reset();
+        } else {
+            lock.unlock();
+            std::uint32_t index = 0u;
+            const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, VK_NULL_HANDLE, acquire_fence_, &index);
+            bool ok = acquired == VK_SUCCESS || acquired == VK_SUBOPTIMAL_KHR;
+            if (acquired == VK_ERROR_SURFACE_LOST_KHR) surface_lost_ = true;
+            else if (acquired == VK_ERROR_OUT_OF_DATE_KHR) swapchain_stale_ = true;
+            else if (acquired == VK_SUBOPTIMAL_KHR && surface_changed()) swapchain_stale_ = true;
+            if (ok) {
+                vkWaitForFences(device, 1u, &acquire_fence_, VK_TRUE, UINT64_MAX);
+                vkResetFences(device, 1u, &acquire_fence_);
+            }
+            lock.lock();
+            if (ok) ready_ = index;
+        }
+        presenter_busy_ = false;
+        present_done_.notify_all();
+    }
+}
+
+void VulkanContext::present_image(VkQueue present_queue, std::uint32_t index) {
+    VkPresentInfoKHR info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+    info.waitSemaphoreCount = 1u;
+    info.pWaitSemaphores = &rendered_[index];
+    info.swapchainCount = 1u;
+    info.pSwapchains = &swapchain_;
+    info.pImageIndices = &index;
+    const VkResult result = vkQueuePresentKHR(present_queue, &info);
+    if (result == VK_ERROR_SURFACE_LOST_KHR) surface_lost_ = true;
+    else if (result == VK_ERROR_OUT_OF_DATE_KHR) swapchain_stale_ = true;
+    else if (result == VK_SUBOPTIMAL_KHR && !swapchain_stale_ && surface_changed()) swapchain_stale_ = true;
+}
+
 void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, std::uint32_t source_height, bool present) {
     std::string error;
-    if (surface_lost_.exchange(false)) recreate_surface();
+    if (surface_lost_.exchange(false)) {
+        pause_presenter();
+        recreate_surface();
+    }
     if (swapchain_stale_ || swapchain_ == VK_NULL_HANDLE) {
+        pause_presenter();
         vkDeviceWaitIdle(device);
         destroy_swapchain();
         (void)create_swapchain(error);
     }
+    const bool threaded = presenter_.joinable();
+    if (threaded) resume_presenter();
     std::uint32_t index = 0u;
     present = present && swapchain_ != VK_NULL_HANDLE;
     VkSemaphore acquired_semaphore = slots_[slot_].acquired;
-    if (present) {
+    if (present && threaded) {
+        // The image the presentation thread acquired ahead; waiting only when
+        // it is still presenting the last frame (the display or GPU is behind).
+        hitch::Timer timer(hitch::kAcquire);
+        std::unique_lock lock(present_mutex_);
+        present_done_.wait(lock, [&] { return ready_ || swapchain_stale_ || surface_lost_; });
+        if (ready_) index = *ready_;
+        else present = false;
+        ready_.reset();
+        lock.unlock();
+        present_wake_.notify_all();
+    } else if (present) {
         hitch::Timer timer(hitch::kAcquire);
         const VkResult acquired = vkAcquireNextImageKHR(device, swapchain_, UINT64_MAX, acquired_semaphore, VK_NULL_HANDLE, &index);
         if (acquired == VK_ERROR_SURFACE_LOST_KHR) {
@@ -419,9 +569,12 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
     submit.commandBufferCount = 1u;
     submit.pCommandBuffers = &commands_;
     if (present) {
-        submit.waitSemaphoreCount = 1u;
-        submit.pWaitSemaphores = &acquired_semaphore;
-        submit.pWaitDstStageMask = &wait_stage;
+        // The presentation thread waited for its acquire on a fence.
+        if (!threaded) {
+            submit.waitSemaphoreCount = 1u;
+            submit.pWaitSemaphores = &acquired_semaphore;
+            submit.pWaitDstStageMask = &wait_stage;
+        }
         submit.signalSemaphoreCount = 1u;
         submit.pSignalSemaphores = &rendered_[index];
     }
@@ -429,18 +582,16 @@ void VulkanContext::end_frame(const Image *source, std::uint32_t source_width, s
         hitch::Timer timer(hitch::kSubmit);
         submit_slot(submit);
     }
-    if (present) {
+    if (present && threaded) {
         hitch::Timer timer(hitch::kPresent);
-        VkPresentInfoKHR info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-        info.waitSemaphoreCount = 1u;
-        info.pWaitSemaphores = &rendered_[index];
-        info.swapchainCount = 1u;
-        info.pSwapchains = &swapchain_;
-        info.pImageIndices = &index;
-        const VkResult result = vkQueuePresentKHR(queue, &info);
-        if (result == VK_ERROR_SURFACE_LOST_KHR) surface_lost_ = true;
-        else if (result == VK_ERROR_OUT_OF_DATE_KHR) swapchain_stale_ = true;
-        else if (result == VK_SUBOPTIMAL_KHR && !swapchain_stale_) swapchain_stale_ = surface_changed();
+        std::unique_lock lock(present_mutex_);
+        present_done_.wait(lock, [&] { return !to_present_; });
+        to_present_ = index;
+        lock.unlock();
+        present_wake_.notify_all();
+    } else if (present) {
+        hitch::Timer timer(hitch::kPresent);
+        present_image(queue, index);
     }
 }
 

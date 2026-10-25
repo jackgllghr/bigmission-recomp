@@ -15,9 +15,12 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <thread>
 #include <span>
 #include <string>
 #include <vector>
@@ -40,7 +43,8 @@
     X(vkCreateSampler) X(vkDestroySampler) X(vkCmdBindPipeline) X(vkCmdBindDescriptorSets) \
     X(vkCmdBindVertexBuffers) X(vkCmdPushConstants) X(vkCmdSetViewport) X(vkCmdSetScissor) \
     X(vkCmdSetBlendConstants) X(vkCmdSetStencilReference) X(vkCmdDraw) X(vkCmdClearDepthStencilImage) X(vkCmdCopyImageToBuffer) \
-    X(vkCreatePipelineCache) X(vkDestroyPipelineCache) X(vkGetPipelineCacheData)
+    X(vkCreatePipelineCache) X(vkDestroyPipelineCache) X(vkGetPipelineCacheData) \
+    X(vkCreateQueryPool) X(vkDestroyQueryPool) X(vkCmdResetQueryPool) X(vkCmdWriteTimestamp) X(vkGetQueryPoolResults)
 
 namespace sarusaru::shell {
 
@@ -103,7 +107,10 @@ public:
     // recorded. Begun on first use.
     VkCommandBuffer prologue();
     // Ends the frame: copies `source` (in TRANSFER_SRC layout, or nothing when
-    // null) letterboxed into the swapchain image and presents it.
+    // null) letterboxed into the swapchain image and presents it. Where the
+    // queue family has a second queue, a thread of its own acquires the
+    // images and presents them: Android's present waits for the frame's GPU
+    // work, which would otherwise come out of the game's time.
     // With present=false, still submits all GE/capture work without acquiring a swapchain image.
     void end_frame(const Image *source, std::uint32_t source_width, std::uint32_t source_height, bool present = true);
     // Submits the commands recorded so far and moves on to the next slot
@@ -112,6 +119,9 @@ public:
     // As submit(), and also waits for everything submitted: for reading back
     // what the GPU wrote.
     VkCommandBuffer flush();
+    // vkDeviceWaitIdle, with presentation held off meanwhile (it may use a
+    // queue of its own on another thread): use this, not vkDeviceWaitIdle.
+    void wait_idle();
     // Destroys the resource once the GPU is done with the work recorded so far.
     void retire(Image &image);
     void retire(Buffer &buffer);
@@ -146,6 +156,9 @@ private:
     struct Slot {
         VkCommandBuffer commands{VK_NULL_HANDLE}, prologue{VK_NULL_HANDLE};
         bool prologue_open{};
+        // SARUSARU_TRACE_HITCHES: GPU timestamps around the slot's submission.
+        VkQueryPool timestamps{VK_NULL_HANDLE};
+        bool timed{};
         VkFence fence{VK_NULL_HANDLE};
         VkSemaphore acquired{VK_NULL_HANDLE};
         bool submitted{};
@@ -167,7 +180,24 @@ private:
     VkCommandBuffer commands_{VK_NULL_HANDLE};  // the current slot's
     std::vector<VkSemaphore> rendered_;  // one per swapchain image
     bool recording_{};
-    bool swapchain_stale_{};
+    std::atomic<bool> swapchain_stale_{};
+
+    // The presentation thread, where there is a second queue to present on.
+    // It owns the swapchain's acquire and present: it acquires the next
+    // frame's image ahead (ready_), and presents what end_frame() hands it
+    // (to_present_), one at a time.
+    VkQueue present_queue_{VK_NULL_HANDLE};
+    std::thread presenter_;
+    std::mutex present_mutex_;
+    std::condition_variable present_wake_, present_done_;
+    bool presenter_stop_{}, presenter_paused_{true}, presenter_busy_{};
+    std::optional<std::uint32_t> ready_, to_present_;
+    VkFence acquire_fence_{VK_NULL_HANDLE};
+    void presenter_loop();
+    void present_image(VkQueue queue, std::uint32_t index);
+    // Holds presentation off (finishing what it was handed) / lets it go on.
+    void pause_presenter();
+    void resume_presenter();
     // Set when the window's surface is gone: on Android the system destroys
     // it whenever the app leaves the screen (another app, the file picker),
     // and SDL gives the window a new one when it comes back. Set from the
