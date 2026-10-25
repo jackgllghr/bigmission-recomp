@@ -6,11 +6,13 @@
 // a worker thread at the next start. Both live beside the settings file.
 #include "shell/vulkan_loader.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <system_error>
