@@ -103,11 +103,14 @@ target_link_libraries(sarusaru_frame_rate PUBLIC psprecomp_runtime)
 add_library(sarusaru_gpu STATIC host/gpu/ge_state.cpp host/gpu/texture_decode.cpp host/gpu/texture_hash.cpp host/gpu/sha256.cpp
     host/gpu/frame_interpolator.cpp)
 target_include_directories(sarusaru_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
-target_link_libraries(sarusaru_gpu PUBLIC psprecomp_runtime psprecomp_core)
+# The shared runtime only, never psprecomp_core as well: the static copy put a
+# second runtime in the executable, whose call hooks the game module never
+# ran, so the camera and FOV overrides saw no gameplay calls.
+target_link_libraries(sarusaru_gpu PUBLIC psprecomp_runtime)
 
 add_library(sarusaru_translation STATIC host/translation/texture_pack.cpp host/translation/glyph_runs.cpp host/translation/dialogue.cpp)
 target_include_directories(sarusaru_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
-target_link_libraries(sarusaru_translation PUBLIC sarusaru_gpu psprecomp_core)
+target_link_libraries(sarusaru_translation PUBLIC sarusaru_gpu)
 
 # PSP-format save data. aes.c is tiny-AES-c, compiled as C++ like the rest.
 add_library(sarusaru_savedata STATIC
@@ -630,6 +633,14 @@ if(PSPRECOMP_BUILD_PROFILE_TESTS)
     add_test(NAME sarusaru_bootstrap_help COMMAND sarusaru_bootstrap --help)
     add_test(NAME sarusaru_bootstrap_missing_input COMMAND sarusaru_bootstrap)
     set_tests_properties(sarusaru_bootstrap_missing_input PROPERTIES WILL_FAIL TRUE)
+    if(CMAKE_NM AND NOT WIN32)
+        foreach(executable sarusaru_bootstrap sarusaru)
+            if(TARGET ${executable})
+                add_test(NAME ${executable}_one_runtime COMMAND "${CMAKE_COMMAND}" "-DNM=${CMAKE_NM}"
+                    "-DEXECUTABLE=$<TARGET_FILE:${executable}>" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_one_runtime.cmake")
+            endif()
+        endforeach()
+    endif()
 endif()
 
 # The game module from the locally generated corpus, beside the executables,
