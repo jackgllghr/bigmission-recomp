@@ -1,9 +1,11 @@
 #include "shell/settings.hpp"
 #include "shell/input.hpp"
 #include "shell/presentation_clock.hpp"
+#include "shell/performance_stats.hpp"
 #include "kernel/guest_clock.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -213,6 +215,50 @@ int main() {
     require(parse_settings("[graphics]\nframe_interpolation = 0\nframe_rate = 60").frame_rate == 0,
             "old cap of 60 without interpolation turned interpolation on");
     require(parse_settings("[graphics]\nframe_rate = 30\nframe_interpolation = 0").frame_rate == 30, "old cap of 30 lost");
+    // The performance overlay: off unless the file says, by name, and written back.
+    require(default_settings().performance_overlay == PerformanceOverlay::Off, "overlay must default to off");
+    for (const auto level : {PerformanceOverlay::Off, PerformanceOverlay::Fps, PerformanceOverlay::Detailed,
+                             PerformanceOverlay::MangoHud}) {
+        Settings overlay = default_settings();
+        overlay.performance_overlay = level;
+        require(parse_settings(serialize_settings(overlay)) == overlay, "overlay setting did not round-trip");
+    }
+    require(parse_settings("[graphics]\nperformance_overlay = detailed").performance_overlay == PerformanceOverlay::Detailed,
+            "overlay setting not read");
+    for (const char *text : {"[graphics]\nperformance_overlay = on", "[graphics]\nperformance_overlay = 1",
+                             "[graphics]\nperformance_overlay = "}) {
+        bool threw = false;
+        try { (void)parse_settings(text); } catch (const std::runtime_error &) { threw = true; }
+        require(threw, "bad overlay value accepted");
+    }
+    {
+        // Two pictures 20 ms apart for half a second, the game at full speed
+        // and every other picture a new game frame (12 in the window), 4 ms of work a vblank, 5 ms of GPU a picture.
+        PerformanceStats stats;
+        std::uint64_t now = 1'000'000'000u, guest = 0u, frames = 0u, gpu = 0u;
+        stats.sample(now, guest, frames, gpu, true);
+        require(!stats.summary().valid, "overlay summary before a whole window");
+        for (int i = 0; i < 30; ++i) {
+            now += 20'000'000u;
+            guest += 20'000u;
+            frames += i % 2;
+            gpu += 5'000'000u;
+            stats.presented(now);
+            stats.vblank_work(4'000'000u);
+            stats.sample(now, guest, frames, gpu, true);
+        }
+        const auto &summary = stats.summary();
+        require(summary.valid && std::abs(summary.fps - 50.0f) < 0.5f && std::abs(summary.frame_ms - 20.0f) < 0.1f &&
+                    std::abs(summary.cpu_ms - 4.0f) < 0.01f && summary.gpu_known && std::abs(summary.gpu_ms - 5.0f) < 0.1f &&
+                    std::abs(summary.speed - 1.0f) < 0.01f && std::abs(summary.game_fps - 24.0f) < 0.01f &&
+                    std::abs(summary.worst_ms - 20.0f) < 0.01f && std::abs(summary.one_percent_low - 50.0f) < 0.5f,
+                "overlay summary wrong");
+        require(stats.count() == 29u && stats.offset() == 0u, "overlay frame-time history wrong");
+        // A pause is not a frame.
+        stats.resume();
+        stats.presented(now + 5'000'000'000u);
+        require(stats.count() == 29u, "a pause counted as a frame time");
+    }
     const auto motion120 = parse_settings("[graphics]\nframe_rate = 120\n");
     require(motion120.frame_rate == 120 && interpolated_pictures(motion120) == 3u &&
                 parse_settings(serialize_settings(motion120)) == motion120,

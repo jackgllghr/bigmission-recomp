@@ -95,6 +95,13 @@ public:
 
     // Creates everything for `window`; false with `error` set on failure.
     bool create(SDL_Window *window, std::string &error);
+
+    // Times the GPU's work from the next frame on (the hitch trace always does).
+    void set_gpu_timing(bool enabled) { gpu_timing_ = enabled; }
+    // Whether the device can time its work, and the GPU time of the frames
+    // timed so far (a running total, read about two frames late).
+    [[nodiscard]] bool gpu_timing_available() const { return slots_[0].timestamps != VK_NULL_HANDLE; }
+    [[nodiscard]] std::uint64_t gpu_time_ns() const { return gpu_time_ns_; }
     void destroy();
 
     // Starts recording the next slot's command buffer, waiting only for that
@@ -156,9 +163,11 @@ private:
     struct Slot {
         VkCommandBuffer commands{VK_NULL_HANDLE}, prologue{VK_NULL_HANDLE};
         bool prologue_open{};
-        // SARUSARU_TRACE_HITCHES: GPU timestamps around the slot's submission.
+        // GPU timestamps around the slot's submission (the hitch trace's and
+        // the performance overlay's): `timing` while recording them, `timed`
+        // once submitted with them.
         VkQueryPool timestamps{VK_NULL_HANDLE};
-        bool timed{};
+        bool timing{}, timed{};
         VkFence fence{VK_NULL_HANDLE};
         VkSemaphore acquired{VK_NULL_HANDLE};
         bool submitted{};
@@ -166,6 +175,8 @@ private:
         std::vector<Buffer> retired_buffers;
     };
     std::array<Slot, kFramesInFlight> slots_{};
+    bool gpu_timing_{};
+    std::uint64_t gpu_time_ns_{};
     std::uint32_t slot_{kFramesInFlight - 1u};
     void submit_slot(const VkSubmitInfo &submit);
     void destroy_retired(Slot &slot);

@@ -24,10 +24,12 @@
 #include "shell/ge_renderer.hpp"
 #include "shell/hitch_trace.hpp"
 #include "shell/input.hpp"
+#include "shell/performance_stats.hpp"
 #include "release_version.hpp"
 #include "shell/presentation_clock.hpp"
 #include "shell/vulkan_context.hpp"
 #include "ui/launcher.hpp"
+#include "ui/performance_overlay.hpp"
 #include "ui/subtitles.hpp"
 #include "ui/touch_overlay.hpp"
 #include "ui/ui_script.hpp"
@@ -80,7 +82,9 @@ constexpr const char *kUsage =
     "  cause; SARUSARU_PRESENT_THREAD=0 presents on the game's thread (not a thread of its own);\n"
     "  SARUSARU_CAPTURE=<directory> saves the picture every SARUSARU_CAPTURE_EVERY\n"
     "  seconds of game time (default 5) as BMP files, from SARUSARU_CAPTURE_FROM seconds if set;\n"
-    "  SARUSARU_INPUT scripts the pad; SARUSARU_UI_SCRIPT scripts the launcher (ui/ui_script.hpp).\n";
+    "  SARUSARU_INPUT scripts the pad; SARUSARU_UI_SCRIPT scripts the launcher (ui/ui_script.hpp).\n"
+    "Performance overlay: [graphics] performance_overlay = off, fps, detailed or mangohud (Linux:\n"
+    "  MangoHud's Vulkan layer, configured by its MangoHud.conf or MANGOHUD_CONFIG).\n";
 
 // Real time may trail guest time by this much before pacing gives up on
 // catching up (after a stall) and starts again from now.
@@ -161,7 +165,8 @@ sarusaru::shell::Settings game_settings(const sarusaru::shell::Settings &setting
 int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::ui::Layer &layer,
          sarusaru::shell::Settings &settings, const std::filesystem::path &settings_path, const GameOverrides &overrides,
          const std::filesystem::path &executable, const std::filesystem::path &iso,
-         const std::filesystem::path &texture_dump_directory, sarusaru::ui::UiScript *script, std::string &start_failure, bool load_initial_state = false) {
+         const std::filesystem::path &texture_dump_directory, sarusaru::ui::UiScript *script, std::string &start_failure,
+         bool mangohud_active, bool load_initial_state = false) {
     int status = 0;
     std::string error;
     // What the game runs with now; the pause menu's changes are applied to it as the game resumes.
@@ -194,6 +199,35 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
     std::size_t pictures = sarusaru::shell::interpolated_pictures(current);
     sarusaru::shell::PresentationClock presentation(interpolating ? 0u : current.frame_rate);
     sarusaru::shell::Buffer capture;
+    // The performance overlay: what it measures, and what the game runs on.
+    // MangoHud's own layer, when it is running, draws its overlay instead.
+    sarusaru::shell::PerformanceStats performance;
+    sarusaru::ui::PerformanceInfo performance_info;
+    performance_info.gpu = vulkan.properties.deviceName;
+    performance_info.api = "Vulkan " + std::to_string(VK_API_VERSION_MAJOR(vulkan.properties.apiVersion)) + "." +
+                           std::to_string(VK_API_VERSION_MINOR(vulkan.properties.apiVersion));
+#if defined(__APPLE__)
+    performance_info.api += " (MoltenVK)";
+#endif
+    if (mangohud_active) performance_info.api += " + MangoHud";
+    performance_info.platform = SDL_GetPlatform();
+    performance_info.version = std::string(sarusaru::release_version);
+    const auto overlay_level = [&] {
+        using sarusaru::shell::PerformanceOverlay;
+        return mangohud_active && current.performance_overlay == PerformanceOverlay::MangoHud ? PerformanceOverlay::Off
+                                                                                              : current.performance_overlay;
+    };
+    const auto describe_frame_rate = [&] {
+        constexpr float kVblankRate = 60000.0f / 1001.0f;
+        const auto rate = std::to_string(current.frame_rate);
+        performance_info.target_fps = interpolating ? kVblankRate * static_cast<float>(pictures == 3u ? 2 : 1)
+                                    : current.frame_rate == 0u ? kVblankRate : static_cast<float>(current.frame_rate);
+        performance_info.frame_rate = current.frame_rate == 0u ? "native frame rate"
+                                    : interpolating ? rate + " FPS motion" : rate + " FPS cap";
+        performance_info.scale = current.internal_resolution;
+    };
+    describe_frame_rate();
+    std::uint64_t work_start_ns = SDL_GetTicksNS();
     try {
         if (!audio.open(error)) std::cerr << "sarusaru: no sound: " << error << '\n';
 
@@ -376,6 +410,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             current.translation_language = translation_language;
             current.translation_pack = translation_pack_path;
             current.skip_intro_logos = skip_intro_logos;
+            describe_frame_rate();
             if (new_textures) {
                 if (renderer) {
                     vulkan.wait_idle();
@@ -592,7 +627,10 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 const std::uint64_t target_ns =
                     real_origin_ns + (game.kernel.now_us() - guest_origin_us) * 1000u + after_vblank_ns;
                 const std::uint64_t now_ns = SDL_GetTicksNS();
-                if (target_ns > now_ns && target_ns - now_ns < kMaxLagNs) SDL_DelayPrecise(target_ns - now_ns);
+                if (target_ns > now_ns && target_ns - now_ns < kMaxLagNs) {
+                    SDL_DelayPrecise(target_ns - now_ns);
+                    work_start_ns += target_ns - now_ns;  // waiting is not the vblank's work
+                }
             };
             const auto *image = renderer->presentable(memory, framebuffer, width, height, picture);
             const bool capturing = capture.buffer != VK_NULL_HANDLE && image != nullptr &&
@@ -610,8 +648,14 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             const bool due = presentation.due(game.kernel.now_us());
             const bool show_state_notice = !state_notice.empty() && SDL_GetTicksNS() < notice_until;
             const auto *touch = input->touch_controls();
+            const auto overlay = overlay_level();
+            vulkan.set_gpu_timing(overlay != sarusaru::shell::PerformanceOverlay::Off);
             const auto show = [&](const sarusaru::shell::Image *shown, bool capture_overlay) {
-                if ((cue != nullptr || show_state_notice || touch != nullptr) && due && shown != nullptr) {
+                if (due && shown != nullptr) performance.presented(SDL_GetTicksNS());
+                performance_info.render_width = width;
+                performance_info.render_height = height;
+                if ((cue != nullptr || show_state_notice || touch != nullptr ||
+                     overlay != sarusaru::shell::PerformanceOverlay::Off) && due && shown != nullptr) {
                     vulkan.end_frame(shown, width, height, false);
                     if (capture_overlay) {
                         char name[64];
@@ -629,6 +673,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                             draw->AddText(at,IM_COL32(255,255,255,255),state_notice.c_str());
                         }
                         if (touch) sarusaru::ui::draw_touch_controls(touch->state(), ImGui::GetIO().DisplaySize);
+                        sarusaru::ui::draw_performance_overlay(overlay, performance, performance_info,
+                                                               ImGui::GetIO().DisplaySize);
                     });
                 } else {
                     vulkan.end_frame(shown, width, height, due);
@@ -663,6 +709,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 real_origin_ns = SDL_GetTicksNS();
                 guest_origin_us = game.kernel.now_us();
                 sarusaru::shell::hitch::begin_frame();
+                performance.resume();
+                work_start_ns = SDL_GetTicksNS();
             }
             renderer->begin_frame(vulkan.begin_frame());
             if (game.kernel.now_us() >= trace_at_us) {
@@ -686,6 +734,12 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
             }
 
             sarusaru::shell::hitch::end_frame(game.kernel.now_us());
+            {
+                const std::uint64_t now_ns = SDL_GetTicksNS(), now_us = game.kernel.now_us();
+                performance.vblank_work(now_ns - work_start_ns);
+                performance.sample(now_ns, now_us, game.display.framebuffer_latches(now_us), vulkan.gpu_time_ns(),
+                                   vulkan.gpu_timing_available());
+            }
             // Pace guest time to real time; Tab runs as fast as it can.
             const std::uint64_t guest_ns = (game.kernel.now_us() - guest_origin_us) * 1000u;
             const std::uint64_t target_ns = real_origin_ns + guest_ns;
@@ -702,6 +756,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 SDL_DelayPrecise(target_ns - now_ns);
             }
             sarusaru::shell::hitch::begin_frame();
+            work_start_ns = SDL_GetTicksNS();
             if (quit) game.runtime.stop("Window closed");
         });
         game.run(std::numeric_limits<std::uint64_t>::max());
@@ -875,6 +930,13 @@ int main(int argc, char **argv) {
             SDL_Quit();
             return 1;
         }
+        // MangoHud's layer joins the instance as it is made: chosen at startup only.
+        bool mangohud_active = false;
+        if (settings.performance_overlay == sarusaru::shell::PerformanceOverlay::MangoHud) {
+            mangohud_active = sarusaru::shell::enable_mangohud(vulkan.vk);
+            std::cout << (mangohud_active ? "Performance overlay: MangoHud\n"
+                                          : "Performance overlay: MangoHud is not available here; the detailed overlay is shown instead\n");
+        }
         SDL_Window *window = SDL_CreateWindow("Saru! Get You! SaruSaru Daisakusen", static_cast<int>(settings.window_width),
             static_cast<int>(settings.window_height),
             SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
@@ -929,7 +991,8 @@ int main(int argc, char **argv) {
                     throw std::runtime_error("English needs a translation pack; use --translation-pack FILE or [translation] pack");
                 start_failure.clear();
                 status = play(window, vulkan, layer, settings, settings_path, overrides, executable, iso,
-                              texture_dump_directory, script ? &*script : nullptr, start_failure, load_initial_state);
+                              texture_dump_directory, script ? &*script : nullptr, start_failure, mangohud_active,
+                              load_initial_state);
                 if (!launcher || start_failure.empty()) break;
             }
         } catch (const std::exception &failure) {

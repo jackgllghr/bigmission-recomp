@@ -88,6 +88,19 @@ X(DescCelShading, "Gives 3D shading distinct bands for a cartoon look. Keeps tex
 X(RowResolution, "Resolution", "解像度")
 X(DescResolution, "Draws the game at this many times the PSP's 480×272. Higher is sharper and needs a faster GPU.",
   "PSP の 480×272 の何倍で描画するかを選びます。高いほど鮮明になりますが、より高性能な GPU が必要です。")
+X(RowPerformanceOverlay, "Performance Overlay", "パフォーマンス表示")
+X(ValueOverlayFps, "FPS only", "FPS のみ")
+X(ValueOverlayDetailed, "Detailed", "詳細")
+X(ValueOverlayMangoHud, "MangoHud", "MangoHud")
+X(DescPerformanceOverlay,
+  "Shows the frame rate over the game. Detailed adds frame times, a frame-time graph, the game's own speed, CPU and GPU time, and your GPU and settings: include a screenshot of it when reporting a performance problem.",
+  "ゲーム画面にフレームレートを表示します。詳細では、フレーム時間とそのグラフ、ゲーム本来の速度、CPU と GPU の時間、GPU と設定も表示します。パフォーマンスの問題を報告するときは、このスクリーンショットを添えてください。")
+X(DescOverlayMangoHud,
+  "Uses MangoHud's own overlay, configured in its MangoHud.conf, if it is installed (in a Flatpak: org.freedesktop.Platform.VulkanLayer.MangoHud); otherwise the detailed overlay. Switching to or from MangoHud takes effect the next time SaruSaru Recomp starts.",
+  "インストールされていれば MangoHud の表示を使います（設定は MangoHud.conf、Flatpak では org.freedesktop.Platform.VulkanLayer.MangoHud が必要）。なければ詳細表示になります。MangoHud への切り替えは、次に SaruSaru Recomp を起動したときに反映されます。")
+X(DescOverlayMangoHudUnavailable,
+  "MangoHud runs only on Linux: the detailed overlay is shown instead.",
+  "MangoHud は Linux でのみ使えます。代わりに詳細表示になります。")
 X(RowFrameRate, "Frame Rate", "フレームレート")
 X(ValueFps, "{0} FPS", "{0} FPS")
 X(ValueFrameRateNative, "Native", "標準")

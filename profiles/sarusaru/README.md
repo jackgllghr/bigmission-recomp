@@ -381,6 +381,25 @@ it instead exports the game's save folders to a `.zip` and imports them from a
 `.zip` or a folder (such as PPSSPP's `PSP/SAVEDATA`) through the system's
 document picker, replacing saves of the same name (in the launcher only).
 
+### Performance overlay
+
+Settings → Interface → **Performance Overlay** (or `[graphics]
+performance_overlay` in `settings.ini`) shows a heads-up display over the game
+while playing, in the window's top-left corner. It applies as soon as the game
+resumes.
+
+| Value | Shows |
+| --- | --- |
+| `off` | nothing (the default) |
+| `fps` | the frame rate and the average frame time |
+| `detailed` | that, plus the 1% low and longest recent frame time, a frame-time graph (the green line marks the target), the game's own frame rate and speed (under 100% the game itself is slowing down), the main thread's CPU time and the GPU's time each frame, and the GPU, Vulkan version, resolution, frame-rate setting, release and OS |
+| `mangohud` | Linux only: [MangoHud](https://github.com/flightlessmango/MangoHud)'s own overlay, through its Vulkan layer, configured by its `MangoHud.conf` or `MANGOHUD_CONFIG`. Install MangoHud from your distribution, or for the Flatpak `flatpak install flathub org.freedesktop.Platform.VulkanLayer.MangoHud`. A `MANGOHUD` or `DISABLE_MANGOHUD` already in the environment wins. The layer joins as the port starts, so switching to or from it applies at the next start; without the layer (or on other systems) the detailed overlay is shown instead |
+
+When reporting a performance problem, include a screenshot with the detailed
+overlay showing. Frame times are measured as each picture is handed to the
+display, as MangoHud's are; for a breakdown of slow frames by cause, run with
+`SARUSARU_TRACE_HITCHES=<ms>` and include its output too.
+
 ### Settings and rebinding
 
 When launched directly without a settings override, the shell creates

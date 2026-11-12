@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <string_view>
 
 namespace sarusaru::shell {
 
@@ -86,6 +87,28 @@ bool VulkanLoader::create_instance(std::vector<const char *> extensions, bool va
     SARUSARU_VK_INSTANCE_FUNCTIONS(SARUSARU_VK_LOAD)
 #undef SARUSARU_VK_LOAD
     return true;
+}
+
+bool enable_mangohud([[maybe_unused]] VulkanLoader &loader) {
+#if defined(__linux__) && !defined(__ANDROID__)
+    // MangoHud's manifest enables its layer when MANGOHUD=1; a player's own
+    // MANGOHUD (0 included) or DISABLE_MANGOHUD wins.
+    SDL_setenv_unsafe("MANGOHUD", "1", 0);
+    const char *enabled = SDL_getenv_unsafe("MANGOHUD"), *disabled = SDL_getenv_unsafe("DISABLE_MANGOHUD");
+    if (enabled == nullptr || std::string_view(enabled) != "1" || (disabled != nullptr && *disabled != '\0'))
+        return false;
+    if (loader.vkEnumerateInstanceLayerProperties == nullptr) return false;
+    std::uint32_t count = 0;
+    if (loader.vkEnumerateInstanceLayerProperties(&count, nullptr) != VK_SUCCESS) return false;
+    std::vector<VkLayerProperties> layers(count);
+    if (loader.vkEnumerateInstanceLayerProperties(&count, layers.data()) != VK_SUCCESS) return false;
+    // VK_LAYER_MANGOHUD_overlay, or with the architecture after it (_x86_64) in later versions.
+    return std::ranges::any_of(layers, [](const VkLayerProperties &layer) {
+        return std::string_view(layer.layerName).starts_with("VK_LAYER_MANGOHUD_overlay");
+    });
+#else
+    return false;
+#endif
 }
 
 void VulkanLoader::destroy() {

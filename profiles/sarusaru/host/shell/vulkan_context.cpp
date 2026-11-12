@@ -140,12 +140,13 @@ bool VulkanContext::create(SDL_Window *window, std::string &error) {
     }
     SDL_Log("Vulkan: %s, presenting %s", properties.deviceName,
             present_queue_ != VK_NULL_HANDLE ? "on a second queue from its own thread" : "on the game's thread");
-    // The hitch trace's GPU time, where the queue has timestamps.
+    // The GPU's time, for the hitch trace and the performance overlay, where
+    // the queue has timestamps. They are written only while one asks.
     std::uint32_t family_count = 0;
     vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &family_count, nullptr);
     std::vector<VkQueueFamilyProperties> families(family_count);
     vk.vkGetPhysicalDeviceQueueFamilyProperties(physical, &family_count, families.data());
-    if (hitch::enabled() && families[queue_family].timestampValidBits != 0u && properties.limits.timestampPeriod > 0.0f) {
+    if (families[queue_family].timestampValidBits != 0u && properties.limits.timestampPeriod > 0.0f) {
         VkQueryPoolCreateInfo query_info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
         query_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
         query_info.queryCount = 2u;
@@ -326,9 +327,12 @@ VkCommandBuffer VulkanContext::begin_frame() {
         if (slot.timed) {
             std::uint64_t stamps[2]{};
             if (vkGetQueryPoolResults(device, slot.timestamps, 0u, 2u, sizeof stamps, stamps, sizeof stamps[0],
-                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[1] >= stamps[0])
-                hitch::add_gpu(static_cast<std::uint64_t>(static_cast<double>(stamps[1] - stamps[0]) *
-                                                          properties.limits.timestampPeriod));
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[1] >= stamps[0]) {
+                const auto ns = static_cast<std::uint64_t>(static_cast<double>(stamps[1] - stamps[0]) *
+                                                           properties.limits.timestampPeriod);
+                hitch::add_gpu(ns);
+                gpu_time_ns_ += ns;
+            }
             slot.timed = false;
         }
     }
@@ -337,7 +341,9 @@ VkCommandBuffer VulkanContext::begin_frame() {
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(commands_, &begin);
-    if (const VkQueryPool pool = slots_[slot_].timestamps; pool != VK_NULL_HANDLE) {
+    // Recorded again or afresh, the slot is timed only if both timestamps are in it.
+    slots_[slot_].timing = slots_[slot_].timestamps != VK_NULL_HANDLE && (hitch::enabled() || gpu_timing_);
+    if (const VkQueryPool pool = slots_[slot_].timestamps; slots_[slot_].timing) {
         vkCmdResetQueryPool(commands_, pool, 0u, 2u);
         vkCmdWriteTimestamp(commands_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, pool, 0u);
     }
@@ -359,9 +365,10 @@ VkCommandBuffer VulkanContext::prologue() {
 
 void VulkanContext::submit_slot(const VkSubmitInfo &submit) {
     Slot &slot = slots_[slot_];
-    if (slot.timestamps != VK_NULL_HANDLE) {
+    if (slot.timing) {
         vkCmdWriteTimestamp(slot.commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, slot.timestamps, 1u);
         slot.timed = true;
+        slot.timing = false;
     }
     vkEndCommandBuffer(slot.commands);
     // The prologue runs first: command buffers of one submission run in order.
