@@ -51,7 +51,7 @@ jobs:
           - host: linux-arm64
             runner: ubuntu-22.04-arm
           - host: macos-arm64
-            runner: macos-14
+            runner: macos-15
     env:
       MACOSX_DEPLOYMENT_TARGET: '13.0'
     steps:
