@@ -12,7 +12,7 @@
 // touches guest memory or game state, so gameplay timing stays native.
 //
 // Draws are matched by where their vertices come from and what they draw
-// with; among several candidates (instances of one mesh), the one whose first
+// with (for screen-space draws, also which part of the texture); among several candidates (instances of one mesh), the one whose first
 // vertex lies nearest wins. A draw that has no match, or moved too far to be
 // the same motion (a camera cut, a teleport, a recycled sprite), is drawn as
 // it is in the newer frame.
