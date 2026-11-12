@@ -42,6 +42,19 @@ struct ControlSettings {
 enum class Language { Auto, English, Japanese };
 enum class PromptStyle { Auto, Xbox, Switch, PlayStation, Keyboard };
 inline constexpr std::array<std::string_view, 5> kPromptStyleNames = {"auto", "xbox", "switch", "playstation", "keyboard"};
+// A heads-up display of frame rate and frame times while playing, for
+// checking performance and reporting problems: off, the frame rate alone, or
+// that with frame times, a graph, game speed and the system's details. On
+// Linux, MangoHud (its Vulkan layer, where installed) can draw it instead;
+// elsewhere, or without the layer, MangoHud shows the detailed overlay.
+enum class PerformanceOverlay { Off, Fps, Detailed, MangoHud };
+inline constexpr std::array<std::string_view, 4> kPerformanceOverlayNames = {"off", "fps", "detailed", "mangohud"};
+// Whether this build offers MangoHud (desktop Linux, where the layer can be installed).
+#if defined(__linux__) && !defined(__ANDROID__)
+inline constexpr bool kMangoHudAvailable = true;
+#else
+inline constexpr bool kMangoHudAvailable = false;
+#endif
 struct PromptAppearance { bool gamepad; SDL_GamepadType type; };
 [[nodiscard]] constexpr PromptAppearance resolve_prompts(PromptStyle style, bool gamepad, SDL_GamepadType detected) {
     switch (style) {
@@ -111,6 +124,7 @@ struct Settings {
     std::int64_t last_update_check{};
     Language language{Language::Auto};
     PromptStyle prompt_style{PromptStyle::Auto};
+    PerformanceOverlay performance_overlay{PerformanceOverlay::Off};
     bool operator==(const Settings &) const = default;
 };
 

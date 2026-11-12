@@ -11,7 +11,7 @@ namespace {
 constexpr SettingRow kGraphics[] = {SettingRow::Preset, SettingRow::Fullscreen, SettingRow::WindowSize, SettingRow::InternalResolution,
     SettingRow::FrameRate, SettingRow::Fov, SettingRow::DrawDistance, SettingRow::CelShading, SettingRow::Textures};
 constexpr SettingRow kControls[] = {SettingRow::DeadZone, SettingRow::AimSensitivity};
-constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::Subtitles, SettingRow::ConfirmButton, SettingRow::ControllerButtons, SettingRow::SkipIntroLogos};
+constexpr SettingRow kInterface[] = {SettingRow::Language, SettingRow::GameText, SettingRow::Subtitles, SettingRow::ConfirmButton, SettingRow::ControllerButtons, SettingRow::SkipIntroLogos, SettingRow::PerformanceOverlay};
 constexpr SettingRow kUpdates[] = {SettingRow::AutomaticUpdates};
 constexpr SettingsTab kTabs[] = {{Text::TabGraphics, kGraphics}, {Text::TabControls, kControls},
                                  {Text::TabInterface, kInterface}, {Text::TabUpdates, kUpdates}};
@@ -241,6 +241,19 @@ RowView describe(SettingRow row, const shell::Settings &settings, bool in_game) 
         view.enabled = !settings.fullscreen;
         view.description = text(view.enabled ? Text::DescWindowSize : Text::DescWindowSizeFullscreen);
         break;
+    case SettingRow::PerformanceOverlay: {
+        using shell::PerformanceOverlay;
+        const auto overlay = settings.performance_overlay;
+        view.label = text(Text::RowPerformanceOverlay);
+        view.value = text(overlay == PerformanceOverlay::Off ? Text::Off
+                          : overlay == PerformanceOverlay::Fps ? Text::ValueOverlayFps
+                          : overlay == PerformanceOverlay::Detailed ? Text::ValueOverlayDetailed
+                                                                    : Text::ValueOverlayMangoHud);
+        view.description = text(overlay == PerformanceOverlay::MangoHud
+                                    ? (shell::kMangoHudAvailable ? Text::DescOverlayMangoHud : Text::DescOverlayMangoHudUnavailable)
+                                    : Text::DescPerformanceOverlay);
+        break;
+    }
     case SettingRow::AimSensitivity:
         view.label = text(Text::RowAimSensitivity);
         view.value = number("%.0f%%", settings.controls.aim_sensitivity * 100.0);
@@ -342,6 +355,15 @@ void step(SettingRow row, shell::Settings &settings, int direction) {
         const auto width = static_cast<std::uint32_t>(step_value(kWindowWidths, settings.window_width, direction));
         settings.window_width = width;
         settings.window_height = width * 272u / 480u;
+        break;
+    }
+    case SettingRow::PerformanceOverlay: {
+        // MangoHud only where its layer can be (desktop Linux); a file's
+        // mangohud elsewhere steps on to the built-in overlays.
+        const int count = shell::kMangoHudAvailable ? 4 : 3;
+        int index = static_cast<int>(settings.performance_overlay);
+        if (index >= count) index = direction > 0 ? count - 1 : count;
+        settings.performance_overlay = static_cast<shell::PerformanceOverlay>(((index + (direction > 0 ? 1 : -1)) % count + count) % count);
         break;
     }
     case SettingRow::AimSensitivity: {

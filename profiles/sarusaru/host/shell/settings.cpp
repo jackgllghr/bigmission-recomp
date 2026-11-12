@@ -248,6 +248,11 @@ Settings parse_settings(std::string_view text) {
             } else if (full == "graphics.texture_pack") {
                 if (value.empty()) throw std::runtime_error("texture_pack needs a directory or none");
                 settings.texture_pack = value == "none" ? std::filesystem::path{} : decode_path(value);
+            } else if (full == "graphics.performance_overlay") {
+                const auto found = std::find(kPerformanceOverlayNames.begin(), kPerformanceOverlayNames.end(), value);
+                if (found == kPerformanceOverlayNames.end())
+                    throw std::runtime_error("performance_overlay must be off, fps, detailed or mangohud");
+                settings.performance_overlay = static_cast<PerformanceOverlay>(found - kPerformanceOverlayNames.begin());
             } else if (full == "translation.language") {
                 if (value != "ja" && value != "en") throw std::runtime_error("language must be ja or en");
                 settings.translation_language = value;
@@ -334,6 +339,9 @@ std::string serialize_settings(const Settings &settings) {
         << "draw_distance = " << decimal(settings.draw_distance) << '\n'
         << "# HD texture pack directory, relative to this settings file, or none for the original textures.\n"
         << "texture_pack = " << (settings.texture_pack.empty() ? "none" : encode_path(settings.texture_pack)) << '\n'
+        << "# Performance overlay while playing: off; fps; detailed (frame times, graph, game speed, GPU and\n"
+        << "# system); mangohud (Linux: the MangoHud Vulkan layer if installed, else detailed).\n"
+        << "performance_overlay = " << kPerformanceOverlayNames[static_cast<std::size_t>(settings.performance_overlay)] << '\n'
         << "\n[translation]\n# ja = original; en = English menu pack. Restart to change languages.\n"
         << "language = " << settings.translation_language << '\n'
         << "# Pack path relative to this settings file, or none.\npack = "

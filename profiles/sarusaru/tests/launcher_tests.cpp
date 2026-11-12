@@ -299,7 +299,34 @@ void rows() {
     step(SettingRow::Subtitles, settings, 1);
     require(!settings.subtitles && describe(SettingRow::Subtitles, settings).value == "Off", "subtitles did not turn off");
     step(SettingRow::Subtitles, settings, 1);
-    require(seen == 18, "settings rows missing from the tabs");
+    require(seen == 19, "settings rows missing from the tabs");
+
+    // The performance overlay: off by default, applied live, MangoHud offered only where it can run.
+    using sarusaru::shell::PerformanceOverlay;
+    settings.performance_overlay = PerformanceOverlay::Off;
+    require(!restart_only(SettingRow::PerformanceOverlay) &&
+                describe(SettingRow::PerformanceOverlay, settings).value == "Off",
+            "performance overlay must start off and apply live");
+    step(SettingRow::PerformanceOverlay, settings, 1);
+    require(settings.performance_overlay == PerformanceOverlay::Fps, "overlay did not step to FPS");
+    step(SettingRow::PerformanceOverlay, settings, 1);
+    require(settings.performance_overlay == PerformanceOverlay::Detailed &&
+                describe(SettingRow::PerformanceOverlay, settings).value == "Detailed",
+            "overlay did not step to detailed");
+    step(SettingRow::PerformanceOverlay, settings, 1);
+    require(settings.performance_overlay ==
+                (sarusaru::shell::kMangoHudAvailable ? PerformanceOverlay::MangoHud : PerformanceOverlay::Off),
+            "overlay MangoHud step wrong for this platform");
+    settings.performance_overlay = PerformanceOverlay::MangoHud;
+    require(describe(SettingRow::PerformanceOverlay, settings).value == "MangoHud", "MangoHud not named");
+    step(SettingRow::PerformanceOverlay, settings, -1);
+    require(settings.performance_overlay == PerformanceOverlay::Detailed, "overlay did not step back from MangoHud");
+    step(SettingRow::PerformanceOverlay, settings, -1);
+    step(SettingRow::PerformanceOverlay, settings, -1);
+    step(SettingRow::PerformanceOverlay, settings, -1);
+    require(settings.performance_overlay ==
+                (sarusaru::shell::kMangoHudAvailable ? PerformanceOverlay::MangoHud : PerformanceOverlay::Detailed),
+            "overlay did not wrap backwards");
     const auto graphics = settings_tabs().front().rows;
     require(settings_tabs().size() == 4u && graphics.size() == 9u && graphics[0] == SettingRow::Preset &&
                 graphics[1] == SettingRow::Fullscreen && graphics[2] == SettingRow::WindowSize &&

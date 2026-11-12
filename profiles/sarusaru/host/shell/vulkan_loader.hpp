@@ -11,7 +11,8 @@
 
 #define SARUSARU_VK_GLOBAL_FUNCTIONS(X) \
     X(vkCreateInstance)                 \
-    X(vkEnumerateInstanceExtensionProperties)
+    X(vkEnumerateInstanceExtensionProperties) \
+    X(vkEnumerateInstanceLayerProperties)
 
 #define SARUSARU_VK_INSTANCE_FUNCTIONS(X)        \
     X(vkDestroyInstance)                         \
@@ -52,5 +53,11 @@ struct VulkanLoader {
     bool create_instance(std::vector<const char *> extensions, bool validation, std::string &error);
     void destroy();
 };
+
+// The performance overlay's MangoHud choice (shell/settings.hpp), before the
+// instance is made: turns on MangoHud's implicit Vulkan layer for this run
+// (MANGOHUD=1, unless the environment already says) and says whether the
+// loader lists it. Needs load() first. Only desktop Linux has the layer.
+[[nodiscard]] bool enable_mangohud(VulkanLoader &loader);
 
 } // namespace sarusaru::shell
