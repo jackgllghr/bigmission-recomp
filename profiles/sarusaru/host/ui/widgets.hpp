@@ -23,14 +23,15 @@ namespace sarusaru::ui {
 
 // --- Drawing -------------------------------------------------------------
 
-// The sky behind every screen: a slowly turning sunburst, drifting clouds and
-// the logo's yellow swoosh along the bottom.
+// The sky behind every screen, after the box art: alternating light-blue
+// rays turning slowly about a bright centre, and white star badges.
 void draw_backdrop(const Layer &layer);
 
-// Lettering in the logo's style: a vertical gradient fill inside a thick
-// outline, over a drop shadow. `position` is the top left of the text.
+// Lettering in the logo's style: a vertical gradient fill (through `middle`
+// halfway, when it is not 0) inside a thick outline, over a drop shadow.
+// `position` is the top left of the text.
 void outlined_text(ImDrawList *draw, ImFont *font, float size, ImVec2 position, std::string_view text, ImU32 top,
-                   ImU32 bottom, ImU32 outline, float thickness);
+                   ImU32 bottom, ImU32 outline, float thickness, ImU32 middle = 0);
 [[nodiscard]] ImVec2 text_size(ImFont *font, float size, std::string_view text, float wrap = 0.0f);
 
 // Pipo's helmet lamp, pulsing.

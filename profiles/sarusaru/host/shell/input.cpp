@@ -4,7 +4,17 @@
 #include <cmath>
 
 namespace sarusaru::shell {
+bool touch_controls_available() {
+#if defined(__ANDROID__)
+    return true;
+#else
+    const char *wanted = SDL_getenv("SARUSARU_TOUCH_CONTROLS");
+    return wanted != nullptr && SDL_strcmp(wanted, "1") == 0;
+#endif
+}
+
 Input::Input(ControlSettings settings) : settings_(std::move(settings)) {
+    if (touch_controls_available()) touch_.emplace();
     int count = 0;
     if (SDL_JoystickID *ids = SDL_GetGamepads(&count); ids != nullptr) {
         for (int i = 0; i < count; ++i)
@@ -22,6 +32,8 @@ void Input::handle(const SDL_Event &event) {
         });
         if (found == gamepads_.end())
             if (auto *pad = SDL_OpenGamepad(event.gdevice.which)) gamepads_.push_back(pad);
+        // The controls hide, and whatever they held lets go.
+        release_touches();
     } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
         const auto gone = std::find_if(gamepads_.begin(), gamepads_.end(), [&](SDL_Gamepad *pad) {
             return SDL_GetGamepadID(pad) == event.gdevice.which;
@@ -30,6 +42,15 @@ void Input::handle(const SDL_Event &event) {
             SDL_CloseGamepad(*gone);
             gamepads_.erase(gone);
         }
+    } else if (touch_ && (event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_FINGER_MOTION ||
+                          event.type == SDL_EVENT_FINGER_UP || event.type == SDL_EVENT_FINGER_CANCELED)) {
+        // Fingers on the window, in its points (the touch's x and y are 0-1 of it).
+        SDL_Window *window = SDL_GetWindowFromEvent(&event);
+        int width = 0, height = 0;
+        if (window == nullptr || !SDL_GetWindowSize(window, &width, &height) || width <= 0 || height <= 0) return;
+        // Lifts still count with a gamepad connected, so nothing stays held.
+        if (gamepads_.empty() || event.type == SDL_EVENT_FINGER_UP || event.type == SDL_EVENT_FINGER_CANCELED)
+            touch_->handle(event, static_cast<float>(width), static_cast<float>(height));
     }
 }
 InputState map_input(const ControlSettings &settings, std::span<const bool> keys,
@@ -121,6 +142,27 @@ void apply_aiming(InputState &state, bool aiming, float sensitivity) {
     state.camera_reset = false;
 }
 
+void apply_touch(InputState &state, const TouchPad &touch) {
+    state.pad.buttons |= touch.buttons;
+    const auto stick = [](std::uint8_t axis) { return (static_cast<float>(axis) - 128.0f) / 127.5f; };
+    const float x = stick(state.pad.lx), y = stick(state.pad.ly);
+    if (touch.lx * touch.lx + touch.ly * touch.ly > x * x + y * y) {
+        const auto axis = [](float value) {
+            return static_cast<std::uint8_t>(std::clamp(std::lround(128.0f + value * 127.5f), 0l, 255l));
+        };
+        state.pad.lx = axis(touch.lx);
+        state.pad.ly = axis(touch.ly);
+    }
+    // As the default bindings read a gamepad's right stick: up is Camera down.
+    state.camera_x = std::clamp(state.camera_x + touch.rx, -1.0f, 1.0f);
+    state.camera_y = std::clamp(state.camera_y - touch.ry, -1.0f, 1.0f);
+    if (touch.rx * touch.rx + touch.ry * touch.ry > state.aim_x * state.aim_x + state.aim_y * state.aim_y) {
+        state.aim_x = touch.rx;
+        state.aim_y = touch.ry;
+    }
+    state.menu = state.menu || touch.menu;
+}
+
 InputState Input::sample() const {
     int key_count = 0;
     const bool *keys = SDL_GetKeyboardState(&key_count);
@@ -131,6 +173,8 @@ InputState Input::sample() const {
         for (int axis = 0; axis < SDL_GAMEPAD_AXIS_COUNT; ++axis)
             pads[i].axes[axis] = SDL_GetGamepadAxis(gamepads_[i], static_cast<SDL_GamepadAxis>(axis));
     }
-    return map_input(settings_, {keys, static_cast<std::size_t>(key_count)}, pads);
+    auto state = map_input(settings_, {keys, static_cast<std::size_t>(key_count)}, pads);
+    if (const auto *touch = touch_controls()) apply_touch(state, touch->state());
+    return state;
 }
 } // namespace sarusaru::shell

@@ -12,7 +12,8 @@ namespace {
 
 Fonts g_fonts;
 
-ImFont *load(const char *file) {
+// With `merge`, the face fills in glyphs the font loaded last lacks.
+ImFont *load(const char *file, bool merge = false) {
     const auto path = resource_path(std::string("fonts/") + file);
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error)) {
@@ -23,6 +24,7 @@ ImFont *load(const char *file) {
     const auto utf8 = path.u8string();
     ImFontConfig config;
     config.OversampleH = 2;
+    config.MergeMode = merge;
     return ImGui::GetIO().Fonts->AddFontFromFileTTF(std::string(utf8.begin(), utf8.end()).c_str(), 0.0f, &config);
 }
 
@@ -44,9 +46,16 @@ bool load_fonts() {
     ImFont *fallback = g_fonts.body != nullptr ? g_fonts.body : ImGui::GetIO().Fonts->AddFontDefaultVector();
     if (g_fonts.body == nullptr) g_fonts.body = fallback;
     g_fonts.strong = g_fonts.body;
-    g_fonts.display = g_fonts.body;
+    // Titles and buttons: Lilita One's chunky Latin, with M PLUS Rounded
+    // filling in the Japanese (and anything else Lilita One lacks).
+    g_fonts.display = load("LilitaOne-Regular.ttf");
+    if (g_fonts.display != nullptr) {
+        if (complete) load("MPLUSRounded1c-Bold.ttf", true);
+    } else {
+        g_fonts.display = g_fonts.body;
+    }
     ImGui::GetIO().FontDefault = g_fonts.body;
-    return complete;
+    return complete && g_fonts.display != g_fonts.body;
 }
 
 void apply_style(float unit) {

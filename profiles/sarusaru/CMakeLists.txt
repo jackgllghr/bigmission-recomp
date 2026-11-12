@@ -38,7 +38,7 @@ target_include_directories(sarusaru_disc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/hos
 target_link_libraries(sarusaru_disc PUBLIC psprecomp_runtime sarusaru_platform)
 
 if(SARUSARU_HAS_RENDERER)
-    add_library(sarusaru_controls STATIC host/shell/settings.cpp host/shell/input.cpp)
+    add_library(sarusaru_controls STATIC host/shell/settings.cpp host/shell/input.cpp host/shell/touch_controls.cpp)
     target_include_directories(sarusaru_controls PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_controls PUBLIC SDL3::SDL3 psprecomp_runtime)
     add_library(sarusaru_shell STATIC host/shell/vulkan_loader.cpp host/shell/vulkan_context.cpp)
@@ -57,7 +57,7 @@ if(SARUSARU_HAS_RENDERER)
     target_include_directories(sarusaru_ui_logic PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/host")
     target_link_libraries(sarusaru_ui_logic PUBLIC sarusaru_controls sarusaru_ppst)
     add_library(sarusaru_ui STATIC host/ui/layer.cpp host/ui/ui_renderer.cpp host/ui/theme.cpp host/ui/widgets.cpp
-        host/ui/launcher.cpp host/ui/ui_script.cpp host/ui/subtitles.cpp)
+        host/ui/launcher.cpp host/ui/ui_script.cpp host/ui/subtitles.cpp host/ui/touch_overlay.cpp)
     target_link_libraries(sarusaru_ui PUBLIC sarusaru_savedata sarusaru_ui_logic sarusaru_disc sarusaru_shell sarusaru_imgui sarusaru_install
         sarusaru_translation)
     # Texture dump mode and on-device HD texture packs (PNG through SDL).

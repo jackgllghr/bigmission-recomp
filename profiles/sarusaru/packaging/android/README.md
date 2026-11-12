@@ -24,6 +24,13 @@ compiler the APK ships (below).
 Settings and the port's data live in the app's private `files/` directory.
 `stdout` and `stderr` go to the system log under the tag `sarusaru`.
 
+Without a gamepad connected, on-screen controls (`host/shell/touch_controls.hpp`)
+cover the PSP's buttons: both sticks (the right one turns the camera), the
+d-pad, the face buttons, L and R, Start and Select, and a menu button at the
+top that opens the launcher overlay. They hide while a gamepad is connected.
+On a computer, `SARUSARU_TOUCH_CONTROLS=1` shows them too, with the mouse as
+the finger.
+
 Android's Back button or back swipe opens the launcher overlay during play.
 Within the launcher, Back returns to the previous screen or resumes the game.
 
