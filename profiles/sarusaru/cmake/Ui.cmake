@@ -21,7 +21,9 @@ set(SARUSARU_MPLUS_COMMIT eb604901d6f04b6f7f2a84b0378c58df84a9dba6)
 # name | URL | SHA-256
 set(SARUSARU_FONT_FILES
     "MPLUSRounded1c-Bold.ttf|${SARUSARU_FONTS_URL}/ofl/mplusrounded1c/MPLUSRounded1c-Bold.ttf|c358630584e8e2d8fbd6121d0f4693255ffef6d1e6d4f3441fd6e5a963a11f9e"
-    "MPLUSRounded1c-OFL.txt|https://raw.githubusercontent.com/coz-m/MPLUS_FONTS/${SARUSARU_MPLUS_COMMIT}/OFL.txt|04971e3fcee60b247395150d93b3616f6a0b092572332c96187b472976553abc")
+    "MPLUSRounded1c-OFL.txt|https://raw.githubusercontent.com/coz-m/MPLUS_FONTS/${SARUSARU_MPLUS_COMMIT}/OFL.txt|04971e3fcee60b247395150d93b3616f6a0b092572332c96187b472976553abc"
+    "LilitaOne-Regular.ttf|${SARUSARU_FONTS_URL}/ofl/lilitaone/LilitaOne-Regular.ttf|f5b641c45c69d772ee4eda687bc9fda411d5cad6b0b45371491da4580cbc8d59"
+    "LilitaOne-OFL.txt|${SARUSARU_FONTS_URL}/ofl/lilitaone/OFL.txt|255d5debbb80eb2ea762644311f266a279e8778f00156655a516e2b7781a63e1")
 
 FetchContent_Declare(sarusaru_imgui URL "${SARUSARU_IMGUI_URL}" URL_HASH SHA256=${SARUSARU_IMGUI_SHA256}
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)

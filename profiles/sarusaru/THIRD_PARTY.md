@@ -98,7 +98,8 @@ carry those notices.
 | Component | Version | Licence | Use |
 | --- | --- | --- | --- |
 | [Dear ImGui](https://github.com/ocornut/imgui) | 1.92.9b | MIT (`DearImGui-LICENSE.txt`) | launcher widgets, SDL3 and Vulkan backends |
-| [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS) Bold | google/fonts `e9678a5` | SIL OFL 1.1 (`fonts/MPLUSRounded1c-OFL.txt`, from the M+ project at `eb60490`) | all launcher text, titles and buttons, including Japanese |
+| [M PLUS Rounded 1c](https://github.com/coz-m/MPLUS_FONTS) Bold | google/fonts `e9678a5` | SIL OFL 1.1 (`fonts/MPLUSRounded1c-OFL.txt`, from the M+ project at `eb60490`) | launcher body text, and the Japanese in titles and buttons |
+| [Lilita One](https://github.com/google/fonts/tree/main/ofl/lilitaone) | google/fonts `e9678a5` | SIL OFL 1.1 (`fonts/LilitaOne-OFL.txt`) | launcher titles and buttons (Latin) |
 
 The launcher's own code (`host/ui/`) is new. Yakumo's Dear ImGui layer was
 read as a reference for its device handling (see `YAKUMO_REUSE.md`), not copied.

@@ -1,8 +1,9 @@
 #pragma once
 
-// The look of the launcher and the port's screens, after the series' own:
-// chunky banana-yellow lettering with thick royal-blue outlines, red accents,
-// Pipo's white helmet and its siren lamp, under a bright sky.
+// The look of the launcher and the port's screens, after the series' box art:
+// light-blue rays and white star badges behind chunky yellow-to-orange
+// lettering with thick navy-purple outlines, red and helmet-silver buttons
+// that sit on a solid shadow, and a purple star marking the focus.
 #include "imgui.h"
 
 #include <filesystem>
@@ -11,24 +12,33 @@
 namespace sarusaru::ui {
 
 namespace colors {
-inline constexpr ImU32 kSkyTop = IM_COL32(28, 124, 228, 255);
-inline constexpr ImU32 kSkyBottom = IM_COL32(150, 216, 255, 255);
-inline constexpr ImU32 kCloud = IM_COL32(255, 255, 255, 235);
-inline constexpr ImU32 kYellow = IM_COL32(255, 222, 23, 255);
-inline constexpr ImU32 kYellowShade = IM_COL32(255, 168, 0, 255);
-inline constexpr ImU32 kYellowPale = IM_COL32(255, 244, 176, 255);
-inline constexpr ImU32 kBlue = IM_COL32(16, 48, 168, 255);       // the outline around everything
-inline constexpr ImU32 kBlueDeep = IM_COL32(8, 26, 102, 255);    // shadows under outlines
-inline constexpr ImU32 kBlueLight = IM_COL32(64, 132, 240, 255);
-inline constexpr ImU32 kRed = IM_COL32(232, 22, 30, 255);
-inline constexpr ImU32 kRedDark = IM_COL32(160, 10, 16, 255);
+inline constexpr ImU32 kRayDark = IM_COL32(42, 149, 230, 255);   // the sunburst's alternating rays
+inline constexpr ImU32 kRayLight = IM_COL32(92, 188, 248, 255);
+inline constexpr ImU32 kGlow = IM_COL32(255, 255, 255, 190);      // the bright centre of the rays
+inline constexpr ImU32 kVignette = IM_COL32(24, 50, 150, 97);     // darkening towards the corners
+inline constexpr ImU32 kStarShadow = IM_COL32(22, 96, 190, 115);  // under the white star badges
+inline constexpr ImU32 kYellow = IM_COL32(255, 210, 31, 255);
+inline constexpr ImU32 kYellowShade = IM_COL32(229, 138, 0, 255);
+inline constexpr ImU32 kYellowPale = IM_COL32(255, 245, 168, 255);
+inline constexpr ImU32 kLetterTop = IM_COL32(255, 242, 122, 255); // the title lettering's fill, top to bottom
+inline constexpr ImU32 kLetterMid = IM_COL32(255, 198, 28, 255);
+inline constexpr ImU32 kLetterBottom = IM_COL32(242, 90, 0, 255);
+inline constexpr ImU32 kBlue = IM_COL32(42, 27, 110, 255);        // the navy-purple outline around everything
+inline constexpr ImU32 kBlueDeep = IM_COL32(26, 15, 74, 255);     // shadows under outlines
+inline constexpr ImU32 kBlueLight = IM_COL32(120, 110, 190, 255);
+inline constexpr ImU32 kStar = IM_COL32(59, 42, 147, 255);        // the focus star
+inline constexpr ImU32 kRed = IM_COL32(238, 40, 48, 255);
+inline constexpr ImU32 kRedLight = IM_COL32(255, 97, 102, 255);
+inline constexpr ImU32 kRedDark = IM_COL32(195, 18, 27, 255);
+inline constexpr ImU32 kRedInk = IM_COL32(122, 10, 18, 255);      // the drop under white text on red
 inline constexpr ImU32 kWhite = IM_COL32(255, 255, 255, 255);
-inline constexpr ImU32 kHelmet = IM_COL32(226, 234, 246, 255);   // the helmet's shaded white
-inline constexpr ImU32 kInk = IM_COL32(18, 34, 96, 255);         // text on white
-inline constexpr ImU32 kInkDim = IM_COL32(86, 104, 150, 255);
-inline constexpr ImU32 kDisabled = IM_COL32(170, 180, 200, 255);
-inline constexpr ImU32 kGood = IM_COL32(30, 170, 70, 255);
-inline constexpr ImU32 kShadow = IM_COL32(8, 26, 102, 90);
+inline constexpr ImU32 kHelmet = IM_COL32(220, 229, 243, 255);    // the helmet's shaded white
+inline constexpr ImU32 kRowStripe = IM_COL32(241, 245, 251, 255);
+inline constexpr ImU32 kInk = IM_COL32(42, 27, 110, 255);         // text on white
+inline constexpr ImU32 kInkDim = IM_COL32(74, 79, 122, 255);
+inline constexpr ImU32 kDisabled = IM_COL32(138, 144, 181, 255);
+inline constexpr ImU32 kGood = IM_COL32(31, 166, 74, 255);
+inline constexpr ImU32 kShadow = IM_COL32(42, 27, 110, 255);      // the solid drop under buttons and panels
 // Face buttons as PlayStation colours them.
 inline constexpr ImU32 kPsCircle = IM_COL32(236, 66, 72, 255);
 inline constexpr ImU32 kPsCross = IM_COL32(96, 148, 236, 255);

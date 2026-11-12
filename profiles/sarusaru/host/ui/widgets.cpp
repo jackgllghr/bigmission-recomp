@@ -86,15 +86,89 @@ void triangle(ImDrawList *draw, ImVec2 center, float size, int direction, ImU32 
                             ImVec2(center.x - d * size * 0.45f, center.y + size * 0.6f), color);
 }
 
-// The focus highlight shared by rows: pale yellow, outlined, the lamp on the left.
+// Recolours the vertices from `start` on by height, from `top` at `y0` to
+// `bottom` at `y1`, through `middle` halfway when it is not 0. Keeps each
+// vertex's alpha, so antialiased edges stay soft.
+void shade_vertical(ImDrawList *draw, int start, float y0, float y1, ImU32 top, ImU32 middle, ImU32 bottom) {
+    const float span = std::max(y1 - y0, 1.0f);
+    for (int i = start; i < draw->VtxBuffer.Size; ++i) {
+        ImDrawVert &vertex = draw->VtxBuffer[i];
+        const float t = std::clamp((vertex.pos.y - y0) / span, 0.0f, 1.0f);
+        ImU32 color = middle == 0u ? mix(top, bottom, t) : t < 0.5f ? mix(top, middle, t * 2.0f) : mix(middle, bottom, t * 2.0f - 1.0f);
+        vertex.col = (color & ~IM_COL32_A_MASK) | (vertex.col & IM_COL32_A_MASK);
+    }
+}
+
+// Leans the vertices from `start` on to the right above `center_y` (and to
+// the left below it), like the box art's slanted buttons.
+void slant(ImDrawList *draw, int start, float center_y) {
+    constexpr float kLean = 0.123f; // tan(7 degrees)
+    for (int i = start; i < draw->VtxBuffer.Size; ++i) {
+        ImDrawVert &vertex = draw->VtxBuffer[i];
+        vertex.pos.x += (center_y - vertex.pos.y) * kLean;
+    }
+}
+
+// A five-pointed star of `radius`, turned by `angle` radians.
+void star(ImDrawList *draw, ImVec2 center, float radius, float angle, ImU32 color) {
+    std::array<ImVec2, 10> points;
+    for (int i = 0; i < 10; ++i) {
+        const float r = i % 2 == 0 ? radius : radius * 0.42f;
+        const float a = angle - kPi * 0.5f + kPi * static_cast<float>(i) / 5.0f;
+        points[static_cast<std::size_t>(i)] = ImVec2(center.x + std::cos(a) * r, center.y + std::sin(a) * r);
+    }
+    draw->AddConcavePolyFilled(points.data(), static_cast<int>(points.size()), color);
+}
+
+void outlined_star(ImDrawList *draw, ImVec2 center, float radius, float angle, ImU32 fill, ImU32 outline, float thickness) {
+    star(draw, center, radius + thickness * 1.6f, angle, outline);
+    star(draw, center, radius, angle, fill);
+}
+
+// The focus marker: the purple star from around the logo, rimmed in yellow,
+// rocking gently. `amount` (0..1) grows it in.
+void focus_star(ImDrawList *draw, ImVec2 center, float radius, float amount, float time) {
+    if (amount <= 0.01f) return;
+    const float angle = (-12.0f + 6.0f * std::sin(time * 3.0f)) * kPi / 180.0f;
+    outlined_star(draw, center, radius * amount, angle, with_alpha(colors::kStar, amount), with_alpha(colors::kYellow, amount),
+                  radius * 0.16f * amount);
+}
+
+// A radial fill of rings: `stops` pairs a radius (as a fraction of
+// `radii`) with the colour there; colours blend between rings.
+void radial(ImDrawList *draw, ImVec2 center, ImVec2 radii, std::initializer_list<std::pair<float, ImU32>> stops) {
+    constexpr int kSegments = 64;
+    const ImVec2 uv = draw->_Data->TexUvWhitePixel;
+    const auto point = [&](int i, float f) {
+        const float a = 2.0f * kPi * static_cast<float>(i) / kSegments;
+        return ImVec2(center.x + std::cos(a) * radii.x * f, center.y + std::sin(a) * radii.y * f);
+    };
+    const auto *previous = stops.begin();
+    for (const auto *ring = previous + 1; ring != stops.end(); previous = ring++) {
+        draw->PrimReserve(kSegments * 6, kSegments * 2);
+        const auto base = static_cast<ImDrawIdx>(draw->_VtxCurrentIdx);
+        for (int i = 0; i < kSegments; ++i) {
+            draw->PrimWriteVtx(point(i, previous->first), uv, previous->second);
+            draw->PrimWriteVtx(point(i, ring->first), uv, ring->second);
+        }
+        for (int i = 0; i < kSegments; ++i) {
+            const auto a = static_cast<ImDrawIdx>(base + 2 * i), b = static_cast<ImDrawIdx>(base + 2 * ((i + 1) % kSegments));
+            draw->PrimWriteIdx(a); draw->PrimWriteIdx(static_cast<ImDrawIdx>(a + 1)); draw->PrimWriteIdx(static_cast<ImDrawIdx>(b + 1));
+            draw->PrimWriteIdx(a); draw->PrimWriteIdx(static_cast<ImDrawIdx>(b + 1)); draw->PrimWriteIdx(b);
+        }
+    }
+}
+
+// The focus highlight shared by rows: pale yellow to banana yellow inside a
+// navy-purple rim, with the focus star on the left.
 void row_highlight(const Layer &layer, ImDrawList *draw, const ImRect &bb, float amount) {
     const float u = layer.unit();
     if (amount <= 0.01f) return;
-    const float rounding = 12.0f * u;
+    const float rounding = 14.0f * u;
     draw->AddRectFilled(bb.Min, bb.Max, with_alpha(colors::kBlue, amount), rounding);
     gradient_rect(draw, ImVec2(bb.Min.x + 3.0f * u, bb.Min.y + 3.0f * u), ImVec2(bb.Max.x - 3.0f * u, bb.Max.y - 3.0f * u),
-                  with_alpha(colors::kYellowPale, amount), with_alpha(colors::kYellow, amount), rounding - 3.0f * u);
-    siren_lamp(draw, ImVec2(bb.Min.x + 20.0f * u, bb.GetCenter().y), 8.0f * u * amount, layer.time());
+                  with_alpha(colors::kYellowPale, amount), with_alpha(IM_COL32(255, 213, 58, 255), amount), rounding - 3.0f * u);
+    focus_star(draw, ImVec2(bb.Min.x + 20.0f * u, bb.GetCenter().y), 12.0f * u, amount, layer.time());
 }
 
 // --- Glyphs for the hints ---
@@ -205,7 +279,7 @@ void gradient_rect(ImDrawList *draw, ImVec2 min, ImVec2 max, ImU32 top, ImU32 bo
 }
 
 void outlined_text(ImDrawList *draw, ImFont *font, float size, ImVec2 position, std::string_view text, ImU32 top,
-                   ImU32 bottom, ImU32 outline, float thickness) {
+                   ImU32 bottom, ImU32 outline, float thickness, ImU32 middle) {
     const char *begin = text.data(), *end = text.data() + text.size();
     // The shadow, then the outline as copies around a circle, then the fill.
     constexpr int kSteps = 16;
@@ -223,8 +297,7 @@ void outlined_text(ImDrawList *draw, ImFont *font, float size, ImVec2 position, 
     const int start = draw->VtxBuffer.Size;
     draw->AddText(font, size, position, colors::kWhite, begin, end);
     const ImVec2 extent = text_size(font, size, text);
-    ImGui::ShadeVertsLinearColorGradientKeepAlpha(draw, start, draw->VtxBuffer.Size, ImVec2(position.x, position.y + size * 0.15f),
-                                                  ImVec2(position.x, position.y + extent.y * 0.85f), top, bottom);
+    shade_vertical(draw, start, position.y + size * 0.15f, position.y + extent.y * 0.85f, top, middle, bottom);
 }
 
 void siren_lamp(ImDrawList *draw, ImVec2 center, float radius, float time) {
@@ -241,72 +314,60 @@ void draw_backdrop(const Layer &layer) {
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
     const ImVec2 size = ImGui::GetIO().DisplaySize;
     const float u = layer.unit(), t = layer.time();
-    draw->AddRectFilledMultiColor(ImVec2(0, 0), size, colors::kSkyTop, colors::kSkyTop, colors::kSkyBottom,
-                                  colors::kSkyBottom);
+    draw->AddRectFilled(ImVec2(0, 0), size, colors::kRayDark);
 
-    // Sunburst rays turning slowly about a point above the middle.
-    const ImVec2 sun(size.x * 0.5f, size.y * 0.32f);
+    // Alternating rays turning slowly about a point above the middle.
+    const ImVec2 sun(size.x * 0.5f, size.y * 0.4f);
     const float reach = std::hypot(size.x, size.y);
-    constexpr int kRays = 18;
+    constexpr int kRays = 22;
     for (int i = 0; i < kRays; ++i) {
-        const float a = t * 0.04f + 2.0f * kPi * static_cast<float>(i) / kRays;
+        const float a = t * 0.03f + 2.0f * kPi * static_cast<float>(i) / kRays;
         const float b = a + kPi / kRays;
         draw->AddTriangleFilled(sun, ImVec2(sun.x + std::cos(a) * reach, sun.y + std::sin(a) * reach),
-                                ImVec2(sun.x + std::cos(b) * reach, sun.y + std::sin(b) * reach), IM_COL32(255, 255, 255, 20));
+                                ImVec2(sun.x + std::cos(b) * reach, sun.y + std::sin(b) * reach), colors::kRayLight);
     }
 
-    // Clouds: puffs of circles drifting right and wrapping around.
-    struct Cloud { float x, y, scale, speed; };
-    constexpr Cloud kClouds[] = {{0.05f, 0.18f, 1.0f, 9.0f}, {0.42f, 0.10f, 0.7f, 6.0f}, {0.78f, 0.22f, 1.2f, 11.0f},
-                                 {0.25f, 0.62f, 1.4f, 14.0f}, {0.66f, 0.70f, 1.1f, 12.0f}, {0.92f, 0.52f, 0.8f, 8.0f}};
-    for (const Cloud &cloud : kClouds) {
-        const float span = size.x + 240.0f * u;
-        const float x = std::fmod(cloud.x * span + t * cloud.speed * u, span) - 120.0f * u;
-        const float y = cloud.y * size.y, s = cloud.scale * u;
-        constexpr std::array<std::array<float, 3>, 5> kPuffs{{{-48, 8, 26}, {-18, -8, 34}, {20, -14, 38}, {52, 4, 28}, {8, 12, 30}}};
-        for (const auto &puff : kPuffs)
-            draw->AddCircleFilled(ImVec2(x + puff[0] * s, y + puff[1] * s + 6.0f * s), puff[2] * s, IM_COL32(120, 180, 240, 120));
-        for (const auto &puff : kPuffs)
-            draw->AddCircleFilled(ImVec2(x + puff[0] * s, y + puff[1] * s), puff[2] * s, colors::kCloud);
-    }
+    // A bright glow where the rays meet, and the corners darkened.
+    const float corner = std::hypot(size.x * 0.5f, size.y * 0.6f);
+    radial(draw, sun, ImVec2(corner, corner),
+           {{0.0f, colors::kGlow}, {0.18f, IM_COL32(205, 238, 255, 115)}, {0.52f, IM_COL32(255, 255, 255, 0)}});
+    const ImVec2 middle(size.x * 0.5f, size.y * 0.45f), vignette(size.x * 0.72f, size.y * 0.8f);
+    radial(draw, middle, vignette,
+           {{0.55f, with_alpha(colors::kVignette, 0.0f)}, {1.0f, colors::kVignette}, {1.6f, colors::kVignette}});
 
-    // The swoosh from under the logo: a yellow band rising to the right,
-    // gently rippling, outlined in blue.
-    constexpr int kPoints = 48;
-    std::vector<ImVec2> edge;
-    edge.reserve(kPoints + 1);
-    for (int i = 0; i <= kPoints; ++i) {
-        const float f = static_cast<float>(i) / kPoints;
-        edge.emplace_back(size.x * f, size.y - 46.0f * u - 26.0f * u * f + 6.0f * u * std::sin(f * 2.0f * kPi + t * 0.8f));
+    // White star badges, as the box art scatters them, rocking gently. Each
+    // is placed as a fraction of the screen, with its size and lean.
+    struct Badge { float x, y, size, lean; };
+    constexpr Badge kBadges[] = {{0.092f, 0.164f, 96, -14}, {0.173f, 0.372f, 64, 10}, {0.121f, 0.665f, 118, -6},
+                                 {0.899f, 0.160f, 110, 16}, {0.816f, 0.465f, 70, -18}, {0.910f, 0.660f, 90, 8}};
+    int index = 0;
+    for (const Badge &badge : kBadges) {
+        const float radius = badge.size * 0.36f * u;
+        const float angle = (badge.lean + 3.0f * std::sin(t * 0.6f + static_cast<float>(index++))) * kPi / 180.0f;
+        const ImVec2 center(badge.x * size.x, badge.y * size.y);
+        star(draw, ImVec2(center.x, center.y + 4.0f * u), radius + 2.0f * u, angle, colors::kStarShadow);
+        star(draw, center, radius + 2.0f * u, angle, colors::kWhite);
     }
-    std::vector<ImVec2> shape = edge;
-    shape.emplace_back(size.x, size.y + 4.0f);
-    shape.emplace_back(0.0f, size.y + 4.0f);
-    const int start = draw->VtxBuffer.Size;
-    draw->AddConcavePolyFilled(shape.data(), static_cast<int>(shape.size()), colors::kWhite);
-    ImGui::ShadeVertsLinearColorGradientKeepAlpha(draw, start, draw->VtxBuffer.Size, ImVec2(0, size.y - 80.0f * u),
-                                                  ImVec2(0, size.y), colors::kYellow, colors::kYellowShade);
-    draw->AddPolyline(edge.data(), static_cast<int>(edge.size()), colors::kBlue, 6.0f * u);
 }
 
 float screen_title(const Layer &layer, std::string_view title) {
     const float u = layer.unit();
     ImFont *font = fonts().display;
-    const float size = 46.0f * u;
+    const float size = 50.0f * u;
     const ImVec2 extent = text_size(font, size, title);
-    const ImVec2 position((ImGui::GetIO().DisplaySize.x - extent.x) * 0.5f, 18.0f * u);
-    outlined_text(ImGui::GetForegroundDrawList(), font, size, position, title, colors::kYellow, colors::kYellowShade,
-                  colors::kBlue, 5.0f * u);
+    const ImVec2 position((ImGui::GetIO().DisplaySize.x - extent.x) * 0.5f, 16.0f * u);
+    outlined_text(ImGui::GetForegroundDrawList(), font, size, position, title, colors::kLetterTop, colors::kLetterBottom,
+                  colors::kBlue, 6.0f * u, colors::kLetterMid);
     return position.y + extent.y + 10.0f * u;
 }
 
 void panel(const Layer &layer, ImVec2 min, ImVec2 max, ImDrawList *draw) {
     const float u = layer.unit(), rounding = 22.0f * u, edge = 5.0f * u;
     if (draw == nullptr) draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge + 6.0f * u), ImVec2(max.x + edge, max.y + edge + 6.0f * u),
+    draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge + 7.0f * u), ImVec2(max.x + edge, max.y + edge + 7.0f * u),
                         colors::kShadow, rounding + edge);
     draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge), ImVec2(max.x + edge, max.y + edge), colors::kBlue, rounding + edge);
-    gradient_rect(draw, min, max, colors::kWhite, colors::kHelmet, rounding);
+    draw->AddRectFilled(min, max, colors::kWhite, rounding);
 }
 
 // --- Focus ---------------------------------------------------------------
@@ -324,49 +385,55 @@ bool menu_button(const Layer &layer, std::string_view id, std::string_view label
     const float focus = animate(item.id, item.focused ? 1.0f : 0.0f);
     ImDrawList *draw = ImGui::GetWindowDrawList();
 
-    // Grows a little when focused and sinks when pressed.
-    const float grow = 6.0f * u * focus;
-    const float sink = item.held ? 3.0f * u : 0.0f;
-    const ImVec2 min(bb.Min.x - grow, bb.Min.y - grow * 0.5f + sink), max(bb.Max.x + grow, bb.Max.y + grow * 0.5f + sink);
-    const float rounding = (max.y - min.y) * 0.5f, edge = 4.0f * u;
-    draw->AddRectFilled(ImVec2(min.x, min.y + 6.0f * u - sink), ImVec2(max.x, max.y + 6.0f * u - sink), colors::kShadow, rounding);
-    draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge), ImVec2(max.x + edge, max.y + edge), colors::kBlue, rounding + edge);
-    ImU32 top = colors::kWhite, bottom = colors::kHelmet;
-    if (!enabled) {
-        top = IM_COL32(232, 236, 244, 255);
-        bottom = IM_COL32(200, 208, 222, 255);
-    } else if (primary) {
-        top = mix(IM_COL32(255, 70, 70, 255), colors::kYellow, focus);
-        bottom = mix(colors::kRedDark, colors::kYellowShade, focus);
-    } else {
-        top = mix(colors::kWhite, colors::kYellow, focus);
-        bottom = mix(colors::kHelmet, colors::kYellowShade, focus);
+    // A slanted pill on a solid drop, which it sinks onto when pressed. The
+    // focus rings it in yellow and puts the star beside it.
+    const float sink = item.held ? 4.0f * u : 0.0f, drop = 6.0f * u - sink;
+    const ImVec2 min(bb.Min.x, bb.Min.y + sink), max(bb.Max.x, bb.Max.y + sink);
+    const float rounding = (max.y - min.y) * 0.5f, edge = 4.0f * u, center_y = (min.y + max.y) * 0.5f;
+    const ImU32 rim = enabled ? colors::kBlue : colors::kDisabled;
+    const int start = draw->VtxBuffer.Size;
+    if (focus > 0.01f) {
+        const float ring = edge + 6.0f * u * focus;
+        draw->AddRectFilled(ImVec2(min.x - ring, min.y - ring), ImVec2(max.x + ring, max.y + ring + drop),
+                            with_alpha(colors::kYellowShade, focus), rounding + ring);
+        draw->AddRectFilled(ImVec2(min.x - ring, min.y - ring), ImVec2(max.x + ring, max.y + ring),
+                            with_alpha(colors::kYellow, focus), rounding + ring);
     }
-    gradient_rect(draw, min, max, top, bottom, rounding);
-    // The helmet's sheen across the top half.
-    draw->AddRectFilled(ImVec2(min.x + rounding * 0.6f, min.y + 4.0f * u),
-                        ImVec2(max.x - rounding * 0.6f, min.y + (max.y - min.y) * 0.42f), IM_COL32(255, 255, 255, 70),
-                        rounding * 0.5f);
+    draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge + drop), ImVec2(max.x + edge, max.y + edge + drop), rim, rounding + edge);
+    draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge), ImVec2(max.x + edge, max.y + edge), rim, rounding + edge);
+    const int fill = draw->VtxBuffer.Size;
+    draw->AddRectFilled(min, max, colors::kWhite, rounding);
+    if (!enabled)
+        shade_vertical(draw, fill, min.y, max.y, IM_COL32(236, 240, 247, 255), 0, IM_COL32(220, 226, 238, 255));
+    else if (primary)
+        shade_vertical(draw, fill, min.y, max.y, colors::kRedLight, colors::kRed, colors::kRedDark);
+    else
+        shade_vertical(draw, fill, min.y, max.y, colors::kWhite, colors::kWhite, colors::kHelmet);
+    // A button without a label (a save slot) has its content drawn over it
+    // upright, so it stays upright too.
+    if (!label.empty()) slant(draw, start, center_y);
 
     ImFont *font = fonts().display;
-    const float text_height = size.y * 0.5f;
+    const float text_height = size.y * 0.54f;
     const ImVec2 extent = text_size(font, text_height, label);
-    const ImVec2 at((min.x + max.x - extent.x) * 0.5f, (min.y + max.y - extent.y) * 0.5f + 2.0f * u);
-    if (!enabled)
+    const ImVec2 at((min.x + max.x - extent.x) * 0.5f, center_y - extent.y * 0.5f);
+    if (!enabled) {
         draw->AddText(font, text_height, at, colors::kDisabled, label.data(), label.data() + label.size());
-    else if (primary && focus < 0.5f)
-        outlined_text(draw, font, text_height, at, label, colors::kYellow, colors::kYellowShade, colors::kBlue, 3.0f * u);
-    else
-        draw->AddText(font, text_height, at, colors::kBlue, label.data(), label.data() + label.size());
-    siren_lamp(draw, ImVec2(min.x + rounding, (min.y + max.y) * 0.5f), 10.0f * u * focus, layer.time());
+    } else if (primary) {
+        draw->AddText(font, text_height, ImVec2(at.x, at.y + 3.0f * u), colors::kRedInk, label.data(), label.data() + label.size());
+        draw->AddText(font, text_height, at, colors::kWhite, label.data(), label.data() + label.size());
+    } else {
+        draw->AddText(font, text_height, at, colors::kInk, label.data(), label.data() + label.size());
+    }
+    focus_star(draw, ImVec2(min.x - 30.0f * u, center_y), 17.0f * u, focus, layer.time());
     return item.pressed;
 }
 
 bool back_button(const Layer &layer, ImVec2 position) {
     if (layer.device() != Device::Mouse && layer.device() != Device::Touch) return false;
     const float u = layer.unit();
-    ImFont *font = fonts().strong;
-    const float size = 18.0f * u;
+    ImFont *font = fonts().display;
+    const float size = 19.0f * u;
     const std::string_view label = tr(Text::Back);
     const ImVec2 extent = text_size(font, size, label);
     const ImVec2 box(extent.x + 52.0f * u, 40.0f * u);
@@ -375,12 +442,18 @@ bool back_button(const Layer &layer, ImVec2 position) {
     const Interaction item = interact(layer, "##back", bb, ImGuiItemFlags_NoNav);
     if (!item.visible) return false;
     ImDrawList *draw = ImGui::GetWindowDrawList();
-    const float rounding = box.y * 0.5f, edge = 3.0f * u;
-    draw->AddRectFilled(ImVec2(bb.Min.x - edge, bb.Min.y - edge), ImVec2(bb.Max.x + edge, bb.Max.y + edge), colors::kBlue, rounding + edge);
-    gradient_rect(draw, bb.Min, bb.Max, item.hovered || item.held ? colors::kYellow : colors::kWhite,
-                  item.hovered || item.held ? colors::kYellowShade : colors::kHelmet, rounding);
-    triangle(draw, ImVec2(bb.Min.x + 20.0f * u, bb.GetCenter().y), 9.0f * u, -1, colors::kBlue);
-    draw->AddText(font, size, ImVec2(bb.Min.x + 34.0f * u, bb.GetCenter().y - extent.y * 0.5f), colors::kBlue,
+    const float rounding = box.y * 0.5f, edge = 3.0f * u, sink = item.held ? 3.0f * u : 0.0f;
+    const ImVec2 min(bb.Min.x, bb.Min.y + sink), max(bb.Max.x, bb.Max.y + sink);
+    draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge + 4.0f * u - sink), ImVec2(max.x + edge, max.y + edge + 4.0f * u - sink),
+                        colors::kShadow, rounding + edge);
+    draw->AddRectFilled(ImVec2(min.x - edge, min.y - edge), ImVec2(max.x + edge, max.y + edge), colors::kBlue, rounding + edge);
+    gradient_rect(draw, min, max, item.hovered || item.held ? colors::kYellowPale : colors::kWhite,
+                  item.hovered || item.held ? colors::kYellow : colors::kWhite, rounding);
+    const ImVec2 chevron(min.x + 20.0f * u, (min.y + max.y) * 0.5f);
+    const ImVec2 points[] = {ImVec2(chevron.x + 4.0f * u, chevron.y - 7.0f * u), ImVec2(chevron.x - 3.0f * u, chevron.y),
+                             ImVec2(chevron.x + 4.0f * u, chevron.y + 7.0f * u)};
+    draw->AddPolyline(points, 3, colors::kBlue, 3.5f * u);
+    draw->AddText(font, size, ImVec2(min.x + 34.0f * u, (min.y + max.y) * 0.5f - extent.y * 0.5f), colors::kBlue,
                   label.data(), label.data() + label.size());
     return item.pressed;
 }
@@ -421,10 +494,16 @@ int setting_row(const Layer &layer, std::string_view id, const RowView &row, flo
         }
     }
     const ImRect value(ImVec2(bb.Max.x - value_width - 12.0f * u, bb.Min.y), ImVec2(bb.Max.x - 12.0f * u, bb.Max.y));
-    const float arrow = 22.0f * u;
-    const ImU32 arrow_color = row.enabled ? mix(colors::kBlueLight, colors::kBlue, focus) : colors::kDisabled;
-    triangle(draw, ImVec2(value.Min.x + arrow * 0.5f, value.GetCenter().y), 9.0f * u, -1, arrow_color);
-    triangle(draw, ImVec2(value.Max.x - arrow * 0.5f, value.GetCenter().y), 9.0f * u, 1, arrow_color);
+    // The arrows: navy chevrons, which the focus sets in navy discs in yellow.
+    const float arrow = 26.0f * u;
+    for (const int direction : {-1, 1}) {
+        const ImVec2 c(direction < 0 ? value.Min.x + arrow * 0.5f : value.Max.x - arrow * 0.5f, value.GetCenter().y);
+        if (row.enabled && focus > 0.01f) draw->AddCircleFilled(c, arrow * 0.5f, with_alpha(colors::kBlue, focus));
+        const ImU32 color = row.enabled ? mix(colors::kBlue, colors::kYellow, focus) : colors::kDisabled;
+        const float d = static_cast<float>(direction), s = 5.0f * u;
+        const ImVec2 points[] = {ImVec2(c.x - d * s * 0.6f, c.y - s), ImVec2(c.x + d * s * 0.6f, c.y), ImVec2(c.x - d * s * 0.6f, c.y + s)};
+        draw->AddPolyline(points, 3, color, 3.0f * u);
+    }
     // A face button, when the row has one, leads the value and is centred with it.
     const bool face = row.face != SDL_GAMEPAD_BUTTON_INVALID;
     ImVec2 glyph(0.0f, value.GetCenter().y);
@@ -571,17 +650,20 @@ int tab_bar(const Layer &layer, std::span<const std::string_view> tabs, int sele
         if (item.pressed) selected = i;
         const bool active = i == selected;
         const float edge = 3.0f * u, rounding = height * 0.5f;
+        draw->AddRectFilled(ImVec2(bb.Min.x - edge, bb.Min.y - edge + 4.0f * u), ImVec2(bb.Max.x + edge, bb.Max.y + edge + 4.0f * u),
+                            colors::kShadow, rounding + edge);
         draw->AddRectFilled(ImVec2(bb.Min.x - edge, bb.Min.y - edge), ImVec2(bb.Max.x + edge, bb.Max.y + edge),
                             colors::kBlue, rounding + edge);
+        const int fill = draw->VtxBuffer.Size;
+        draw->AddRectFilled(bb.Min, bb.Max, colors::kWhite, rounding);
         if (active)
-            gradient_rect(draw, bb.Min, bb.Max, colors::kYellow, colors::kYellowShade, rounding);
-        else
-            gradient_rect(draw, bb.Min, bb.Max, item.hovered ? colors::kBlueLight : IM_COL32(48, 96, 210, 255),
-                          colors::kBlue, rounding);
+            shade_vertical(draw, fill, bb.Min.y, bb.Max.y, colors::kLetterTop, colors::kLetterMid, IM_COL32(255, 154, 18, 255));
+        else if (item.hovered)
+            shade_vertical(draw, fill, bb.Min.y, bb.Max.y, colors::kWhite, 0, colors::kYellowPale);
         const auto label = tabs[static_cast<std::size_t>(i)];
         const ImVec2 extent = text_size(font, size, label);
-        draw->AddText(font, size, ImVec2(bb.Min.x + pad, bb.GetCenter().y - extent.y * 0.45f),
-                      active ? colors::kBlue : colors::kWhite, label.data(), label.data() + label.size());
+        draw->AddText(font, size, ImVec2(bb.Min.x + pad, bb.GetCenter().y - extent.y * 0.5f), colors::kInk, label.data(),
+                      label.data() + label.size());
         x += width + gap;
     }
     return selected;
@@ -739,16 +821,20 @@ void hints(const Layer &layer, std::initializer_list<Hint> list) {
     for (const Hint &hint : list) {
         ImVec2 cursor(0.0f, 0.0f);
         draw_glyph(nullptr, cursor, hint.control);
-        total += cursor.x + 2.0f * u + text_size(font, size, hint.text).x + 18.0f * u;
+        total += cursor.x + 2.0f * u + text_size(font, size, hint.text).x + 16.0f * u;
     }
-    ImVec2 cursor(display.x - total - 6.0f * u, display.y - 26.0f * u);
+    // On a navy-purple capsule along the bottom right.
+    const float height = 36.0f * u, margin = 14.0f * u, pad = 6.0f * u;
+    const ImVec2 max(display.x - margin, display.y - margin), min(max.x - total - pad, max.y - height);
+    draw->AddRectFilled(min, max, colors::kBlue, height * 0.5f);
+    ImVec2 cursor(min.x + pad, (min.y + max.y) * 0.5f);
     for (const Hint &hint : list) {
         draw_glyph(draw, cursor, hint.control);
         cursor.x += 2.0f * u;
         const ImVec2 extent = text_size(font, size, hint.text);
-        outlined_text(draw, font, size, ImVec2(cursor.x, cursor.y - extent.y * 0.5f), hint.text, colors::kWhite,
-                      colors::kWhite, colors::kBlue, 2.5f * u);
-        cursor.x += extent.x + 18.0f * u;
+        draw->AddText(font, size, ImVec2(cursor.x, cursor.y - extent.y * 0.5f), colors::kWhite, hint.text.data(),
+                      hint.text.data() + hint.text.size());
+        cursor.x += extent.x + 16.0f * u;
     }
 }
 

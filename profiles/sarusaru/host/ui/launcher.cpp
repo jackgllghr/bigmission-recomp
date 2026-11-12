@@ -248,8 +248,8 @@ void Launcher::save() {
 void Launcher::frame() {
     set_language(resolve_language(settings_.language));
     if (in_game())
-        // The paused game, dimmed in the series' blue.
-        ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), display(), IM_COL32(8, 26, 102, 170));
+        // The paused game, dimmed in the box art's navy-purple.
+        ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), display(), IM_COL32(30, 18, 90, 190));
     else
         draw_backdrop(layer_);
     if (const auto dropped = layer_.take_dropped_file()) choose_disc(*dropped);
@@ -293,7 +293,7 @@ void Launcher::home() {
     ImDrawList *draw = ImGui::GetWindowDrawList();
 
     // From the top: the title art, whether the game can start, and the
-    // buttons, kept clear of the swoosh and hints along the bottom. The art
+    // buttons, kept clear of the hints along the bottom. The art
     // takes the height that is left.
     const bool ready = disc_check_ && disc_check_->supported();
     const ImVec2 button(300.0f * u, 48.0f * u);
@@ -313,6 +313,9 @@ void Launcher::home() {
     if (art_height > 0.0f) {
         const float bob = std::sin(t * 1.6f) * 3.0f * u;
         const ImVec2 min((size.x - art_width) * 0.5f, y + bob);
+        // A navy drop under the art, like the lettering's.
+        draw->AddImage(title_art_, ImVec2(min.x, min.y + 7.0f * u), ImVec2(min.x + art_width, min.y + art_height + 7.0f * u),
+                       ImVec2(0, 0), ImVec2(1, 1), IM_COL32(26, 15, 74, 150));
         draw->AddImage(title_art_, min, ImVec2(min.x + art_width, min.y + art_height));
         y += art_height + 8.0f * u;
     }
@@ -329,6 +332,8 @@ void Launcher::home() {
         else status = format(Text::StatusChoose, {identity_.disc_id});
         const ImVec2 extent = text_size(font, text_px, status);
         const ImVec2 min((size.x - extent.x) * 0.5f - 20.0f * u, y), max((size.x + extent.x) * 0.5f + 14.0f * u, y + status_height);
+        draw->AddRectFilled(ImVec2(min.x - 3.0f * u, min.y + 1.0f * u), ImVec2(max.x + 3.0f * u, max.y + 7.0f * u),
+                            colors::kShadow, 18.0f * u);
         draw->AddRectFilled(ImVec2(min.x - 3.0f * u, min.y - 3.0f * u), ImVec2(max.x + 3.0f * u, max.y + 3.0f * u),
                             colors::kBlue, 18.0f * u);
         draw->AddRectFilled(min, max, colors::kWhite, 15.0f * u);
@@ -364,7 +369,7 @@ void Launcher::home() {
         }
     }
 
-    // The disclaimer along the bottom left, on the swoosh.
+    // The disclaimer along the bottom left.
     {
         ImFont *font = fonts().body;
         const float text_px = 12.0f * u;
@@ -435,10 +440,10 @@ void Launcher::open_saves_folder() {
 
 void Launcher::saves() {
     const float u=layer_.unit();
-    const float top=screen_title(layer_,tr(Text::Saves))+8*u;
+    const float top=screen_title(layer_,tr(Text::Saves))+28*u;
     const auto size=display();
     const float width=std::min(780*u,size.x-64*u), x=(size.x-width)*0.5f;
-    const float row_height=54*u, gap=8*u;
+    const float row_height=54*u, gap=14*u;
     auto *draw=ImGui::GetWindowDrawList();
     for (std::uint32_t slot=1; slot<=save_state::kSlotCount; ++slot) {
         const auto &info=slots_[slot-1];
@@ -1462,7 +1467,7 @@ void Launcher::capture_overlay() {
     const double now = seconds_now();
     const ImVec2 size = display();
     ImDrawList *draw = ImGui::GetForegroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), size, IM_COL32(8, 26, 102, 150));
+    draw->AddRectFilled(ImVec2(0, 0), size, IM_COL32(30, 18, 90, 170));
 
     const bool keyboard = capture_.device() == BindingDevice::Keyboard;
     const float width = std::min(size.x - 48.0f * u, 600.0f * u), pad = 26.0f * u;
