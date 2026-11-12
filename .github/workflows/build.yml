@@ -27,7 +27,7 @@ jobs:
         include: >-
           ${{ fromJSON(
             (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-            && '[{"host":"windows-x64","runner":"windows-2022"},{"host":"linux-x64","runner":"ubuntu-24.04"},{"host":"linux-arm64","runner":"ubuntu-24.04-arm"},{"host":"macos-arm64","runner":"macos-14"}]'
+            && '[{"host":"windows-x64","runner":"windows-2022"},{"host":"linux-x64","runner":"ubuntu-24.04"},{"host":"linux-arm64","runner":"ubuntu-24.04-arm"},{"host":"macos-arm64","runner":"macos-15"}]'
             || '[{"host":"linux-x64","runner":"ubuntu-24.04"}]'
           ) }}
     steps:
