@@ -65,6 +65,53 @@ int main() {
         require(input.pad.lx == 128 && input.pad.ly == 128, "neutral sticks stay exactly neutral");
     }
 
+    {
+        // The on-screen controls, on a 20:9 phone of 900x405 points.
+        const float w = 900.0f, h = 405.0f;
+        const auto layout = touch_layout(w, h);
+        TouchControls touch;
+        touch.press(1, layout.face.x, layout.face.y + layout.face_offset, w, h);
+        require(touch.state().buttons == kButtonCross, "the lower face button is Cross");
+        touch.move(1, layout.face.x + layout.face_offset, layout.face.y);
+        require(touch.state().buttons == kButtonCircle, "a finger slides across the face buttons");
+        touch.move(1, layout.face.x + layout.face_offset, layout.face.y + layout.face_offset);
+        require(touch.state().buttons == (kButtonCircle | kButtonCross), "between two face buttons holds both");
+        touch.press(2, layout.dpad.x - layout.dpad.r * 0.6f, layout.dpad.y - layout.dpad.r * 0.6f, w, h);
+        require(touch.state().buttons == (kButtonCircle | kButtonCross | kButtonUp | kButtonLeft),
+            "a second finger holds a d-pad diagonal");
+        touch.release(1);
+        touch.release(2);
+        require(touch.state() == TouchPad{} && !touch.touched(), "lifted fingers hold nothing");
+        touch.press(3, layout.left_stick.x + 2.0f, layout.left_stick.y, w, h);
+        require(touch.state().lx == 0.0f, "a stick's centre is neutral");
+        touch.move(3, layout.left_stick.x + layout.left_stick.r * 3.0f, layout.left_stick.y);
+        require(touch.state().lx == 1.0f && touch.state().ly == 0.0f, "a stick follows its finger past its base");
+        touch.press(4, layout.right_stick.x, layout.right_stick.y - layout.right_stick.r, w, h);
+        require(touch.state().ry < -0.999f && touch.state().lx == 1.0f, "both sticks at once");
+        touch.press(5, (layout.l.x0 + layout.l.x1) / 2, (layout.l.y0 + layout.l.y1) / 2, w, h);
+        touch.press(6, (layout.start.x0 + layout.start.x1) / 2, (layout.start.y0 + layout.start.y1) / 2, w, h);
+        touch.press(7, layout.menu.x, layout.menu.y, w, h);
+        const auto held = touch.state();
+        require(held.buttons == (kButtonL | kButtonStart) && held.menu, "L, Start and the menu button");
+        touch.press(8, w / 2.0f, h / 2.0f, w, h);
+        require(touch.state() == held, "the middle of the screen is not a control");
+
+        std::array<bool, SDL_SCANCODE_COUNT> keys{};
+        std::array<GamepadState, 1> pads{};
+        auto input = map_input(defaults.controls, keys, pads);
+        apply_touch(input, held);
+        require(input.pad.buttons == (kButtonL | kButtonStart) && input.menu && input.pad.lx == 255 &&
+                input.pad.ly == 128, "touch adds buttons, the left stick and the menu");
+        require(input.camera_y > 0.999f && input.aim_y < -0.999f,
+            "the right stick pushed up is Camera down and aims up, as a gamepad's");
+        pads[0].axes[SDL_GAMEPAD_AXIS_LEFTX] = -32768;
+        input = map_input(defaults.controls, keys, pads);
+        apply_touch(input, TouchPad{.lx = 0.3f});
+        require(input.pad.lx <= 1, "the stick pushed furthest wins");
+        touch.clear();
+        require(touch.state() == TouchPad{}, "clear lets go of everything");
+    }
+
     require(defaults.state_slot==1,"default state slot changed");
     for (unsigned slot=1;slot<=5;++slot) {
         auto selected=parse_settings("[game]\nstate_slot = "+std::to_string(slot));

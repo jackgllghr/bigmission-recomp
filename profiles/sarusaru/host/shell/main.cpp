@@ -29,6 +29,7 @@
 #include "shell/vulkan_context.hpp"
 #include "ui/launcher.hpp"
 #include "ui/subtitles.hpp"
+#include "ui/touch_overlay.hpp"
 #include "ui/ui_script.hpp"
 
 #include <SDL3/SDL.h>
@@ -171,8 +172,17 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
     input.emplace(current.controls);
     sarusaru::shell::ButtonPrompts button_prompts;
     auto prompt_device = sarusaru::ui::BindingDevice::Keyboard;
+    // The on-screen controls are the PSP's own buttons, whatever the bindings,
+    // so the game's prompts show those until a key is pressed.
+    const auto touch_bindings = sarusaru::shell::default_settings().controls;
+    bool keyboard_used = false;
     const auto update_prompts = [&] {
         layer.set_prompt_style(current.prompt_style);
+        if (current.prompt_style == sarusaru::shell::PromptStyle::Auto && input->touch_controls() != nullptr &&
+            !keyboard_used) {
+            button_prompts.configure(touch_bindings, sarusaru::ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_PS4);
+            return;
+        }
         if (layer.prompt_device() == sarusaru::ui::Device::Gamepad) prompt_device = sarusaru::ui::BindingDevice::Gamepad;
         else if (layer.prompt_device() == sarusaru::ui::Device::Keyboard) prompt_device = sarusaru::ui::BindingDevice::Keyboard;
         button_prompts.configure(current.controls, prompt_device, layer.pad_type());
@@ -514,6 +524,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                     SDL_SetWindowFullscreen(window, (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == 0);
                     continue;
                 }
+                if (event.type == SDL_EVENT_KEY_DOWN) keyboard_used = true;
+                else if (event.type == SDL_EVENT_FINGER_DOWN) keyboard_used = false;
                 input->handle(event);
                 // Dear ImGui's backend reopens its gamepads after these; anything else it would only queue.
                 if (event.type == SDL_EVENT_GAMEPAD_ADDED || event.type == SDL_EVENT_GAMEPAD_REMOVED)
@@ -597,8 +609,9 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 if (const auto movie = game.psmf_player.playing()) cue = subtitles.at(movie->path, movie->position_ms);
             const bool due = presentation.due(game.kernel.now_us());
             const bool show_state_notice = !state_notice.empty() && SDL_GetTicksNS() < notice_until;
+            const auto *touch = input->touch_controls();
             const auto show = [&](const sarusaru::shell::Image *shown, bool capture_overlay) {
-                if ((cue != nullptr || show_state_notice) && due && shown != nullptr) {
+                if ((cue != nullptr || show_state_notice || touch != nullptr) && due && shown != nullptr) {
                     vulkan.end_frame(shown, width, height, false);
                     if (capture_overlay) {
                         char name[64];
@@ -615,6 +628,7 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                             draw->AddRectFilled(ImVec2(at.x-12,at.y-8),ImVec2(at.x+extent.x+12,at.y+extent.y+8),IM_COL32(0,0,0,210),6);
                             draw->AddText(at,IM_COL32(255,255,255,255),state_notice.c_str());
                         }
+                        if (touch) sarusaru::ui::draw_touch_controls(touch->state(), ImGui::GetIO().DisplaySize);
                     });
                 } else {
                     vulkan.end_frame(shown, width, height, due);
@@ -640,6 +654,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                 else if (choice == sarusaru::ui::Launcher::Outcome::SaveState) queue_state(false);
                 else if (choice == sarusaru::ui::Launcher::Outcome::LoadState) queue_state(true);
                 layer.set_backdrop(nullptr, 0u, 0u);
+                // The menu had the touches: none it saw lift is still held.
+                input->release_touches();
                 if (!quit) apply_settings();
                 settling = true;
                 menu_held = true;
@@ -842,6 +858,9 @@ int main(int argc, char **argv) {
     }
 #if defined(__ANDROID__)
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+#else
+    // Trying the on-screen controls on a computer: the mouse touches them.
+    if (sarusaru::shell::touch_controls_available()) SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "1");
 #endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         std::cerr << "sarusaru: SDL_Init failed: " << SDL_GetError() << '\n';
