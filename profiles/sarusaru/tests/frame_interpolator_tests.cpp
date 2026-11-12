@@ -36,7 +36,7 @@ DrawCall mesh(float object_x, float camera_x, std::uint32_t vertex_address = 0x0
     return call;
 }
 
-DrawCall sprite(float x, std::uint32_t vertex_address, std::uint32_t color = 0xFF000000u) {
+DrawCall sprite(float x, std::uint32_t vertex_address, std::uint32_t color = 0xFF000000u, float u = 0.0f) {
     DrawCall call;
     call.primitive = sarusaru::gpu::PrimitiveType::Sprites;
     call.through = true;
@@ -46,7 +46,8 @@ DrawCall sprite(float x, std::uint32_t vertex_address, std::uint32_t color = 0xF
     call.vertices.resize(2u);
     call.vertices[0].position = {x, 10.0f, 0.0f, 1.0f};
     call.vertices[1].position = {x + 16.0f, 26.0f, 0.0f, 1.0f};
-    call.vertices[1].texcoord = {16.0f, 16.0f};
+    call.vertices[0].texcoord = {u, 0.0f};
+    call.vertices[1].texcoord = {u + 16.0f, 16.0f};
     for (auto &vertex : call.vertices) vertex.color = color;
     return call;
 }
@@ -133,6 +134,25 @@ int main() {
                 "moving sprite not blended");
         require(!interpolator.interpolate(sprite(20.0f, 0x08D90040u), 0.5f, out) && out.vertices[0].position[0] == 20.0f,
                 "leaping sprite was blended");
+    }
+    {
+        // Menu sprites from one atlas pair only with the same image. The
+        // selected slot blinks: when it is drawn again it is new, not its
+        // neighbour's sprite sliding over, and the neighbours stay paired
+        // with themselves.
+        FrameInterpolator interpolator;
+        interpolator.interpolate(sprite(164.0f, 0x08E30040u, 0xFF000000u, 16.0f), 0.5f, out);
+        interpolator.interpolate(sprite(228.0f, 0x08E30080u, 0xFF000000u, 32.0f), 0.5f, out);
+        interpolator.end_frame();
+        require(!interpolator.interpolate(sprite(100.0f, 0x08D90000u, 0xFF000000u, 0.0f), 0.5f, out) &&
+                    out.vertices[0].position[0] == 100.0f,
+                "a reappearing sprite slid in from its neighbour");
+        require(interpolator.interpolate(sprite(164.0f, 0x08D90040u, 0xFF000000u, 16.0f), 0.5f, out) &&
+                    out.vertices[0].position[0] == 164.0f,
+                "a sprite lost its own previous draw");
+        require(interpolator.interpolate(sprite(228.0f, 0x08D90080u, 0xFF000000u, 32.0f), 0.5f, out) &&
+                    out.vertices[0].position[0] == 228.0f,
+                "the last sprite lost its own previous draw");
     }
     {
         // Differently textured draws never pair.

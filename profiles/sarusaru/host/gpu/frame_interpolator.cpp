@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace sarusaru::gpu {
 namespace {
@@ -135,6 +136,18 @@ bool FrameInterpolator::interpolate(const DrawCall &call, std::span<const float>
                                       std::uint64_t{call.primitive_count}, std::uint64_t{call.texture.address},
                                       std::uint64_t{call.vertices.size()}})
         loose = mix(loose, value);
+    // A screen-space draw also pairs only with one showing the same part of
+    // its texture. Menus draw their labels, slot boxes and digits from one
+    // atlas; when one blinks back in (the selected slot, Save or Load, Yes or
+    // No) or a digit changes, it would otherwise pair with its neighbour's
+    // previous draw and slide in from beside it for the in-between picture.
+    if (call.through)
+        for (const Vertex &vertex : call.vertices)
+            for (const float coordinate : vertex.texcoord) {
+                std::uint32_t bits = 0u;
+                std::memcpy(&bits, &coordinate, sizeof bits);
+                loose = mix(loose, bits);
+            }
     record.loose_key = loose;
     record.exact_key = mix(mix(loose, call.vertex_address), call.index_address);
     record.through = call.through;
