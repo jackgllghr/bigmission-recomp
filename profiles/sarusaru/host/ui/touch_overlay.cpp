@@ -11,9 +11,16 @@ namespace {
 // Light enough to see the game through, dark enough to see over snow.
 constexpr ImU32 kFill = IM_COL32(0, 0, 0, 70), kFillHeld = IM_COL32(255, 255, 255, 110);
 constexpr ImU32 kLine = IM_COL32(255, 255, 255, 120), kMark = IM_COL32(255, 255, 255, 170);
-// The PSP's own symbol colours, softened.
+// The symbols' own colours, softened.
 constexpr ImU32 kTriangle = IM_COL32(90, 220, 170, 210), kCircle = IM_COL32(255, 110, 120, 210),
                 kCross = IM_COL32(130, 175, 255, 210), kSquare = IM_COL32(240, 150, 220, 210);
+constexpr ImU32 kXboxA = IM_COL32(130, 210, 100, 220), kXboxB = IM_COL32(245, 105, 95, 220),
+                kXboxX = IM_COL32(100, 165, 245, 220), kXboxY = IM_COL32(250, 210, 70, 220);
+
+bool is_xbox(SDL_GamepadType type) { return type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE; }
+bool is_nintendo(SDL_GamepadType type) {
+    return type >= SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO && type <= SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR;
+}
 
 ImVec2 operator+(ImVec2 a, ImVec2 b) { return {a.x + b.x, a.y + b.y}; }
 ImVec2 scaled(ImVec2 a, float s) { return {a.x * s, a.y * s}; }
@@ -77,31 +84,42 @@ void dpad(ImDrawList *draw, const shell::TouchLayout::Circle &pad, std::uint32_t
     }
 }
 
-void face_buttons(ImDrawList *draw, const shell::TouchLayout &layout, std::uint32_t buttons, float line) {
+void face_buttons(ImDrawList *draw, const shell::TouchLayout &layout, std::uint32_t buttons, SDL_GamepadType type,
+                  float line) {
     using namespace ctrl;
     const float r = layout.face.r, off = layout.face_offset, mark = r * 0.48f;
     const ImVec2 c{layout.face.x, layout.face.y};
-    const struct { ImVec2 at; std::uint32_t button; } faces[] = {
-        {{0, -off}, kButtonTriangle}, {{off, 0}, kButtonCircle}, {{0, off}, kButtonCross}, {{-off, 0}, kButtonSquare}};
+    // Each place's PSP button, labelled as that place's button of `type`
+    // (the default bindings put Cross on the bottom button, and so on).
+    const struct { ImVec2 at; std::uint32_t button; SDL_GamepadButton place; } faces[] = {
+        {{0, -off}, kButtonTriangle, SDL_GAMEPAD_BUTTON_NORTH}, {{off, 0}, kButtonCircle, SDL_GAMEPAD_BUTTON_EAST},
+        {{0, off}, kButtonCross, SDL_GAMEPAD_BUTTON_SOUTH}, {{-off, 0}, kButtonSquare, SDL_GAMEPAD_BUTTON_WEST}};
     const float thick = std::max(line, r * 0.12f);
+    const bool xbox = is_xbox(type);
     for (const auto &face : faces) {
         const ImVec2 at = c + face.at;
         draw->AddCircleFilled(at, r, (buttons & face.button) != 0u ? kFillHeld : kFill, 40);
         draw->AddCircle(at, r, kLine, 40, line);
-        switch (face.button) {
-        case kButtonTriangle:
+        const auto letter = [&](const char *text, ImU32 colour) { label(draw, text, at, r * 1.1f, r * 1.6f, colour); };
+        switch (SDL_GetGamepadButtonLabelForType(type, face.place)) {
+        case SDL_GAMEPAD_BUTTON_LABEL_TRIANGLE:
             draw->AddTriangle(at + ImVec2{0, -mark}, at + ImVec2{mark * 0.95f, mark * 0.68f},
                               at + ImVec2{-mark * 0.95f, mark * 0.68f}, kTriangle, thick);
             break;
-        case kButtonCircle: draw->AddCircle(at, mark * 0.85f, kCircle, 32, thick); break;
-        case kButtonCross:
+        case SDL_GAMEPAD_BUTTON_LABEL_CIRCLE: draw->AddCircle(at, mark * 0.85f, kCircle, 32, thick); break;
+        case SDL_GAMEPAD_BUTTON_LABEL_CROSS:
             draw->AddLine(at + ImVec2{-mark * 0.75f, -mark * 0.75f}, at + ImVec2{mark * 0.75f, mark * 0.75f}, kCross, thick);
             draw->AddLine(at + ImVec2{mark * 0.75f, -mark * 0.75f}, at + ImVec2{-mark * 0.75f, mark * 0.75f}, kCross, thick);
             break;
-        default:
+        case SDL_GAMEPAD_BUTTON_LABEL_SQUARE:
             draw->AddRect(at + ImVec2{-mark * 0.7f, -mark * 0.7f}, at + ImVec2{mark * 0.7f, mark * 0.7f}, kSquare, 0.0f,
                           thick);
             break;
+        case SDL_GAMEPAD_BUTTON_LABEL_A: letter("A", xbox ? kXboxA : kMark); break;
+        case SDL_GAMEPAD_BUTTON_LABEL_B: letter("B", xbox ? kXboxB : kMark); break;
+        case SDL_GAMEPAD_BUTTON_LABEL_X: letter("X", xbox ? kXboxX : kMark); break;
+        case SDL_GAMEPAD_BUTTON_LABEL_Y: letter("Y", xbox ? kXboxY : kMark); break;
+        default: break;
         }
     }
 }
@@ -117,18 +135,21 @@ void menu_button(ImDrawList *draw, const shell::TouchLayout::Circle &menu, bool 
 }
 } // namespace
 
-void draw_touch_controls(const shell::TouchPad &held, ImVec2 display) {
+void draw_touch_controls(const shell::TouchPad &held, SDL_GamepadType type, ImVec2 display) {
     using namespace ctrl;
     const auto layout = shell::touch_layout(display.x, display.y);
     ImDrawList *draw = ImGui::GetForegroundDrawList();
     const float line = std::max(1.0f, std::min(display.x, display.y) * 0.004f);
-    button_box(draw, layout.l, (held.buttons & kButtonL) != 0u, "L", line);
-    button_box(draw, layout.r, (held.buttons & kButtonR) != 0u, "R", line);
-    button_box(draw, layout.select, (held.buttons & kButtonSelect) != 0u, "SELECT", line);
-    button_box(draw, layout.start, (held.buttons & kButtonStart) != 0u, "START", line);
+    // The other buttons by the same controller's names (the PSP's for PlayStation).
+    const bool xbox = is_xbox(type), nintendo = is_nintendo(type);
+    button_box(draw, layout.l, (held.buttons & kButtonL) != 0u, xbox ? "LB" : "L", line);
+    button_box(draw, layout.r, (held.buttons & kButtonR) != 0u, xbox ? "RB" : "R", line);
+    button_box(draw, layout.select, (held.buttons & kButtonSelect) != 0u,
+               xbox ? "VIEW" : nintendo ? "\xe2\x88\x92" : "SELECT", line);
+    button_box(draw, layout.start, (held.buttons & kButtonStart) != 0u, xbox ? "MENU" : nintendo ? "+" : "START", line);
     menu_button(draw, layout.menu, held.menu, line);
     dpad(draw, layout.dpad, held.buttons, line);
-    face_buttons(draw, layout, held.buttons, line);
+    face_buttons(draw, layout, held.buttons, type, line);
     stick(draw, layout.left_stick, held.lx, held.ly, line);
     stick(draw, layout.right_stick, held.rx, held.ry, line);
 }

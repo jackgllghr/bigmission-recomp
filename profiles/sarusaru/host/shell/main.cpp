@@ -178,14 +178,21 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
     sarusaru::shell::ButtonPrompts button_prompts;
     auto prompt_device = sarusaru::ui::BindingDevice::Keyboard;
     // The on-screen controls are the PSP's own buttons, whatever the bindings,
-    // so the game's prompts show those until a key is pressed.
+    // labelled as the chosen prompt style's (the PSP's own for Auto or
+    // Keyboard), and the game's prompts show the same until a key is pressed.
     const auto touch_bindings = sarusaru::shell::default_settings().controls;
     bool keyboard_used = false;
+    const auto touch_pad_type = [&] {
+        const auto style = current.prompt_style;
+        if (style == sarusaru::shell::PromptStyle::Auto || style == sarusaru::shell::PromptStyle::Keyboard)
+            return SDL_GAMEPAD_TYPE_PS4;
+        return sarusaru::shell::resolve_prompts(style, true, SDL_GAMEPAD_TYPE_STANDARD).type;
+    };
     const auto update_prompts = [&] {
         layer.set_prompt_style(current.prompt_style);
-        if (current.prompt_style == sarusaru::shell::PromptStyle::Auto && input->touch_controls() != nullptr &&
+        if (current.prompt_style != sarusaru::shell::PromptStyle::Keyboard && input->touch_controls() != nullptr &&
             !keyboard_used) {
-            button_prompts.configure(touch_bindings, sarusaru::ui::BindingDevice::Gamepad, SDL_GAMEPAD_TYPE_PS4);
+            button_prompts.configure(touch_bindings, sarusaru::ui::BindingDevice::Gamepad, touch_pad_type());
             return;
         }
         if (layer.prompt_device() == sarusaru::ui::Device::Gamepad) prompt_device = sarusaru::ui::BindingDevice::Gamepad;
@@ -672,7 +679,8 @@ int play(SDL_Window *window, sarusaru::shell::VulkanContext &vulkan, sarusaru::u
                             draw->AddRectFilled(ImVec2(at.x-12,at.y-8),ImVec2(at.x+extent.x+12,at.y+extent.y+8),IM_COL32(0,0,0,210),6);
                             draw->AddText(at,IM_COL32(255,255,255,255),state_notice.c_str());
                         }
-                        if (touch) sarusaru::ui::draw_touch_controls(touch->state(), ImGui::GetIO().DisplaySize);
+                        if (touch) sarusaru::ui::draw_touch_controls(touch->state(), touch_pad_type(),
+                                                                       ImGui::GetIO().DisplaySize);
                         sarusaru::ui::draw_performance_overlay(overlay, performance, performance_info,
                                                                ImGui::GetIO().DisplaySize);
                     });
